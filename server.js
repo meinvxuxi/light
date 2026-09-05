@@ -71,8 +71,8 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');              // 正式玩�
 const TIMELINE_FILE = path.join(DATA_DIR, 'timeline.json');        // 时光墙记录（正式玩家比赛+成就时刻）
 
 // ========== 时光墙 ==========
-// 开发/测试期默认内存（重启即清空）；正式版把 PERSIST_TIMELINE 置 true 落盘保留
-const PERSIST_TIMELINE = false;
+// 持久化模式由环境变量控制（开发默认内存/重启清空；正式部署时设置环境变量 PERSIST_TIMELINE=true 即落盘）
+const PERSIST_TIMELINE = process.env.PERSIST_TIMELINE === 'true';
 const TIMELINE_MAX = 300;
 let timelineEntries = [];
 
@@ -89,15 +89,112 @@ function addTimeline(entry) {
 // 玩家是否为"可入时光墙"的正式账号
 function isOfficialPlayer(name) { return OFFICIAL_ACCOUNT_NAMES.includes(name); }
 
+// ===== 成就头衔 =====
+// 头衔按品质逐步解锁：解锁含 common 即得「快艇新秀」，再含 rare 得「快艇好手」……（可累积多个）；
+// 仅 hidden 成就时兜底得「快艇怪人」。
+// 展示：玩家可在"已解锁头衔"里自由选择（档案 usersData.title 存档）；未选择 = 自动显示最高已解锁。
+const ACH_TITLES = { common: '快艇新秀', rare: '快艇好手', epic: '快艇高手', legend: '快艇大师', hidden: '快艇怪人' };
+const ACH_TITLE_ORDER = ['common', 'rare', 'epic', 'legend'];
+// 该玩家当前已解锁的可选头衔（低→高；测试账号按自己内存中的测试成就算）
+function playerUnlockedTitles(name) {
+  if (!OFFICIAL_ACCOUNT_NAMES.includes(name) && !TEST_NAMES.includes(name)) return [];
+  const records = isTestAccount(name) ? achTestRecords : achRecords;
+  const qs = records
+    .filter(r => r.playerName === name)
+    .map(r => ACHIEVEMENTS[r.achievementId] && ACHIEVEMENTS[r.achievementId].quality)
+    .filter(Boolean);
+  if (!qs.length) return [];
+  const out = [];
+  for (const q of ACH_TITLE_ORDER) if (qs.includes(q)) out.push(ACH_TITLES[q]);
+  if (qs.includes('hidden')) out.push(ACH_TITLES.hidden); // 触发隐藏成就也解锁「快艇怪人」
+  return out;
+}
+// 当前实际展示的头衔：玩家手动选择了某个已解锁头衔才展示；默认不佩戴
+function playerTitle(name) {
+  const unlocked = playerUnlockedTitles(name);
+  if (!unlocked.length) return '';
+  const choice = usersData[name] && usersData[name].title;
+  return (choice && unlocked.includes(choice)) ? choice : '';
+}
+
+// ===== 个人空间战绩统计（依据时光墙比赛记录） =====
+// filter 可选：仅统计满足条件的对局（如指定游戏/模式）
+function summarizeProfileStats(name, filter) {
+  let games = 0, wins = 0, totalScore = 0, best = 0;
+  for (const e of timelineEntries) {
+    if (e.type !== 'game') continue;
+    const my = (e.results || []).find(r => r.name === name);
+    if (!my) continue;
+    if (filter && !filter(e)) continue;
+    games++;
+    totalScore += my.score;
+    if (my.score > best) best = my.score;
+    if (my.rank === 1) wins++;
+  }
+  return { games, wins, winRate: games ? Math.round(wins / games * 100) : 0, totalScore, best };
+}
+// 某玩家参与的时光墙对局里出现过的游戏，及其各模式（人数）统计
+function buildProfileByGame(name) {
+  const games = {};   // gameKey -> { 模式key -> {..} }
+  const order = [];
+  for (const e of timelineEntries) {
+    if (e.type !== 'game') continue;
+    const my = (e.results || []).find(r => r.name === name);
+    if (!my) continue;
+    const gk = e.game || 'other';
+    if (!games[gk]) { games[gk] = {}; order.push(gk); }
+    const mk = (e.totalPlayers ? `${e.totalPlayers}人` : '普通');
+    const m = games[gk][mk] || { games: 0, wins: 0, totalScore: 0, best: 0 };
+    m.games++;
+    m.totalScore += my.score;
+    if (my.score > m.best) m.best = my.score;
+    if (my.rank === 1) m.wins++;
+    games[gk][mk] = m;
+  }
+  return order.map(gk => ({
+    game: gk,
+    modes: Object.keys(games[gk])
+      .map(mode => { const s = games[gk][mode]; return { mode, games: s.games, wins: s.wins, winRate: s.games ? Math.round(s.wins / s.games * 100) : 0, totalScore: s.totalScore, best: s.best }; })
+      .sort((a, b) => { const na = parseInt(a.mode, 10) || Infinity; const nb = parseInt(b.mode, 10) || Infinity; return na - nb; })
+  }));
+}
+
+// ===== 快艇排行榜：单局最高分（正式/测试/游客的真实对局都会记录；开发期内存，重启清空） =====
+let highScoreBoard = new Map(); // 玩家名 -> 单局最高总分
+function recordHighScores(totals) {
+  if (!totals) return;
+  for (const [name, t] of Object.entries(totals)) {
+    if (!t || typeof t.total !== 'number') continue;
+    const cur = highScoreBoard.get(name) || 0;
+    if (t.total > cur) highScoreBoard.set(name, t.total);
+  }
+}
+
+// ===== 测试个人空间：仅测试者自己可见的模拟战绩（内存种子，方便预览页面，无需真实打局） =====
+const testProfileSeeds = new Map();
+function seedTestProfile(name) {
+  const byGame = [{
+    game: 'yahtzee',
+    modes: [
+      { mode: '2人', games: 2, wins: 1, winRate: 50, totalScore: 486, best: 312 },
+      { mode: '3人', games: 3, wins: 2, winRate: 67, totalScore: 980, best: 336 },
+      { mode: '4人', games: 1, wins: 0, winRate: 0, totalScore: 278, best: 278 }
+    ]
+  }];
+  const totals = { games: 6, wins: 3, winRate: 50, totalScore: 1744, best: 336 };
+  testProfileSeeds.set(name, { totals, byGame });
+  return { totals, byGame };
+}
+
 // 正式玩家档案（内存态 + users.json 落盘）：开发期也落盘，便于测试改昵称/主题
 let usersData = {};
 const THEMES = ['initial', 'p1', 'p2', 'p3', 'p4']; // 已知主题集合
 // 专属主题归属：正式玩家各有自己的素材主题；测试账号可体验 p1
 const OWNER_THEME = { '玩家1': 'p1', '玩家2': 'p2', '玩家3': 'p3', '玩家4': 'p4' };
 
-// ⚙️ 持久化开关：开发/测试期=false（成就只存内存，重启即刷新、不写 data/）；
-// 正式版上线时改为 true，即自动恢复"读入 + 写入 data/ 文件"。
-const PERSIST_ACHIEVEMENTS = false;
+// ⚙️ 持久化开关（环境变量控制）：默认开发/测试期=false（成就只存内存，重启即刷新、不写 data/）；
+// 正式部署时设置环境变量 PERSIST_ACHIEVEMENTS=true，即自动恢复"读入 + 写入 data/ 文件"。
+const PERSIST_ACHIEVEMENTS = process.env.PERSIST_ACHIEVEMENTS === 'true';
 
 // 成就定义：id -> { name, quality, game }
 const ACHIEVEMENTS = {
@@ -256,12 +353,13 @@ function broadcast() {
         name: user.name, 
         isGuest: user.isGuest, 
         status: isReallyOnline ? '在线' : '离线（无心跳）', 
-        lastSeen: user.lastSeen 
+        lastSeen: user.lastSeen,
+        title: playerTitle(user.name)
       });
     }
     for (const [name, ts] of userLastOnline) {
       if (!onlineUsers.has(name)) {
-        list.push({ name, isGuest: false, status: `离线 ${formatTime(ts)}`, lastSeen: ts });
+        list.push({ name, isGuest: false, status: `离线 ${formatTime(ts)}`, lastSeen: ts, title: playerTitle(name) });
       }
     }
     io.emit('online_users', list);
@@ -331,6 +429,30 @@ function broadcastRoom(room) {
   });
 }
 
+// ========== 房间重置：当房间里所有玩家（含观战）都离线后，把房间彻底还原成可重新开局的状态 ==========
+function resetRoom(room) {
+  if (room.playerMap.size > 0) return; // 还有人则不动
+  room.maxPlayers = 4;
+  room.hostName = null;
+  room.seats = { 1: null, 2: null, 3: null, 4: null };
+  room.spectators = [];
+  room.playerMap.clear();
+  for (const k of Object.keys(room.leaveTimers || {})) {
+    clearTimeout(room.leaveTimers[k]);
+    delete room.leaveTimers[k];
+  }
+  if (yahtzeeGames[room.roomId]) {
+    delete yahtzeeGames[room.roomId];
+    console.log(`🔄 房间 ${room.roomId} 的进行中对局已清除`);
+  }
+  if (gameEndTimers[room.roomId]) {
+    clearTimeout(gameEndTimers[room.roomId]);
+    delete gameEndTimers[room.roomId];
+  }
+  console.log(`🔄 房间 ${room.roomId} 玩家已全部离线，房间已重置`);
+  broadcastRoom(room);
+}
+
 // ========== 核心修复：彻底移除离线玩家 ==========
 // force=true 表示玩家主动退出房间，必须无条件移除；
 // force 缺省时先做保险检查：若该玩家名当前映射的 socket 还活着
@@ -367,7 +489,11 @@ function removeOfflinePlayer(room, playerName, force) {
   
   console.log(`❌ 移除离线玩家：${playerName}`);
   transferHost(room);
-  broadcastRoom(room);
+  if (room.playerMap.size === 0) {
+    resetRoom(room); // 全员离线（含观战）：重置房间与残留对局，下批玩家进房从零开始
+  } else {
+    broadcastRoom(room);
+  }
 }
 
 const UPPER_CATS = ['ones', 'twos', 'threes', 'fours', 'fives', 'sixes'];
@@ -443,6 +569,9 @@ function evaluateSettlementAchievements(game, roomId) {
       }))
     });
   }
+
+  // ===== 快艇排行榜：记录单局最高分（正式/测试/游客都记） =====
+  recordHighScores(totals);
 }
 
 function initYahtzeeGame(roomId, playerNames, isMock) {
@@ -451,7 +580,8 @@ function initYahtzeeGame(roomId, playerNames, isMock) {
     currentPlayerIndex: 0, phase: 'playing', round: 1,
     mock: isMock === true,      // 开发者工具生成的模拟局：不判定/不记录成就
     comboMap: {},               // 葫芦组合 key "三元-对子" -> [玩家名]
-    achievementsByPlayer: {}    // 玩家名 -> 本局已达成成就 id 列表
+    achievementsByPlayer: {},   // 玩家名 -> 本局已达成成就 id 列表
+    cancelVotes: []             // 取消对局：已点"同意取消"的玩家名（全员同意即取消）
   };
   playerNames.forEach(name => {
     game.players[name] = {
@@ -529,7 +659,8 @@ function broadcastYahtzeeState(roomId) {
     round: game.round,
     allDice: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.dice])),
     allScores: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.scores])),
-    allPreviewScores: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.previewScores]))
+    allPreviewScores: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.previewScores])),
+    cancelVotes: game.cancelVotes || []
   });
 }
 
@@ -706,12 +837,13 @@ io.on('connection', (socket) => {
         name: user.name, 
         isGuest: user.isGuest, 
         status: isReallyOnline ? '在线' : '离线（无心跳）', 
-        lastSeen: user.lastSeen 
+        lastSeen: user.lastSeen,
+        title: playerTitle(user.name)
       });
     }
     for (const [name, ts] of userLastOnline) {
       if (!onlineUsers.has(name)) {
-        list.push({ name, isGuest: false, status: `离线 ${formatTime(ts)}`, lastSeen: ts });
+        list.push({ name, isGuest: false, status: `离线 ${formatTime(ts)}`, lastSeen: ts, title: playerTitle(name) });
       }
     }
     socket.emit('online_users', list);
@@ -1067,6 +1199,17 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, name, achievementId, achievementName: ACHIEVEMENTS[achievementId].name });
   });
 
+  // ========== 测试个人空间：一键生成模拟战绩（仅测试账号，内存） ==========
+  socket.on('dev_seed_profile', (cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || !TEST_NAMES.includes(name)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    const data = seedTestProfile(name);
+    if (cb) cb({ success: true, ...data });
+  });
+
   // ========== 留言板 ==========
   // 拉取留言（正式=玩家留言；游客=游客留言）
   socket.on('get_board', (cb) => {
@@ -1104,6 +1247,9 @@ io.on('connection', (socket) => {
       displayName: getDisplayName(name),
       nickname: (u.nickname || ''),
       theme: (u.theme || 'initial'),
+      title: playerTitle(name),
+      unlockedTitles: playerUnlockedTitles(name),
+      titleChoice: (u.title || ''),
       canEdit: OFFICIAL_ACCOUNT_NAMES.includes(name),
       allowedThemes: ['initial']
         .concat(OWNER_THEME[name] ? [OWNER_THEME[name]] : [])
@@ -1145,6 +1291,24 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, displayName: getDisplayName(name), nickname: usersData[name].nickname || '', theme: t });
   });
 
+  // 设置展示头衔（只能从已解锁头衔中选择；传空 = 不佩戴）
+  socket.on('set_title', ({ title }, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || (!OFFICIAL_ACCOUNT_NAMES.includes(name) && !TEST_NAMES.includes(name))) {
+      if (cb) cb({ success: false, msg: '仅正式玩家或测试账号可设置头衔' });
+      return;
+    }
+    const t = String(title || '').trim();
+    if (t && !playerUnlockedTitles(name).includes(t)) {
+      if (cb) cb({ success: false, msg: '该头衔尚未解锁，暂不能使用' });
+      return;
+    }
+    usersData[name] = Object.assign({}, usersData[name], { title: t || undefined });
+    if (!usersData[name].title) delete usersData[name].title;
+    if (!isTestAccount(name)) saveUsers(); // 测试账号只体验，不落盘
+    if (cb) cb({ success: true, title: playerTitle(name), titleChoice: (usersData[name].title || '') });
+  });
+
   // 大厅/各页拉取所有正式玩家的显示名
   socket.on('get_display_names', (cb) => {
     const map = {};
@@ -1158,6 +1322,78 @@ io.on('connection', (socket) => {
       success: true,
       list: timelineEntries.slice().reverse()
     });
+  });
+
+  // ========== 个人空间 / 排行榜 ==========
+  // 拉取某正式玩家的个人空间数据
+  socket.on('get_profile_page', (name, cb) => {
+    if (typeof cb !== 'function') return;
+    const target = String(name || '');
+    const caller = socketToUser.get(socket.id);
+    const isOfficial = OFFICIAL_ACCOUNT_NAMES.includes(target);
+    const isSelfTest = TEST_NAMES.includes(target) && caller === target; // 测试者只能看"自己"的测试空间
+    if (!isOfficial && !isSelfTest) {
+      if (cb) cb({ success: false, msg: '无权查看该个人空间' });
+      return;
+    }
+    const source = isTestAccount(target) ? achTestRecords : achRecords;
+    const recs = source.filter(r => r.playerName === target);
+    const achievements = recs.map(r => {
+      const meta = ACHIEVEMENTS[r.achievementId] || { name: r.achievementId, quality: 'common', game: '?' };
+      return {
+        id: r.achievementId, name: meta.name, quality: meta.quality, game: meta.game,
+        count: r.count, firstTime: r.firstTime, lastTime: r.lastTime
+      };
+    }).sort((a, b) => (ACH_QUALITY_NO[b.quality] || 0) - (ACH_QUALITY_NO[a.quality] || 0));
+    let stats;
+    if (isTestAccount(target)) {
+      stats = testProfileSeeds.get(target) || { totals: { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0 }, byGame: [] };
+    } else {
+      stats = { totals: summarizeProfileStats(target), byGame: buildProfileByGame(target) };
+    }
+    const online = onlineUsers.has(target);
+    const onlineRec = onlineUsers.get(target);
+    cb({
+      success: true,
+      name: target,
+      displayName: getDisplayName(target),
+      title: playerTitle(target),
+      theme: (usersData[target] && usersData[target].theme) || 'initial',
+      online,
+      lastSeen: online ? (onlineRec && onlineRec.lastSeen) : (userLastOnline.get(target) || null),
+      stats,
+      achievements,
+      totalAch: Object.keys(ACHIEVEMENTS).length
+    });
+  });
+
+  // 排行榜：快艇战绩榜 + 成就榜（正式玩家数据；开发期数据随内存）
+  socket.on('get_leaderboard', (cb) => {
+    if (typeof cb !== 'function') return;
+    // 快艇榜：单局最高分（正式/测试/游客真实对局都计入；高分优先，平分按名字排）
+    const gamesArr = [];
+    for (const [name, best] of highScoreBoard) {
+      gamesArr.push({
+        name,
+        displayName: OFFICIAL_ACCOUNT_NAMES.includes(name) ? getDisplayName(name) : name,
+        title: playerTitle(name),
+        best
+      });
+    }
+    gamesArr.sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
+    // 成就榜：仍只统计正式玩家
+    const achRow = new Map();
+    for (const r of achRecords) {
+      if (!OFFICIAL_ACCOUNT_NAMES.includes(r.playerName)) continue;
+      const row = achRow.get(r.playerName) || { count: 0 };
+      row.count++;
+      achRow.set(r.playerName, row);
+    }
+    const achArr = OFFICIAL_ACCOUNT_NAMES
+      .map(n => ({ name: n, displayName: getDisplayName(n), title: playerTitle(n), count: (achRow.get(n) || { count: 0 }).count }))
+      .filter(x => x.count > 0)
+      .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : 1));
+    if (cb) cb({ success: true, game: '快艇骰子', board: gamesArr, achBoard: achArr });
   });
 
   socket.on('start_game', () => {
@@ -1190,6 +1426,47 @@ io.on('connection', (socket) => {
         gameUrl: GAME_URL_MAP[room.gameType] + "?room=" + room.roomId
       });
     }, 300);
+  });
+
+  // ========== 取消对局：对局中任一玩家可发起，全员同意即取消；同意后可撤回 ==========
+  // 取消 = 本局直接结束并清空房间，不计入场次/胜率/排行榜；已触发的成就照常保留。
+  socket.on('vote_cancel', ({ revoke } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name) { if (cb) cb({ success: false, msg: '未识别身份' }); return; }
+    const room = Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && yahtzeeGames[r.roomId]);
+    if (!room) { if (cb) cb({ success: false, msg: '当前不在对局中' }); return; }
+    const game = yahtzeeGames[room.roomId];
+    if (game.phase !== 'playing' || !game.playerOrder.includes(name)) {
+      if (cb) cb({ success: false, msg: '当前无法取消' });
+      return;
+    }
+    if (game.mock) { if (cb) cb({ success: false, msg: '模拟局不可取消' }); return; }
+
+    if (revoke) {
+      // 撤回同意
+      game.cancelVotes = (game.cancelVotes || []).filter(n => n !== name);
+      broadcastYahtzeeState(room.roomId);
+      if (cb) cb({ success: true, phase: game.phase, votes: game.cancelVotes.slice(), total: game.playerOrder.length });
+      return;
+    }
+
+    if (!game.cancelVotes.includes(name)) game.cancelVotes.push(name);
+    const total = game.playerOrder.length;
+    if (game.cancelVotes.length >= total && total >= 1) {
+      game.phase = 'cancelled';
+      console.log(`❌ 对局全员同意取消：${room.roomId}（不计战绩；已触发成就保留）`);
+      // 房间清理：与正常结束一致，兜底定时器（就绪复位 + 删对局），期间玩家可返回房间
+      if (!gameEndTimers[room.roomId]) {
+        gameEndTimers[room.roomId] = setTimeout(() => {
+          delete yahtzeeGames[room.roomId];
+          delete gameEndTimers[room.roomId];
+          Object.keys(room.seats).forEach(seatId => { if (room.seats[seatId]) room.seats[seatId].ready = false; });
+          broadcastRoom(room);
+        }, 30000);
+      }
+    }
+    broadcastYahtzeeState(room.roomId);
+    if (cb) cb({ success: true, phase: game.phase, votes: game.cancelVotes.slice(), total });
   });
 
   socket.on('yahtzee_action', ({ action, index, category }) => {
@@ -1339,10 +1616,10 @@ setInterval(() => {
 // 测试账号成就永远只存内存（不读不写文件）
 if (PERSIST_ACHIEVEMENTS) {
   achRecords = loadAchRecords(ACH_FILE, []);
-  console.log(`✅ 正式成就数据已加载：${achRecords.length} 条`);
+  console.log(`✅ 成就系统【正式落盘模式】：已启用环境变量 PERSIST_ACHIEVEMENTS=true，正式玩家成就写入 data/achievements.json`);
 } else {
   achRecords = [];
-  console.log('🧪 成就系统处于【内存模式】：成就重启即刷新，不写入 data/（正式版将 PERSIST_ACHIEVEMENTS 改为 true 即落盘）');
+  console.log('🧪 成就系统处于【内存模式】：默认开发/测试用，重启即刷新、不写入 data/（正式部署时设置环境变量 PERSIST_ACHIEVEMENTS=true 即落盘）');
 }
 achTestRecords = []; // 测试者成就始终内存态
 
@@ -1354,10 +1631,10 @@ console.log(`✅ 用户档案已加载：${Object.keys(usersData).length} 位玩
 if (PERSIST_TIMELINE) {
   try { timelineEntries = JSON.parse(fs.readFileSync(TIMELINE_FILE, 'utf8')) || []; }
   catch (e) { timelineEntries = []; }
-  console.log(`✅ 时光墙已加载：${timelineEntries.length} 条`);
+  console.log(`✅ 时光墙【正式落盘模式】：已启用环境变量 PERSIST_TIMELINE=true，已加载 ${timelineEntries.length} 条记录`);
 } else {
   timelineEntries = [];
-  console.log('🧪 时光墙处于【内存模式】：重启即清空（正式版将 PERSIST_TIMELINE 置 true 即落盘）');
+  console.log('🧪 时光墙处于【内存模式】：默认开发/测试用，重启即清空（正式部署时设置环境变量 PERSIST_TIMELINE=true 即落盘）');
 }
 
 // ========== 留言板（开发期内存，重启即清空；正式版可仿照 PERSIST_ACHIEVEMENTS 加落盘） ==========

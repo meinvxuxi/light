@@ -222,6 +222,8 @@
     .player-card:last-child { border-right: none; }
     .player-card.offline { opacity: .7; }
     .player-card .name { font-size: .95rem; }
+    .player-card .p-title { font-size: .68rem; color: #b6bec9; margin-left: 5px; font-weight: 400; letter-spacing: .5px; }
+    .player-card.online .p-title { color: #9aa5b1; }
     .player-card.online .status-text { color: #27ae60; font-weight: 600; }
     .guest-toggle { background: none; border: none; color: #6b7a90; font-size: .8rem; padding: 2px 4px; }
     .guest-toggle:hover { color: #4a90d9; }
@@ -294,8 +296,8 @@
       <div class="func-links">
         <span class="f-link" data-guest-hide onclick="window.location.href='/achievements.html'">荣誉墙</span>
         <span class="f-link" data-guest-hide onclick="window.location.href='/timeline.html'">时光墙</span>
-        <span class="f-link" data-guest-hide onclick="showWip('个人空间')">个人空间</span>
-        <span class="f-link" onclick="showWip('排行榜')">排行榜</span>
+        <span class="f-link" data-guest-hide onclick="window.location.href='/profile.html?name=' + encodeURIComponent(sessionStorage.getItem('playerName') || '')">个人空间</span>
+        <span class="f-link" onclick="window.location.href='/leaderboard.html'">排行榜</span>
         <span class="f-link" data-guest-hide onclick="showWip('默契空间')">默契空间</span>
       </div>
     </section>
@@ -368,7 +370,7 @@ if (isTest && sessionStorage.getItem('isGuest') !== 'true') {
       const s = document.createElement('style');
       s.id = 'dynThemeStyle';
       const scoped = (prefix, selList) => selList.split(',').map(x => prefix + ' ' + x.trim()).join(',');
-      const col = '.back,.back:hover,.g-hall,.save,.mini-link,.l-link,.l-link:hover,.gear,.gear:hover,.guest-toggle:hover,.f-link:hover,.theme-opt.active,.p-tri:hover,.player-card.online .status-text';
+      const col = '.back,.back:hover,.g-hall,.save,.mini-link,.l-link,.l-link:hover,.gear,.gear:hover,.guest-toggle:hover,.f-link:hover,.theme-opt.active,.p-tri:hover,.player-card.online .p-title,.player-card.online .status-text';
       const btn = '.controls #btnStart,.btn-roll';
       const pink =
         scoped('body.dyn-pink', col) + '{color:#f06292!important}' +
@@ -475,11 +477,17 @@ if (isTest && sessionStorage.getItem('isGuest') !== 'true') {
 
       const box = document.getElementById('onlineUsers');
       box.innerHTML = reg.map(p => `
-        <div class="player-card ${p.online ? 'online' : 'offline'}">
-          <div class="name">${dispName(p.name)} ${p.guest ? '<span class="guest-tag">游客</span>' : ''}</div>
+        <div class="player-card ${p.online ? 'online' : 'offline'}" data-name="${p.name}">
+          <div class="name">${dispName(p.name)}${p.title ? `<span class="p-title">${p.title}</span>` : ''}</div>
           <div class="status-text">${p.online ? '在线' : '离线'}</div>
         </div>
       `).join('');
+      box.querySelectorAll('.player-card[data-name]').forEach(c => {
+        c.addEventListener('dblclick', () => {
+          if (sessionStorage.getItem('isGuest') === 'true') return;
+          window.location.href = '/profile.html?name=' + encodeURIComponent(c.getAttribute('data-name'));
+        });
+      });
 
       document.getElementById('guestCount').textContent = guests.length;
       document.getElementById('guestList').innerHTML = guests.length

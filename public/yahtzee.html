@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🎲 快艇骰子 · 联机版</title>
+  <title>快艇骰子 · 联机版</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #f0f2f5; color: #2c3e50; font-family: 'Segoe UI', 'PingFang SC', sans-serif; padding: 16px; }
@@ -15,14 +15,14 @@
     .status.wait { color: #6c757d; }
     .info { text-align: center; color: #6c757d; margin: 6px 0; font-size: .85rem; }
 
-    /* ---- 玩家实时状态条：名字 + 实时骰子 + 总分 ---- */
-    .player-strips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 12px; }
-    .pstrip { background: #fff; border: 2px solid #dee2e6; border-radius: 12px; padding: 6px 10px 8px; min-width: 118px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.04); transition: all .2s; }
-    .pstrip.me { border-color: #4a90d9; }
-    .pstrip.turn { border-color: #f0c040; background: #fffbea; box-shadow: 0 0 0 3px rgba(240,192,64,.25); }
-    .pstrip .pname { font-size: .8rem; font-weight: 700; margin-bottom: 4px; white-space: nowrap; }
-    .pstrip .pname small { font-weight: 400; color: #6c757d; }
-    .pstrip .ptotal { font-size: .85rem; font-weight: 800; color: #4a90d9; margin-top: 3px; }
+    /* ---- 玩家实时状态条：名字 + 实时骰子 + 总分（无卡片、细下划线风格） ---- */
+    .player-strips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; margin: 2px 0 14px; }
+    .pstrip { background: none; border: none; border-radius: 0; box-shadow: none; border-bottom: 2px solid transparent; padding: 2px 2px 6px; min-width: 104px; text-align: center; }
+    .pstrip.turn { border-bottom-color: #f0c040; }
+    .pstrip .pname { font-size: .8rem; font-weight: 700; margin-bottom: 3px; white-space: nowrap; color: #2c3e50; }
+    .pstrip.me .pname { color: #4a90d9; }
+    .pstrip .pname small { font-weight: 400; color: #8a97a5; margin-left: 2px; }
+    .pstrip .ptotal { font-size: .8rem; font-weight: 700; color: #6b7a90; margin-top: 3px; }
     .mdice { display: flex; justify-content: center; gap: 3px; }
     .mdie { width: 21px; height: 21px; border-radius: 5px; background: #fff; border: 1.5px solid #adb5bd; font-size: .72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
     .mdie.hl { border-color: #4a90d9; background: #eaf2fb; }
@@ -38,6 +38,13 @@
     .btn-roll { background: #4a90d9; color: #fff; }
     .btn-submit { background: #27ae60; color: #fff; }
     .roll-info { margin-left: 6px; font-size: .85rem; color: #6c757d; }
+    .cancel-row { text-align: center; margin: -2px 0 10px; }
+    .cancel-link { color: #e74c3c; font-size: .78rem; text-decoration: underline; cursor: pointer; }
+    .revoke-link { color: #6b7a90; font-size: .78rem; cursor: pointer; }
+    .revoke-link:hover { color: #e74c3c; text-decoration: underline; }
+    .pname .cv { color: #e74c3c; font-size: .68rem; margin-left: 4px; }
+    .cancel-result { text-align: center; margin: 0 auto 12px; }
+    .cancel-result .cr-tip { color: #e67e22; font-size: .9rem; margin-bottom: 12px; }
 
     /* ---- 合并计分总表：行=计分类别，列=每位玩家 ---- */
     .score-table-wrap { overflow-x: auto; max-width: 760px; margin: 0 auto; background: #fff; border-radius: 12px; box-shadow: 0 1px 6px rgba(0,0,0,.05); }
@@ -54,19 +61,25 @@
     .score-table tr.section td { background: #eef1f4; color: #495057; font-weight: 700; text-align: center; letter-spacing: 4px; }
     .score-table tr.total-row td { background: #eaf2fb; font-weight: 800; }
     .score-table tr.sum-row td { background: #f7f9fb; font-weight: 700; color: #495057; }
-    .score-table td.pickable { cursor: pointer; background: #eafaf1; color: #1e8449; font-weight: 700; box-shadow: inset 0 0 0 2px #27ae60; }
-    .score-table td.picked { background: #f0c040 !important; color: #1a1a2e; box-shadow: inset 0 0 0 2px #d4a820; }
+    .score-table td.pickable { cursor: pointer; color: #4a90d9; font-weight: 700; }
+    .score-table td.picked { background: rgba(74,144,217,.16) !important; color: #2f6fb2; box-shadow: inset 0 0 0 2px rgba(74,144,217,.7); }
     .score-table td .pv { color: #4a90d9; font-weight: 600; }
-    .score-table td.picked .pv { color: #1a1a2e; }
-    /* ---- 结算结果面板（游戏结束后显示） ---- */
-    .result-panel { display: none; max-width: 460px; margin: 6px auto 14px; background: #fff; border-radius: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.08); padding: 14px 18px; text-align: center; border: 2px solid #f0c040; }
+    .score-table td.picked .pv { color: #2f6fb2; }
+    /* ---- 结算结果面板（无卡片：分隔线列表排版） ---- */
+    .result-panel { display: none; max-width: 480px; margin: 4px auto 16px; text-align: center; }
     .result-panel.visible { display: block; }
-    .result-panel h2 { font-size: 1.15rem; margin-bottom: 8px; }
-    .result-panel .rank-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-radius: 8px; margin: 4px 0; font-size: .9rem; }
-    .result-panel .rank-row.me { background: #eaf2fb; }
-    .result-panel .rank-row.champ { background: #fff7dd; border: 1px solid #f0c040; font-weight: 700; }
-    .result-panel .btn-back { background: #4a90d9; color: #fff; width: 100%; margin-top: 10px; padding: 10px; font-size: .95rem; }
-    .result-panel .btn-back:disabled { background: #c0c7cf; }
+    .result-panel h2 { font-size: .92rem; letter-spacing: 3px; color: #6b7a90; margin: 0 0 10px; font-weight: 700; }
+    .result-panel .rank-row { display: flex; align-items: baseline; gap: 8px; padding: 8px 6px; border-bottom: 1px dashed #e8ecf1; font-size: .95rem; }
+    .result-panel .rank-row:last-of-type { border-bottom: none; }
+    .result-panel .rank-row .rk { width: 26px; flex: none; color: #9aa5b1; font-size: .82rem; }
+    .result-panel .rank-row .nm { color: #2c3e50; font-weight: 600; }
+    .result-panel .rank-row.me .nm { color: #4a90d9; }
+    .result-panel .rank-row.champ .nm { color: #d4890a; font-weight: 800; }
+    .result-panel .rank-row .tag-champ { color: #d4890a; font-size: .72rem; border: 1px solid #e4b85c; padding: 0 7px; border-radius: 12px; line-height: 1.6; }
+    .result-panel .rank-row .sc { margin-left: auto; color: #6b7a90; font-size: .9rem; }
+    .result-panel .btn-back { margin-top: 16px; padding: 9px 30px; border: none; border-radius: 8px; background: #4a90d9; color: #fff; font-size: .9rem; font-weight: 600; cursor: pointer; }
+    .result-panel .btn-back:hover { background: #357abd; }
+    .result-panel .btn-back:disabled { background: #c0c7cf; cursor: not-allowed; }
     /* ---- 测试者开发者工具（直接结算） ---- */
     .dev-fab { display: none; position: fixed; right: 14px; bottom: 14px; background: #1a1a2e; color: #f0c040; border: none; border-radius: 22px; padding: 8px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; opacity: .85; z-index: 999; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
     .dev-fab:hover { opacity: 1; }
@@ -109,6 +122,26 @@
     body.theme-p1 .btn-roll { background: #f06292; }
     body.theme-p1 .btn-roll:hover { background: #e0507f; }
     body.theme-p1 .toast, body.theme-p1 .home-toast { background: #a0345c; }
+    /* ===== 粉/绿主题动态覆盖（body.dyn-* 由主题引擎切换） ===== */
+    body.dyn-pink .status.turn { color: #f06292; }
+    body.dyn-pink .pstrip.me .pname { color: #f06292; }
+    body.dyn-pink .die.kept { border-color: #f06292; }
+    body.dyn-pink .result-panel .btn-back { background: #f06292; }
+    body.dyn-pink .result-panel .btn-back:hover { background: #e0507f; }
+    body.dyn-pink .result-panel .rank-row.me .nm { color: #f06292; }
+    body.dyn-green .status.turn { color: #6f9e63; }
+    body.dyn-green .pstrip.me .pname { color: #6f9e63; }
+    body.dyn-green .die.kept { border-color: #6f9e63; }
+    body.dyn-green .result-panel .btn-back { background: #6f9e63; }
+    body.dyn-green .result-panel .btn-back:hover { background: #5b8a50; }
+    body.dyn-green .result-panel .rank-row.me .nm { color: #6f9e63; }
+    /* ---- 计分表选中格：未选中无高亮，选中后=半透明主题色 ---- */
+    body.dyn-pink .score-table td.pickable { color: #e0507f; }
+    body.dyn-pink .score-table td.picked { background: rgba(240,98,146,.16) !important; color: #d8567f; box-shadow: inset 0 0 0 2px rgba(240,98,146,.7); }
+    body.dyn-pink .score-table td.picked .pv { color: #d8567f; }
+    body.dyn-green .score-table td.pickable { color: #5b8a50; }
+    body.dyn-green .score-table td.picked { background: rgba(111,158,99,.18) !important; color: #5b8a50; box-shadow: inset 0 0 0 2px rgba(111,158,99,.7); }
+    body.dyn-green .score-table td.picked .pv { color: #5b8a50; }
   </style>
 </head>
 <body>
@@ -120,7 +153,7 @@
     <span class="g-hall" onclick="goHallFromGame()">返回大厅</span>
   </div>
 
-  <h1>🎲 快艇骰子</h1>
+  <h1>快艇骰子</h1>
   <div class="status wait" id="status">加载游戏中...</div>
 
   <!-- 玩家实时状态条：名字 + 实时骰子 + 总分 -->
@@ -128,11 +161,19 @@
 
   <!-- 我的骰子操作区（掷骰 / 保持） -->
   <div class="dice-area" id="diceArea"></div>
-  <div class="controls">
-    <button class="btn-roll" id="rollBtn" onclick="roll()">🎲 掷骰子</button>
-    <button class="btn-submit" id="submitBtn" onclick="submitScore()" disabled>✅ 提交计分</button>
+  <div class="controls" id="controlsArea">
+    <button class="btn-roll" id="rollBtn" onclick="roll()">掷骰子</button>
+    <button class="btn-submit" id="submitBtn" onclick="submitScore()" disabled>提交计分</button>
     <span class="roll-info" id="rollInfo">剩余重掷：2次</span>
   </div>
+
+  <!-- 取消本局（对局中的每位玩家可见；点取消需确认，同意后可撤回） -->
+  <div class="cancel-row" id="cancelRow" style="display:none;">
+    <span class="cancel-link" id="cancelLink" onclick="voteCancel()">取消本局</span>
+    <span class="revoke-link" id="revokeLink" style="display:none;" onclick="revokeCancel()">已同意取消（0/0）· 撤回</span>
+  </div>
+  <!-- 本局被取消的提示（替代结算面板） -->
+  <div class="cancel-result" id="cancelResult" style="display:none;"></div>
 
   <!-- 结算结果面板（游戏结束后显示：最终排名 + 返回房间） -->
   <div class="result-panel" id="resultPanel"></div>
@@ -325,10 +366,11 @@
         const t = getTotal(p);
         const isMe = name === myName;
         const isTurn = name === gs.currentPlayer;
+        const showDice = gs.phase !== 'finished';
         return `
           <div class="pstrip ${isMe ? 'me' : ''} ${isTurn ? 'turn' : ''}">
-            <div class="pname">${dn(name)} ${isMe ? '<small>(你)</small>' : ''} ${isTurn ? '<small>🎲行动中</small>' : ''}</div>
-            ${miniDiceHtml(p, isTurn)}
+            <div class="pname">${dn(name)} ${isMe ? '<small>(你)</small>' : ''} ${isTurn ? '<small>行动中</small>' : ''}${(gs.cancelVotes || []).includes(name) ? '<span class="cv">已同意取消</span>' : ''}</div>
+            ${showDice ? miniDiceHtml(p, isTurn) : ''}
             <div class="ptotal">总分 ${t.total}</div>
           </div>`;
       }).join('');
@@ -348,7 +390,7 @@
           `<div class="die ${myData.kept[i] ? 'kept' : ''} ${!isMyTurn ? 'locked' : ''}" onclick="${isMyTurn ? `toggleKeep(${i})` : ''}">${v}</div>`
         ).join('');
       } else {
-        diceDiv.innerHTML = '<div class="info">👀 观战中：上方可实时看到每位玩家的骰子与总分</div>';
+        diceDiv.innerHTML = '<div class="info">观战中：上方可实时看到每位玩家的骰子与总分</div>';
       }
     }
     // ========== 合并计分总表 ==========
@@ -424,21 +466,57 @@
       const gs = gameState;
       const order = gs.playerOrder || Object.keys(gs.players);
       const myData = gs.players[myName];
+      const diceBox = document.getElementById('diceArea');
+      const ctrls = document.getElementById('controlsArea');
+      const stripBox = document.getElementById('playerStrips');
+      const cancelRow = document.getElementById('cancelRow');
+      const cancelLink = document.getElementById('cancelLink');
+      const revokeLink = document.getElementById('revokeLink');
+      const cancelResult = document.getElementById('cancelResult');
+      const votes = gs.cancelVotes || [];
+      const ended = gs.phase === 'finished' || gs.phase === 'cancelled';
 
       // 顶部状态
       const statusEl = document.getElementById('status');
-      if (gs.phase === 'finished') {
-        statusEl.className = 'status wait';
-        statusEl.textContent = '🏁 游戏结束！' + (myData ? ` 你的总分：${getTotal(myData).total}` : '');
-        renderResultPanel();   // 显示最终排名 + 返回房间按钮
-      } else {
-        document.getElementById('resultPanel').className = 'result-panel'; // 隐藏结算面板
-        if (isMyTurn) {
-          statusEl.className = 'status turn';
-          statusEl.textContent = `🎲 轮到你了！第 ${gs.round} / 13 轮`;
+      if (ended) {
+        diceBox.style.display = 'none';   // 结束态隐藏骰子区
+        ctrls.style.display = 'none';     // 结束态隐藏掷骰/提交按钮
+        stripBox.style.display = 'none';  // 结束态隐藏玩家条
+        cancelRow.style.display = 'none';
+        if (gs.phase === 'cancelled') {
+          statusEl.className = 'status wait';
+          statusEl.textContent = '本局已取消，不记录战绩';
+          document.getElementById('resultPanel').className = 'result-panel'; // 隐藏结算面板
+          renderCancelNotice();
         } else {
           statusEl.className = 'status wait';
-          statusEl.textContent = `⏳ 等待 ${dn(gs.currentPlayer)} 掷骰...（第 ${gs.round} / 13 轮）`;
+          statusEl.textContent = '游戏结束！' + (myData ? ` 你的总分：${getTotal(myData).total}` : '');
+          renderResultPanel();   // 显示最终排名 + 返回房间按钮
+        }
+      } else {
+        document.getElementById('resultPanel').className = 'result-panel'; // 隐藏结算面板
+        cancelResult.style.display = 'none';
+        diceBox.style.display = '';
+        ctrls.style.display = '';
+        stripBox.style.display = '';
+        // 取消本局入口：仅对局中的玩家可见（未同意=取消按钮带进度；已同意=撤回入口）
+        if (myData) {
+          cancelRow.style.display = 'block';
+          const n = votes.length, m = gs.playerOrder.length;
+          const agreed = votes.includes(myName);
+          cancelLink.style.display = agreed ? 'none' : '';
+          cancelLink.textContent = `取消本局（已同意 ${n}/${m}）`;
+          revokeLink.style.display = agreed ? '' : 'none';
+          revokeLink.textContent = `已同意取消（${n}/${m}）· 撤回`;
+        } else {
+          cancelRow.style.display = 'none';
+        }
+        if (isMyTurn) {
+          statusEl.className = 'status turn';
+          statusEl.textContent = `轮到你了！第 ${gs.round} / 13 轮`;
+        } else {
+          statusEl.className = 'status wait';
+          statusEl.textContent = `等待 ${dn(gs.currentPlayer)} 掷骰...（第 ${gs.round} / 13 轮）`;
         }
       }
 
@@ -465,6 +543,21 @@
         <tbody>${rows}</tbody>`;
     }
 
+    // ========== 取消对局：确认后投同意票；同意后可从底部入口撤回 ==========
+    function voteCancel() {
+      if (!confirm('确定要取消本局吗？全员同意后将结束本局，不计入场次与胜率（已触发成就保留）。')) return;
+      socket.emit('vote_cancel', {}, () => {});
+    }
+    function revokeCancel() {
+      socket.emit('vote_cancel', { revoke: true }, () => {});
+    }
+    function renderCancelNotice() {
+      const el = document.getElementById('cancelResult');
+      el.style.display = 'block';
+      el.innerHTML = `<div class="cr-tip">本局已被全员同意取消：不计入场次与胜率，已触发的成就保留。</div>
+        <button class="btn-roll" onclick="backToRoom()">返回房间</button>`;
+    }
+
     // ========== 结算面板：最终排名 + 返回房间 ==========
     function renderResultPanel() {
       const gs = gameState;
@@ -472,17 +565,20 @@
       const list = order.map(name => ({ name, total: getTotal(gs.players[name]).total }));
       list.sort((a, b) => b.total - a.total);
 
-      // 名次：同分给相同名次
+      // 名次：同分给相同名次（统一中文数字）
+      const CN_NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
       let rank = 0, prevTotal = null;
       const rows = list.map((it, i) => {
         if (prevTotal === null || it.total !== prevTotal) rank = i + 1;
         prevTotal = it.total;
-        const medal = rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : `${rank}`;
+        const rankCn = CN_NUM[rank - 1] || String(rank);
         const isChamp = rank === 1;
         const isMe = it.name === myName;
         return `<div class="rank-row ${isChamp ? 'champ' : ''} ${isMe ? 'me' : ''}">
-          <span>${medal} ${dn(it.name)}${isMe ? '（你）' : ''}${isChamp ? ' 🏆冠军' : ''}</span>
-          <span>${it.total} 分</span>
+          <span class="rk">${rankCn}</span>
+          <span class="nm">${dn(it.name)}${isMe ? '（你）' : ''}</span>
+          ${isChamp ? '<span class="tag-champ">冠军</span>' : ''}
+          <span class="sc">${it.total} 分</span>
         </div>`;
       }).join('');
 
@@ -490,8 +586,8 @@
 
       const panel = document.getElementById('resultPanel');
       panel.className = 'result-panel visible';
-      panel.innerHTML = `<h2>🏁 最终排名</h2>${rows}${achHtml}
-        <button class="btn-back" onclick="backToRoom()">🚪 返回房间</button>`;
+      panel.innerHTML = `<h2>最终排名</h2>${rows}${achHtml}
+        <button class="btn-back" onclick="backToRoom()">返回房间</button>`;
     }
 
     // ========== 成就：结算汇总展示 + 即时横幅 ==========
@@ -502,7 +598,7 @@
       const lines = entries.map(([pname, arr]) =>
         `<div class="ach-player">${dn(pname)}：${arr.map(a => `<span class="ach-q-${a.quality}">${a.name}</span>`).join('、')}</div>`
       ).join('');
-      return `<div class="ach-block"><h3>🏅 本局成就</h3>${lines}</div>`;
+      return `<div class="ach-block"><h3>本局成就</h3>${lines}</div>`;
     }
 
     // 结算时服务器广播"本局成就汇总"（含即时成就，标明达成玩家）
@@ -515,7 +611,7 @@
     function showAchBanner(data) {
       if (!data || !data.name) return;
       const el = document.getElementById('achBanner');
-      el.innerHTML = `🎉 <b>${dn(data.playerName)}</b> 获得成就 <b>${data.name}</b>`;
+      el.innerHTML = `<b>${dn(data.playerName)}</b> 获得成就 <b>${data.name}</b>`;
       el.className = 'ach-banner show q-' + (data.quality || 'common');
       clearTimeout(achBannerTimer);
       achBannerTimer = setTimeout(() => { el.className = 'ach-banner'; }, 3200);

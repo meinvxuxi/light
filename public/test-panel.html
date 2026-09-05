@@ -104,6 +104,16 @@
     </p>
   </div>
 
+  <!-- 个人空间测试 -->
+  <div class="panel">
+    <h3>👤 个人空间（仅测试账号，自己可见的模拟数据）</h3>
+    <button class="btn-trigger" onclick="seedProfile()">生成模拟战绩</button>
+    <button class="btn-info" onclick="window.location.href='/profile.html?name=' + encodeURIComponent(sessionStorage.getItem('playerName'))">查看我的个人空间</button>
+    <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
+      点击生成后，个人空间会显示一组模拟的快艇战绩（2/3/4人模式），配合上方一键触发成就可预览头衔效果；全部仅存内存，重启即清空，不影响任何正式数据。
+    </p>
+  </div>
+
   <!-- 数据管理 -->
   <div class="panel">
     <h3>💾 数据管理</h3>
@@ -151,6 +161,16 @@
           log('✅ 已触发：' + ((res && res.achievementName) || id) + '（内存记录，重启即清空）');
         } else {
           log('❌ ' + ((res && res.msg) || '触发失败'));
+        }
+      });
+    }
+
+    function seedProfile() {
+      socket.emit('dev_seed_profile', (res) => {
+        if (res && res.success) {
+          log('✅ 已生成模拟战绩（2/3/4人模式共 6 场），点「查看我的个人空间」预览');
+        } else {
+          log('❌ ' + ((res && res.msg) || '生成失败'));
         }
       });
     }
