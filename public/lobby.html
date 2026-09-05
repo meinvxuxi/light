@@ -240,7 +240,7 @@
   <div class="topline">
     <span class="who" id="myName">...</span>
     <span class="top-right">
-      <button class="gear" onclick="showWip('设置')">设置</button>
+      <button class="gear" onclick="window.location.href='/settings.html'">设置</button>
       <button class="exit" id="leave-room-btn">退出</button>
     </span>
   </div>
@@ -318,6 +318,16 @@ if (isTest && sessionStorage.getItem('isGuest') !== 'true') {
 
     document.getElementById('myName').textContent = myName;
 
+    // ===== 显示名（用户档案昵称）=====
+    let gNameMap = {};
+    function dispName(n) { return gNameMap[n] || n; }
+    socket.emit('get_display_names', (res) => {
+      if (res && res.success) {
+        gNameMap = res.map;
+        document.getElementById('myName').textContent = dispName(myName);
+      }
+    });
+
     // ==========================================
     // 🔒 不在本页重发密钥：客户端代码中不得出现密钥明文。
     // 在线状态由下方"心跳"自动续接（heartbeat 会带玩家名），
@@ -365,7 +375,7 @@ if (isTest && sessionStorage.getItem('isGuest') !== 'true') {
       const box = document.getElementById('onlineUsers');
       box.innerHTML = reg.map(p => `
         <div class="player-card ${p.online ? 'online' : 'offline'}">
-          <div class="name">${p.name} ${p.guest ? '<span class="guest-tag">游客</span>' : ''}</div>
+          <div class="name">${dispName(p.name)} ${p.guest ? '<span class="guest-tag">游客</span>' : ''}</div>
           <div class="status-text">${p.online ? '在线' : '离线'}</div>
         </div>
       `).join('');
@@ -443,13 +453,13 @@ function mbRender() {
       const m = lastBy[n];
       if (!m) return;
       any = true;
-      el.appendChild(mbRow(n, m.text));
+      el.appendChild(mbRow(dispName(n), m.text));
     });
     if (!any) el.textContent = '还没有留言，点这里说第一句～';
   } else {
     // 游客板：取"最近有留言的三个游客"，各显示其最新一条
     const list = Object.values(lastByGuest).sort((a, b) => b.ts - a.ts).slice(0, 3);
-    if (list.length) list.forEach(m => el.appendChild(mbRow(m.name, m.text)));
+    if (list.length) list.forEach(m => el.appendChild(mbRow(dispName(m.name), m.text)));
     else el.textContent = '还没有留言，点这里说第一句～';
   }
 }

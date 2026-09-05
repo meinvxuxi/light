@@ -62,6 +62,10 @@
     const QUALITY_ORDER = ['legend', 'epic', 'rare', 'common', 'hidden'];
     const QUALITY_LABEL = { legend: '传说', epic: '史诗', rare: '稀有', common: '普通', hidden: '隐藏' };
 
+    // ===== 显示名映射（服务器内部用真名，展示统一翻译成昵称）=====
+    let _dispMap = {};
+    function dn(n) { return _dispMap[n] || n; }
+
     function fmtTime(ts) {
       if (!ts) return '';
       const d = new Date(ts);
@@ -127,7 +131,7 @@
               : '· 首次：' + fmtTime(r.firstTime) + '<br>· 最近：' + fmtTime(r.lastTime);
             const dId = 'detail-' + id + '-' + r.playerName;
             const tId = 'tri-' + id + '-' + r.playerName;
-            const nameHtml = r.playerName + (r.isTest ? ' <em class="t-tag">测试</em>' : '');
+            const nameHtml = dn(r.playerName) + (r.isTest ? ' <em class="t-tag">测试</em>' : '');
             return `
               <div class="p-row">
                 <span class="p-name">${nameHtml}<em>x${r.count}</em></span>
@@ -152,6 +156,9 @@
 
     const socket = io();
     socket.on('connect', () => {
+      socket.emit('get_display_names', (res) => {
+        if (res && res.success) { _dispMap = res.map; render(); }
+      });
       socket.emit('get_achievements', (res) => {
         if (res && res.success) { achData = res; render(); }
         else document.getElementById('achList').innerHTML = '<div class="empty">加载失败，请刷新重试</div>';

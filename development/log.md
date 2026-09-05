@@ -5,7 +5,71 @@
 
 ---
 
-## 版本 3.2（2026-09-05）
+## 版本 3.6（2026-09-05）
+
+### 修改文件
+- server.js
+- public/settings.html
+
+### 修改原因
+1. 主题配色收敛为单一"初始"灰色：server THEMES 仅保留 initial；设置页只剩一个灰色圆点并注明"专属 UI 素材到位后再扩充可选主题"。
+
+### 当前版本
+- 3.6（上个版本 3.5，+0.1）
+
+
+
+### 修改文件
+- server.js
+- public/room.html
+- public/yahtzee.html
+
+### 修改原因
+1. "游戏进行中房间体验"（对局中进房）：
+   - server：room_update/syncRoomState 增加 gameStarted / gamePlayers；join_room 调整——对局进行中，本局玩家再次进房不入座也不进观战（前端给"返回游戏"），非本局玩家自动进观战；
+   - room.html：新增"对局中视图"——游戏进行中时隐藏入座/准备/人数设置等开赛操作，显示"本局进行中"与入口按钮（本局玩家=返回游戏 / 非玩家=进入观战），座位与观众列表始终可见；
+   - 补充 enterGame()：玩家/观战点击后跳回快艇游戏页。
+2. 游戏页（yahtzee.html）顶部新增"返回大厅"（玩家与观战者都可用；对局中离开会先确认并 leave_room）。
+
+### 当前版本
+- 3.5（上个版本 3.4，+0.1）
+
+
+
+### 修改文件
+- public/room.html
+- public/yahtzee.html
+- public/achievements.html
+- public/messages.html
+- public/lobby.html
+
+### 修改原因
+1. "显示名"全站统一（你问的"做个变量"→ 采用 `dn(内部名)` 统一翻译函数）：
+   - 服务器仍用内部名（玩家1~4）做逻辑与身份；前端每个页面 connect 后拉取一次 get_display_names，渲染名字处统一走 `dn()`（无昵称则显示原名）。
+   - 覆盖：房间（房主/座位/观战）、游戏页（玩家条/计分表表头/轮到谁/结算排名/成就横幅/本局成就）、荣誉墙（成就记录玩家名）、留言板（留言者名/游客判定保持内部名）、大厅（顶部/状态卡/留言摘要，之前 v3.3 已做并补摘要）。
+   - 逻辑比较（mySeat、currentPlayer、isAlreadySeated 等）仍用内部名，避免错乱。
+
+### 当前版本
+- 3.4（上个版本 3.3，+0.1）
+
+
+
+### 修改文件
+- server.js
+- public/settings.html（新建）
+- public/lobby.html
+
+### 修改原因
+1. ⚙️ 设置 / 用户档案第一版：
+   - server：`data/users.json` 正式玩家档案（昵称/主题，落盘保留）；get_profile / update_profile / get_display_names 事件；昵称限 12 字、唯一性校验；预置主题 THEMES（initial/ocean/forest/violet/sunset，先保存，视觉随"专属 UI"阶段应用）；
+   - 新建 settings.html（简洁风格：下划线式昵称输入 + 主题色块选择 + 保存）；游客/测试者提示无档案权限；
+   - 大厅接入：顶部昵称与四人状态卡改用档案显示名（未设置昵称则显示原名）。
+2. 大厅"设置"入口由"施工中"改为跳转 settings.html。
+
+### 当前版本
+- 3.3（上个版本 3.2，+0.1）
+
+
 
 ### 修改文件
 - public/index.html

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设置</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #f0f2f5; color: #2c3e50; font-family: 'Segoe UI', 'PingFang SC', sans-serif; padding: 16px 12px; }
+    .headbar { max-width: 600px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; font-size: .9rem; }
+    .title { font-weight: 700; font-size: 1.08rem; }
+    .back { color: #4a90d9; text-decoration: none; font-size: .88rem; }
+    .back:hover { text-decoration: underline; }
+    .wrap { max-width: 600px; margin: 0 auto; padding: 14px 6px 60px; }
+    .sec { margin-bottom: 18px; }
+    .lab { font-size: .76rem; color: #9aa5b1; letter-spacing: 1px; margin: 10px 0 6px; }
+    .line-input { width: 100%; background: transparent; border: none; border-bottom: 1px solid #9db4cc; color: #2c3e50; font-size: 1rem; outline: none; padding: 4px 2px; }
+    .hint { font-size: .78rem; color: #adb5bd; margin-top: 6px; }
+    .save { color: #4a90d9; font-size: .88rem; cursor: pointer; text-decoration: underline; margin-top: 10px; display: inline-block; }
+    .msg { font-size: .82rem; color: #e74c3c; margin-top: 8px; min-height: 16px; }
+    .msg.ok { color: #27ae60; }
+    .theme-row { display: flex; gap: 10px; margin-top: 6px; }
+    .theme-dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+    .theme-dot.active { border-color: #2c3e50; }
+    .note { font-size: .76rem; color: #adb5bd; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="headbar">
+    <span class="title">设置</span>
+    <a class="back" href="/lobby.html">返回大厅</a>
+  </div>
+
+  <div class="wrap">
+    <div class="sec" id="guestNote" style="display:none;">
+      <div class="lab">说明</div>
+      <div class="hint">游客暂无个人档案</div>
+    </div>
+
+    <div class="sec" id="editArea" style="display:none;">
+      <div class="lab">昵称</div>
+      <input class="line-input" id="nickInput" maxlength="12" placeholder="当前昵称（留空=用原名）" autocomplete="off">
+      <div class="hint">原名：<span id="realName">-</span> ｜ 显示为：<span id="curDisplay">-</span>　（2~12 字，中英文/数字/下划线）</div>
+      <span class="save" onclick="saveProfile()">保存昵称</span>
+    </div>
+
+    <div class="sec" id="themeArea" style="display:none;">
+      <div class="lab">主题配色</div>
+      <div class="theme-row" id="themeRow"></div>
+      <div class="note">当前仅"初始"灰色配色；专属角色 UI 素材到位后再扩充可选主题，并支持一键切回初始。</div>
+      <span class="save" onclick="saveTheme()">保存主题</span>
+    </div>
+
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const myName = sessionStorage.getItem('playerName');
+    if (!myName) { window.location.href = '/index.html'; }
+    const isGuest = sessionStorage.getItem('isGuest') === 'true';
+
+    const THEME_COLORS = { initial: '#6b7a90' };
+    let profile = null;
+
+    const msgEl = document.getElementById('msg');
+    function msg(text, ok) {
+      msgEl.textContent = text;
+      msgEl.className = 'msg' + (ok ? ' ok' : '');
+    }
+
+    function renderThemes(sel) {
+      document.getElementById('themeRow').innerHTML = Object.keys(THEME_COLORS).map(k =>
+        `<span class="theme-dot ${k === sel ? 'active' : ''}" style="background:${THEME_COLORS[k]}" title="${k}" onclick="pickTheme('${k}')"></span>`
+      ).join('');
+    }
+    function pickTheme(k) {
+      if (profile) profile.theme = k;
+      document.querySelectorAll('#themeRow .theme-dot').forEach(d => d.classList.toggle('active', d.getAttribute('title') === k));
+    }
+
+    function saveProfile() {
+      const n = document.getElementById('nickInput').value.trim();
+      msg('');
+      socket.emit('update_profile', { nickname: n, theme: profile.theme }, (res) => {
+        if (res && res.success) {
+          profile = res;
+          document.getElementById('curDisplay').textContent = res.displayName;
+          msg('昵称已保存', true);
+        } else {
+          msg((res && res.msg) || '保存失败');
+        }
+      });
+    }
+    function saveTheme() {
+      msg('');
+      socket.emit('update_profile', { nickname: profile.nickname, theme: profile.theme }, (res) => {
+        if (res && res.success) {
+          profile = res;
+          msg('主题已保存（效果随专属 UI 上线）', true);
+        } else {
+          msg((res && res.msg) || '保存失败');
+        }
+      });
+    }
+    document.getElementById('nickInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveProfile(); });
+
+    const socket = io();
+    function sendHeartbeat() {
+      if (socket.connected) socket.emit('heartbeat', sessionStorage.getItem('playerName'), sessionStorage.getItem('isTest') === 'true', false);
+    }
+    socket.on('connect', sendHeartbeat);
+    setInterval(sendHeartbeat, 10000);
+
+    socket.on('connect', () => {
+      socket.emit('get_profile', (res) => {
+        if (!res || !res.success) return;
+        profile = res;
+        if (!res.canEdit) { document.getElementById('guestNote').style.display = 'block'; return; }
+        document.getElementById('editArea').style.display = 'block';
+        document.getElementById('themeArea').style.display = 'block';
+        document.getElementById('realName').textContent = res.name;
+        document.getElementById('curDisplay').textContent = res.displayName;
+        document.getElementById('nickInput').placeholder = '当前昵称：' + (res.nickname || '（未设置）');
+        renderThemes(res.theme);
+      });
+    });
+  </script>
+</body>
+</html>

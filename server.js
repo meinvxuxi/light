@@ -67,6 +67,11 @@ const gameEndTimers = {}; // roomId -> 结算后自动清理对局的定时器�
 const DATA_DIR = path.join(__dirname, 'data');
 const ACH_FILE = path.join(DATA_DIR, 'achievements.json');        // 正式玩家成就
 const ACH_TEST_FILE = path.join(DATA_DIR, 'test-achievements.json'); // 测试账号成就（不影响正式数据）
+const USERS_FILE = path.join(DATA_DIR, 'users.json');              // 正式玩家档案（昵称/主题）
+
+// 正式玩家档案（内存态 + users.json 落盘）：开发期也落盘，便于测试改昵称/主题
+let usersData = {};
+const THEMES = ['initial']; // 主题：当前仅"初始"灰色；专属主题素材到位后再扩充可选配色
 
 // ⚙️ 持久化开关：开发/测试期=false（成就只存内存，重启即刷新、不写 data/）；
 // 正式版上线时改为 true，即自动恢复"读入 + 写入 data/ 文件"。
@@ -158,6 +163,32 @@ function announceAchievement(game, roomId, playerName, achievementId, repeatable
   });
 }
 
+// ========== 用户档案（昵称 / 主题） ==========
+const OFFICIAL_ACCOUNT_NAMES = ['玩家1', '玩家2', '玩家3', '玩家4']; // 可配置档案的正式账号
+function loadUsers() {
+  try { return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')) || {}; }
+  catch (e) { return {}; }
+}
+function saveUsers() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(USERS_FILE, JSON.stringify(usersData, null, 2));
+  } catch (e) { console.error('❌ 用户档案写入失败：', e.message); }
+}
+// 取显示名（设置了昵称则用昵称，否则用原名）
+function getDisplayName(name) {
+  const u = usersData[name];
+  return (u && u.nickname && u.nickname.trim()) ? u.nickname.trim() : name;
+}
+// 规范昵称：null 表示非法
+function normalizeNickname(raw) {
+  const n = String(raw || '').trim();
+  if (!n) return ''; // 空 = 清除昵称，回到原名
+  if (n.length > 12) return null;
+  if (!/^[\u4e00-\u9fa5A-Za-z0-9_·\s]{1,12}$/.test(n)) return null;
+  return n;
+}
+
 // 结算：对每名玩家广播"本局成就汇总"（含即时成就，标明达成玩家）
 function broadcastAchievementSummary(roomId, game) {
   if (!game || game.mock) return;
@@ -225,10 +256,13 @@ function transferHost(room) {
 
 function syncRoomState(room, selfName) {
   const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === selfName)?.[0] || null;
+  const nowGame = yahtzeeGames[room.roomId];
   const data = {
     roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers,
     seats: room.seats, spectators: room.spectators, mySeat,
-    myReady: mySeat ? room.seats[mySeat].ready : false
+    myReady: mySeat ? room.seats[mySeat].ready : false,
+    gameStarted: !!nowGame,
+    gamePlayers: nowGame ? nowGame.playerOrder : []
   };
   const sid = room.playerMap.get(selfName);
   if (sid && io.sockets.sockets.has(sid)) {
@@ -238,12 +272,17 @@ function syncRoomState(room, selfName) {
 
 function broadcastRoom(room) {
   transferHost(room);
+  const nowGame = yahtzeeGames[room.roomId];
+  const gameStarted = !!nowGame;
+  const gamePlayers = nowGame ? nowGame.playerOrder : [];
   io.to(room.roomId).emit('room_update', {
     roomId: room.roomId,
     hostName: room.hostName,
     maxPlayers: room.maxPlayers,
     seats: room.seats,
-    spectators: room.spectators
+    spectators: room.spectators,
+    gameStarted,
+    gamePlayers
   });
   room.playerMap.forEach((_, uname) => {
     const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === uname)?.[0] || null;
@@ -256,7 +295,9 @@ function broadcastRoom(room) {
         seats: room.seats,
         spectators: room.spectators,
         mySeat,
-        myReady: mySeat ? room.seats[mySeat].ready : false
+        myReady: mySeat ? room.seats[mySeat].ready : false,
+        gameStarted,
+        gamePlayers
       });
     }
   });
@@ -666,17 +707,25 @@ io.on('connection', (socket) => {
     const gameInProgress = yahtzeeGames[room.roomId];
     const seatedCount = Object.values(room.seats).filter(Boolean).length;
     const isAlreadySeated = Object.values(room.seats).some(s => s?.name === playerName);
+    const isGamePlayer = !!(gameInProgress && gameInProgress.playerOrder.includes(playerName));
 
     // 修复：先把"是否已在座"放在最前面判断。
-    // 玩家从游戏结算页返回房间时，他的座位还在（即使满座 4/4 或上一局刚结束），
-    // 若按旧逻辑会因"座位已满/游戏进行中"被判进观战 → 出现"坐着 + 观战"同时存在。
+    // 已在座（如从结算页返回）→ 保留座位并清观战；
+    // 对局进行中：
+    //   - 本局玩家再次进房 → 不入座也不进观战（前端给"返回游戏"入口）；
+    //   - 非本局玩家 → 加入观战。
+    // 未开局：满座→观战，否则自动坐空位。
     if (isAlreadySeated) {
-      room.spectators = room.spectators.filter(n => n !== playerName); // 同时在观战名单则清掉
-    } else if (gameInProgress || seatedCount >= room.maxPlayers) {
+      room.spectators = room.spectators.filter(n => n !== playerName);
+    } else if (gameInProgress && !isGamePlayer) {
       if (!room.spectators.includes(playerName)) {
         room.spectators.push(playerName);
       }
-    } else {
+    } else if (!gameInProgress && seatedCount >= room.maxPlayers) {
+      if (!room.spectators.includes(playerName)) {
+        room.spectators.push(playerName);
+      }
+    } else if (!gameInProgress) {
       let emptySeat = null;
       for (let i=1; i<=room.maxPlayers; i++) {
         if (!room.seats[i]) { emptySeat = i; break; }
@@ -998,6 +1047,52 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, type });
   });
 
+  // ========== 用户档案（设置页用） ==========
+  // 获取自己的档案
+  socket.on('get_profile', (cb) => {
+    const name = socketToUser.get(socket.id);
+    const u = usersData[name] || {};
+    if (typeof cb === 'function') cb({
+      success: true,
+      name,
+      displayName: getDisplayName(name),
+      nickname: (u.nickname || ''),
+      theme: (u.theme || 'initial'),
+      canEdit: OFFICIAL_ACCOUNT_NAMES.includes(name)
+    });
+  });
+
+  // 更新档案（昵称 / 主题）
+  socket.on('update_profile', ({ nickname, theme }, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || !OFFICIAL_ACCOUNT_NAMES.includes(name)) {
+      if (cb) cb({ success: false, msg: '只有正式玩家可以设置昵称' });
+      return;
+    }
+    const n = normalizeNickname(nickname);
+    if (n === null) { if (cb) cb({ success: false, msg: '昵称限 12 字以内（中英文/数字/下划线）' }); return; }
+    // 昵称唯一性：不能与其它玩家当前的昵称重复
+    for (const other of OFFICIAL_ACCOUNT_NAMES) {
+      if (other === name) continue;
+      if (getDisplayName(other) === n) {
+        if (cb) cb({ success: false, msg: '这个昵称已经被使用了，换一个吧' });
+        return;
+      }
+    }
+    const t = THEMES.includes(theme) ? theme : 'initial';
+    usersData[name] = Object.assign({}, usersData[name], { nickname: n || undefined, theme: t });
+    if (!usersData[name].nickname) delete usersData[name].nickname;
+    saveUsers();
+    if (cb) cb({ success: true, displayName: getDisplayName(name), nickname: usersData[name].nickname || '', theme: t });
+  });
+
+  // 大厅/各页拉取所有正式玩家的显示名
+  socket.on('get_display_names', (cb) => {
+    const map = {};
+    OFFICIAL_ACCOUNT_NAMES.forEach(k => { map[k] = getDisplayName(k); });
+    if (typeof cb === 'function') cb({ success: true, map });
+  });
+
   socket.on('start_game', () => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
@@ -1183,6 +1278,10 @@ if (PERSIST_ACHIEVEMENTS) {
   console.log('🧪 成就系统处于【内存模式】：成就重启即刷新，不写入 data/（正式版将 PERSIST_ACHIEVEMENTS 改为 true 即落盘）');
 }
 achTestRecords = []; // 测试者成就始终内存态
+
+// 加载正式玩家档案（昵称/主题 落盘 data/users.json）
+usersData = loadUsers();
+console.log(`✅ 用户档案已加载：${Object.keys(usersData).length} 位玩家配置了档案`);
 
 // ========== 留言板（开发期内存，重启即清空；正式版可仿照 PERSIST_ACHIEVEMENTS 加落盘） ==========
 const BOARD_MAX = 120; // 每块最多保留条数

@@ -7,6 +7,8 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #f0f2f5; color: #2c3e50; font-family: 'Segoe UI', 'PingFang SC', sans-serif; padding: 16px; }
+    .game-top { max-width: 760px; margin: 0 auto 4px; display: flex; justify-content: flex-end; }
+    .g-hall { color: #4a90d9; font-size: .84rem; cursor: pointer; text-decoration: underline; }
     h1 { text-align: center; margin-bottom: 6px; font-size: 1.5rem; }
     .status { text-align: center; margin-bottom: 12px; font-size: .92rem; }
     .status.turn { color: #4a90d9; font-weight: 700; }
@@ -107,6 +109,11 @@
   <!-- 成就即时解锁横幅 -->
   <div class="ach-banner" id="achBanner"></div>
 
+  <!-- 顶部：返回大厅（玩家/观战者都可用） -->
+  <div class="game-top">
+    <span class="g-hall" onclick="goHallFromGame()">返回大厅</span>
+  </div>
+
   <h1>🎲 快艇骰子</h1>
   <div class="status wait" id="status">加载游戏中...</div>
 
@@ -189,6 +196,13 @@
     socket.on('connect', sendHeartbeat);
     setInterval(sendHeartbeat, 10000);
 
+    // ===== 显示名映射（服务器内部用真名，展示统一翻译成昵称）=====
+    let _dispMap = {};
+    function dn(n) { return _dispMap[n] || n; }
+    socket.on('connect', () => {
+      socket.emit('get_display_names', (r) => { if (r && r.success) { _dispMap = r.map; updateUI(); } });
+    });
+
     // ========== 计分类别定义 ==========
     const CATEGORIES = [
       { id: 'ones', name: '1点' }, { id: 'twos', name: '2点' }, { id: 'threes', name: '3点' },
@@ -243,7 +257,7 @@
         const isTurn = name === gs.currentPlayer;
         return `
           <div class="pstrip ${isMe ? 'me' : ''} ${isTurn ? 'turn' : ''}">
-            <div class="pname">${name} ${isMe ? '<small>(你)</small>' : ''} ${isTurn ? '<small>🎲行动中</small>' : ''}</div>
+            <div class="pname">${dn(name)} ${isMe ? '<small>(你)</small>' : ''} ${isTurn ? '<small>🎲行动中</small>' : ''}</div>
             ${miniDiceHtml(p, isTurn)}
             <div class="ptotal">总分 ${t.total}</div>
           </div>`;
@@ -275,7 +289,7 @@
         <th class="cat-head">计分类别</th>
         ${order.map(name => {
           const cls = (name === myName ? 'col-me' : '') + ' ' + (name === gs.currentPlayer ? 'col-turn' : '');
-          return `<th class="${cls.trim()}">${name}${name === myName ? ' (你)' : ''}</th>`;
+          return `<th class="${cls.trim()}">${dn(name)}${name === myName ? ' (你)' : ''}</th>`;
         }).join('')}
       </tr>`;
 
@@ -354,7 +368,7 @@
           statusEl.textContent = `🎲 轮到你了！第 ${gs.round} / 13 轮`;
         } else {
           statusEl.className = 'status wait';
-          statusEl.textContent = `⏳ 等待 ${gs.currentPlayer} 掷骰...（第 ${gs.round} / 13 轮）`;
+          statusEl.textContent = `⏳ 等待 ${dn(gs.currentPlayer)} 掷骰...（第 ${gs.round} / 13 轮）`;
         }
       }
 
@@ -397,7 +411,7 @@
         const isChamp = rank === 1;
         const isMe = it.name === myName;
         return `<div class="rank-row ${isChamp ? 'champ' : ''} ${isMe ? 'me' : ''}">
-          <span>${medal} ${it.name}${isMe ? '（你）' : ''}${isChamp ? ' 🏆冠军' : ''}</span>
+          <span>${medal} ${dn(it.name)}${isMe ? '（你）' : ''}${isChamp ? ' 🏆冠军' : ''}</span>
           <span>${it.total} 分</span>
         </div>`;
       }).join('');
@@ -416,7 +430,7 @@
       const entries = Object.entries(gameSummary.players).filter(([, arr]) => arr && arr.length);
       if (!entries.length) return '';
       const lines = entries.map(([pname, arr]) =>
-        `<div class="ach-player">${pname}：${arr.map(a => `<span class="ach-q-${a.quality}">${a.name}</span>`).join('、')}</div>`
+        `<div class="ach-player">${dn(pname)}：${arr.map(a => `<span class="ach-q-${a.quality}">${a.name}</span>`).join('、')}</div>`
       ).join('');
       return `<div class="ach-block"><h3>🏅 本局成就</h3>${lines}</div>`;
     }
@@ -431,7 +445,7 @@
     function showAchBanner(data) {
       if (!data || !data.name) return;
       const el = document.getElementById('achBanner');
-      el.innerHTML = `🎉 <b>${data.playerName}</b> 获得成就 <b>${data.name}</b>`;
+      el.innerHTML = `🎉 <b>${dn(data.playerName)}</b> 获得成就 <b>${data.name}</b>`;
       el.className = 'ach-banner show q-' + (data.quality || 'common');
       clearTimeout(achBannerTimer);
       achBannerTimer = setTimeout(() => { el.className = 'ach-banner'; }, 3200);
@@ -450,6 +464,13 @@
       };
       socket.emit('return_room', () => go());
       setTimeout(go, 1500); // 兜底：服务器无响应也跳转
+    }
+
+    // 返回大厅（玩家/观战者都可用；对局中离开会退出房间）
+    function goHallFromGame() {
+      const inGame = gameState && gameState.phase === 'playing';
+      if (inGame && !confirm('确定离开当前对局、返回大厅吗？')) return;
+      socket.emit('leave_room', 'yahtzee', () => { window.location.href = '/lobby.html'; });
     }
 
     // ========== 操作函数 ==========

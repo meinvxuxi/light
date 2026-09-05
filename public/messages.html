@@ -97,7 +97,7 @@
         row.className = 'msg';
         const head = document.createElement('div');
         head.className = 'mhead';
-        head.textContent = m.name + ' · ' + fmtTime(m.ts);
+        head.textContent = dn(m.name) + ' · ' + fmtTime(m.ts);
         if (m.name.startsWith('游客')) {
           const g = document.createElement('span');
           g.className = 'g';
@@ -115,6 +115,13 @@
     }
 
     const socket = io();
+
+    // ===== 显示名映射（服务器内部用真名，展示统一翻译成昵称）=====
+    let _dispMap = {};
+    function dn(n) { return _dispMap[n] || n; }
+    socket.on('connect', () => {
+      socket.emit('get_display_names', (res) => { if (res && res.success) { _dispMap = res.map; render(); } });
+    });
 
     // 心跳：让服务器识别当前身份（留言页是新打开的页面/新连接，必须续接身份才能发留言）
     function sendHeartbeat() {

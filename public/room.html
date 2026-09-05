@@ -181,29 +181,40 @@
     <div>房主：<span id="hostName">---</span></div>
   </div>
 
-  <div class="settings" id="hostSettings" style="display:none;">
-    人数设置：
-    <select id="maxPlayersSelect" onchange="changeMaxPlayers()">
-      <option value="2">2人</option>
-      <option value="3">3人</option>
-      <option value="4" selected>4人</option>
-    </select>
-    <span style="color:#6c757d;font-size:0.8rem;">（仅房主可改）</span>
+  <!-- 对局进行中：显示提示与 返回游戏/进入观战 -->
+  <div id="gameZone" style="display:none;">
+    <div style="text-align:center; color:#4a90d9; font-size:.92rem; margin:6px 0;">本局进行中</div>
+    <div class="controls">
+      <button class="btn-primary" id="btnGameAction" onclick="enterGame()">返回游戏</button>
+    </div>
+  </div>
+
+  <!-- 开赛前操作区（准备/入座等；对局开始后隐藏） -->
+  <div id="preStartControls">
+    <div class="settings" id="hostSettings" style="display:none;">
+      人数设置：
+      <select id="maxPlayersSelect" onchange="changeMaxPlayers()">
+        <option value="2">2人</option>
+        <option value="3">3人</option>
+        <option value="4" selected>4人</option>
+      </select>
+      <span style="color:#6c757d;font-size:0.8rem;">（仅房主可改）</span>
+    </div>
+
+    <div class="controls">
+      <button class="btn-primary" id="btnTakeSeat" onclick="takeSeat()">入座</button>
+      <button class="btn-outline" id="btnSpectate" onclick="spectate()">观战</button>
+      <button class="btn-outline" id="btnReady" onclick="toggleReady()">准备</button>
+      <button class="btn-success" id="btnStart" onclick="startGame()">开始游戏</button>
+    </div>
+
+    <div class="controls">
+      <button class="btn-warning" id="btnLeaveSeat" onclick="leaveSeat()" style="display:none;">离开座位</button>
+    </div>
   </div>
 
   <div class="seats" id="seats"></div>
   <div class="spectator-list" id="spectatorList"></div>
-
-  <div class="controls">
-    <button class="btn-primary" id="btnTakeSeat" onclick="takeSeat()">入座</button>
-    <button class="btn-outline" id="btnSpectate" onclick="spectate()">观战</button>
-    <button class="btn-outline" id="btnReady" onclick="toggleReady()">准备</button>
-    <button class="btn-success" id="btnStart" onclick="startGame()">开始游戏</button>
-  </div>
-
-  <div class="controls">
-    <button class="btn-warning" id="btnLeaveSeat" onclick="leaveSeat()" style="display:none;">离开座位</button>
-  </div>
 
   <a href="#" class="back-link" onclick="goToLobby(); return false;">返回大厅</a>
 
@@ -236,6 +247,13 @@
     socket.on('connect', sendHeartbeat);   // 连接/重连后立即续接
     setInterval(sendHeartbeat, 10000);
 
+    // ===== 显示名映射（服务器内部用真名，展示统一翻译成昵称）=====
+    let _dispMap = {};
+    function dn(n) { return _dispMap[n] || n; }
+    socket.on('connect', () => {
+      socket.emit('get_display_names', (r) => { if (r && r.success) _dispMap = r.map; });
+    });
+
     socket.emit('join_room', { game: gameName, playerName: myName, isTest }, (res) => {
       console.log('📥 join_room 服务器回复:', JSON.stringify(res));
       if (!res || !res.roomId) {
@@ -253,7 +271,7 @@
     socket.on('room_update', (roomState) => {
       if (!roomState) return;
 
-      document.getElementById('hostName').textContent = roomState.hostName || '---';
+      document.getElementById('hostName').textContent = dn(roomState.hostName) || '---';
       serverMaxPlayers = roomState.maxPlayers || 4;
       document.getElementById('maxPlayersSelect').value = serverMaxPlayers;
 
@@ -271,7 +289,7 @@
         seatsDiv.innerHTML += `
           <div class="seat ${occupied ? 'occupied' : ''} ${isHostPlayer ? 'host' : ''} ${ready ? 'ready' : ''}">
             <div class="seat-num">座位 ${i}</div>
-            <div class="player-name">${occupied ? seat.name : ''}${isMe ? '<em class="me-tag">你</em>' : ''}${isHostPlayer ? '<em class="host-tag">房主</em>' : ''}</div>
+            <div class="player-name">${occupied ? dn(seat.name) : ''}${isMe ? '<em class="me-tag">你</em>' : ''}${isHostPlayer ? '<em class="host-tag">房主</em>' : ''}</div>
             <div class="player-status">${ready ? '已准备' : (occupied ? '未准备' : '')}</div>
             <div class="seat-empty">${!occupied ? '空座位' : ''}</div>
           </div>
@@ -280,7 +298,7 @@
 
       const specs = roomState.spectators || [];
       document.getElementById('spectatorList').textContent =
-        specs.length > 0 ? '观战：' + specs.join(', ') : '';
+        specs.length > 0 ? '观战：' + specs.map(dn).join(', ') : '';
 
       mySeat = roomState.mySeat ?? null;
       isReady = roomState.myReady ?? false;
@@ -290,7 +308,26 @@
       document.getElementById('hostSettings').style.display = isHost ? 'block' : 'none';
       latestRoom = roomState;   // 保存最新房间状态，供 startGame 的本地校验用
       updateBtnStates(roomState);
+      updateGameView(roomState);
     });
+
+    // ===== 对局中视图：本局玩家可"返回游戏"，非本局玩家可"进入观战" =====
+    function updateGameView(room) {
+      if (!room) return;
+      const started = !!room.gameStarted;
+      document.getElementById('gameZone').style.display = started ? 'block' : 'none';
+      document.getElementById('preStartControls').style.display = started ? 'none' : 'block';
+      if (!started) return;
+
+      const isPlayer = (room.gamePlayers || []).includes(myName);
+      const note = document.querySelector('#gameZone > div');
+      if (note) note.textContent = isPlayer ? '本局进行中，你正在对局中' : '本局进行中，你正在观战';
+      document.getElementById('btnGameAction').textContent = isPlayer ? '返回游戏' : '进入观战';
+    }
+
+    function enterGame() {
+      window.location.href = '/yahtzee.html?room=' + (roomId || (latestRoom && latestRoom.roomId) || 'yahtzee_001');
+    }
 
     function updateBtnStates(room) {
       if (!room) return;
