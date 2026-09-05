@@ -1170,6 +1170,11 @@ io.on('connection', (socket) => {
       }
     }
     if (!room) return;
+    if (room.gameType === 'drawing') {
+      // 画猜接龙固定四人，不支持改人数
+      if (cb) cb({ success: false, msg: '画猜接龙固定 4 人' });
+      return;
+    }
     if (activeGameOf(room)) return;
 
     // 人数校验：必须是 2/3/4，且不能小于当前已入座人数（防止三人时改成两人）

@@ -185,7 +185,7 @@
 </head>
 <body>
   <div class="room-header">
-    <h1>快艇骰子 · 房间</h1>
+    <h1 id="roomTitle">游戏房间</h1>
     <div class="room-id">房间号：<span id="roomId">---</span></div>
     <div>房主：<span id="hostName">---</span></div>
   </div>
@@ -247,6 +247,9 @@
 
     const params = new URLSearchParams(window.location.search);
     const gameName = params.get('game') || 'yahtzee';
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙' };
+    const isDrawing = gameName === 'drawing'; // 画猜接龙固定 4 人，无人数设置
+    document.getElementById('roomTitle').textContent = (GAME_LABEL[gameName] || '游戏') + ' · 房间';
 
     // ========== 心跳发送（防止被踢 + 刷新/跳转后自动续接身份） ==========
     // 第三个参数 true = 房间页属于"房间上下文"，服务器会把本连接续接到玩家所在房间。
@@ -336,7 +339,7 @@
       roomId = res.roomId || '';
       isHost = res.isHost || false;
       document.getElementById('roomId').textContent = roomId;
-      if (isHost) {
+      if (isHost && !isDrawing) {
         document.getElementById('hostSettings').style.display = 'block';
       }
     });
@@ -378,7 +381,7 @@
       isSpectator = specs.includes(myName);
 
       isHost = (roomState.hostName === myName);
-      document.getElementById('hostSettings').style.display = isHost ? 'block' : 'none';
+      document.getElementById('hostSettings').style.display = (isHost && !isDrawing) ? 'block' : 'none';
       latestRoom = roomState;   // 保存最新房间状态，供 startGame 的本地校验用
       updateBtnStates(roomState);
       updateGameView(roomState);
