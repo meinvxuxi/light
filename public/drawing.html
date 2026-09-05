@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>画猜接龙</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #f0f2f5; color: #2c3e50; font-family: 'Segoe UI', 'PingFang SC', sans-serif; padding: 16px 12px; }
+    .headbar { max-width: 640px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; font-size: .9rem; }
+    .title { font-weight: 700; font-size: 1.08rem; }
+    .back { color: #4a90d9; text-decoration: none; font-size: .88rem; }
+    .back:hover { text-decoration: underline; }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 14px 4px 60px; }
+    .lab { font-size: .76rem; color: #9aa5b1; letter-spacing: 1px; margin: 16px 0 6px; border-bottom: 1px solid #e8ecf1; padding: 0 2px 6px; }
+    .stage-line { font-size: .95rem; font-weight: 700; margin: 8px 0; }
+    .who { color: #6b7a90; font-size: .84rem; margin-bottom: 10px; }
+    .role-hint { color: #4a90d9; font-weight: 700; font-size: .92rem; margin-bottom: 6px; }
+    .line-input { width: 100%; padding: 10px 12px; border: 1px solid #d7dde3; border-radius: 10px; font-size: .95rem; outline: none; background: #fff; color: #2c3e50; }
+    .btn-ok { padding: 9px 26px; border: none; border-radius: 8px; background: #4a90d9; color: #fff; font-size: .9rem; font-weight: 600; cursor: pointer; margin-top: 10px; }
+    .btn-ok.gray { background: #6b7a90; }
+    .paint-canvas-box { border: 1px solid #e2e6eb; border-radius: 12px; background: #fff; padding: 6px; margin: 8px 0; }
+    .paint-canvas { width: 100%; height: auto; display: block; touch-action: none; background: #fff; border-radius: 8px; cursor: crosshair; }
+    .ptools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 6px 0; }
+    .pcolor { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+    .pcolor.on { border-color: #2c3e50; }
+    .pbtn { border: 1px solid #dfe3e8; background: #fff; color: #2c3e50; border-radius: 8px; padding: 4px 10px; font-size: .8rem; cursor: pointer; }
+    .pbtn.on { background: rgba(74,144,217,.15); border-color: #4a90d9; font-weight: 700; }
+    .secret { color: #e08a2d; font-size: 1rem; font-weight: 700; margin: 6px 0; }
+    .guess-box { display: flex; gap: 8px; margin: 10px 0 6px; }
+    .guess-box input { flex: 1; padding: 10px 12px; border: 1px solid #d7dde3; border-radius: 10px; font-size: .95rem; outline: none; }
+    .guess-box button { padding: 0 20px; border: none; border-radius: 10px; background: #2c3e50; color: #fff; font-size: .9rem; cursor: pointer; }
+    .mini-canvas { border: 1px solid #eef0f4; border-radius: 8px; background: #fff; width: 100%; height: auto; margin: 4px 0; }
+    .reveal-grid { padding: 4px 0; }
+    .rv-step { padding: 10px 2px; border-bottom: 1px dashed #eef0f4; }
+    .rv-step .rv-label { font-size: .76rem; color: #9aa5b1; margin-bottom: 4px; }
+    .ok-text { color: #27ae60; font-weight: 700; }
+    .no-text { color: #e74c3c; font-weight: 700; }
+    .empty { text-align: center; color: #adb5bd; padding: 40px 0; font-size: .88rem; }
+    .err { text-align: center; color: #e74c3c; padding: 30px 0; font-size: .9rem; }
+    .msg-line { color: #e67e22; font-size: .85rem; min-height: 18px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="headbar">
+    <span class="title">画猜接龙</span>
+    <a class="back" href="/room.html?game=drawing">返回房间</a>
+  </div>
+  <div class="wrap" id="wrap"><div class="empty">加载中…</div></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const myName = sessionStorage.getItem('playerName');
+    if (!myName) { window.location.href = '/index.html'; }
+    const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg', pomelo: '/assets/avatars/p3/nene.jpg' };
+    const THEME_MOBILE = { p4: '/assets/avatars/p4/zuixin4.jpg', pomelo: '/assets/avatars/p3/nene2.jpg' };
+    const THEME_ALPHA = { p1: 0.82, p2: 0.75, p3: 0.75, p4: 0.82, pomelo: 0.6 };
+    const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches;
+    function ensureThemeStyle() {
+      if (document.getElementById('dynThemeStyle')) return;
+      const s = document.createElement('style');
+      s.id = 'dynThemeStyle';
+      const scoped = (prefix, selList) => selList.split(',').map(x => prefix + ' ' + x.trim()).join(',');
+      const col = '.back,.back:hover,.role-hint';
+      const pink = scoped('body.dyn-pink', col) + '{color:#f06292!important}';
+      const green = scoped('body.dyn-green', col) + '{color:#6f9e63!important}';
+      s.textContent = pink + '\n' + green;
+      document.head.appendChild(s);
+    }
+    function paintTheme(id) {
+      ensureThemeStyle();
+      const b = document.body;
+      b.classList.remove('dyn-pink', 'dyn-green');
+      if (id && id !== 'initial') {
+        b.classList.add((id === 'p3' || id === 'pomelo') ? 'dyn-green' : 'dyn-pink');
+        const img = (IS_MOBILE && THEME_MOBILE[id]) ? THEME_MOBILE[id] : THEME_IMG[id];
+        const a = THEME_ALPHA[id] || 0.82;
+        if (img) { b.style.backgroundImage = "linear-gradient(rgba(255,255,255," + a + "), rgba(255,255,255," + a + ")), url('" + img + "')"; b.style.backgroundSize = 'cover'; b.style.backgroundAttachment = 'fixed'; b.style.backgroundPosition = 'center'; }
+      } else {
+        b.style.backgroundImage = ''; b.style.backgroundSize = ''; b.style.backgroundAttachment = ''; b.style.backgroundPosition = '';
+      }
+    }
+    function sendHeartbeat() {
+      if (socket.connected) socket.emit('heartbeat', sessionStorage.getItem('playerName'), sessionStorage.getItem('isTest') === 'true', true);
+    }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+    const socket = io();
+    function applyTheme() {
+      const saved = localStorage.getItem('myTheme');
+      if (saved) paintTheme(saved);
+      socket.emit('get_profile', (r) => {
+        if (!r || !r.success) return;
+        const t = r.theme || 'initial';
+        localStorage.setItem('myTheme', t);
+        paintTheme(t);
+      });
+    }
+    socket.on('connect', () => { paintTheme(); sendHeartbeat(); });
+    setTimeout(() => { if (socket.connected) applyTheme(); }, 600);
+    window.addEventListener('pageshow', () => { if (socket.connected) applyTheme(); });
+    setInterval(sendHeartbeat, 10000);
+
+    // ===== 显示名 =====
+    let _dm = {};
+    function dn(n) { return _dm[n] || n; }
+
+    // ===== 画布（本地 strokes）=====
+    let dStrokes = [];
+    let penMode = true, penColIdx = 0, penSizeIdx = 1, erSizeIdx = 1;
+    const PALETTE = ['#1a1a2e', '#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#3498db', '#9b59b6', '#e84393', '#8d6e63'];
+    const PW = [3, 7, 12], EW = [12, 28, 52];
+    function dPos(e, c) { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 900, (e.clientY - r.top) / r.height * 540]; }
+    function drawReplay(canvas, strokes) {
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, 900, 540);
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 900, 540);
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (const st of strokes || []) {
+        const pts = st.p || []; if (!pts.length) continue;
+        ctx.globalCompositeOperation = st.t === 'e' ? 'destination-out' : 'source-over';
+        ctx.strokeStyle = st.t === 'e' ? '#000' : (st.c || '#1a1a2e');
+        ctx.lineWidth = st.w || 7;
+        ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    function toolsHtml() {
+      const colorBtns = PALETTE.map((c, i) => `<span class="pcolor ${i === penColIdx ? 'on' : ''}" style="background:${c};" onclick="pickColor(${i})"></span>`).join('');
+      const sizes = (penMode ? PW : EW).map((w, i) => `<button class="pbtn ${(penMode ? penSizeIdx : erSizeIdx) === i ? 'on' : ''}" onclick="pickSize(${i})">${w}px</button>`).join('');
+      return `<div class="ptools">
+        <button class="pbtn ${penMode ? 'on' : ''}" onclick="pickMode(true)">画笔</button>
+        <button class="pbtn ${!penMode ? 'on' : ''}" onclick="pickMode(false)">橡皮</button>
+        ${colorBtns}<span>粗细</span>${sizes}
+        <button class="pbtn" onclick="undoStroke()">上一步</button>
+        <button class="pbtn" onclick="clearCanvas()">清空</button>
+      </div>`;
+    }
+    function pickColor(i) { penColIdx = i; penMode = true; drawBoxReset(); }
+    function pickMode(m) { penMode = m; drawBoxReset(); }
+    function pickSize(i) { if (penMode) penSizeIdx = i; else erSizeIdx = i; drawBoxReset(); }
+    function undoStroke() { dStrokes.pop(); drawBoxReset(); }
+    function clearCanvas() { dStrokes = []; drawBoxReset(); }
+    function drawBoxHtml() {
+      return `<div class="paint-canvas-box"><canvas class="paint-canvas" id="drawCanvas" width="900" height="540"></canvas></div>${toolsHtml()}`;
+    }
+    function initDrawCanvas() {
+      const c = document.getElementById('drawCanvas');
+      if (!c) return;
+      drawReplay(c, dStrokes);
+      let cur = null;
+      c.onpointerdown = (e) => { e.preventDefault(); c.setPointerCapture(e.pointerId); cur = { t: penMode ? 'p' : 'e', c: PALETTE[penColIdx], w: penMode ? PW[penSizeIdx] : EW[erSizeIdx], p: [dPos(e, c)] }; dStrokes.push(cur); drawReplay(c, dStrokes); };
+      c.onpointermove = (e) => { if (cur) cur.p.push(dPos(e, c)); drawReplay(c, dStrokes); };
+      const end = () => { cur = null; };
+      c.onpointerup = end; c.onpointercancel = end;
+    }
+    function drawBoxReset() {
+      const box = document.getElementById('drawBox');
+      if (!box) return;
+      box.innerHTML = drawBoxHtml();
+      initDrawCanvas();
+    }
+
+    // ===== 状态渲染 =====
+    let V = null;
+    function roleHead() {
+      if (!V) return '';
+      const actorDisp = V.actor ? dn(V.actor) : '';
+      return `<div class="stage-line">第 ${V.round} 轮 · ${esc(V.stageText)}</div>
+        ${V.isActor ? '' : `<div class="who">等待 ${actorDisp || '对方'} 完成…</div>`}`;
+    }
+    function render() {
+      if (!V) return;
+      const w = document.getElementById('wrap');
+      const head = roleHead();
+      if (V.stage === 'reveal') {
+        const rv = V.reveal || {};
+        const r = rv.roles || {};
+        const ok = !!rv.success;
+        w.innerHTML = head + `
+          <div class="rv-step"><div class="rv-label">第 1 棒 ${esc(dn(r.writer))} 写的词</div><b>${esc(rv.word || '')}</b></div>
+          <div class="rv-step"><div class="rv-label">第 1 棒画的画</div><canvas class="mini-canvas" id="revPic1" width="900" height="540"></canvas></div>
+          <div class="rv-step"><div class="rv-label">第 2 棒 ${esc(dn(r.guessA))} 猜的词</div>${rv.firstLink ? '<span class="ok-text">和第 1 棒一致✓</span>' : ''} <b>${esc(rv.guessA || '')}</b></div>
+          <div class="rv-step"><div class="rv-label">第 3 棒 ${esc(dn(r.drawer))} 画的画（画上面猜到的词）</div><canvas class="mini-canvas" id="revPic2" width="900" height="540"></canvas></div>
+          <div class="rv-step"><div class="rv-label">第 4 棒 ${esc(dn(r.guessB))} 最终猜的词</div><b>${esc(rv.guessB || '')}</b></div>
+          <div class="rv-step"><div class="rv-label">接龙结果</div>${ok ? '<span class="ok-text">接通成功，首尾一致！</span>' : '<span class="no-text">接龙歪了，没接通</span>'}</div>
+          ${V.isHost ? '<button class="btn-ok" onclick="nextRound()">开始下一轮</button>' : ''}`;
+        drawReplay(document.getElementById('revPic1'), rv.pic1 || []);
+        drawReplay(document.getElementById('revPic2'), rv.pic2 || []);
+        return;
+      }
+      if (V.isActor && V.stage === 'word') {
+        w.innerHTML = head + `<div class="role-hint">你是第 1 棒：写一个词（1~12 字）</div>
+          <input class="line-input" id="wd" maxlength="12" placeholder="只有你能看到" autocomplete="off">
+          <button class="btn-ok" onclick="submitWord()">写好了，来画它</button>`;
+        return;
+      }
+      if (V.isActor && V.stage === 'draw1') {
+        w.innerHTML = head + `<div class="role-hint">你是第 1 棒：画出这个词 →「${esc(V.myWord || '')}」</div>
+          <div id="drawBox">${drawBoxHtml()}</div>
+          <button class="btn-ok" onclick="submitPic()">画好了，传给第 2 棒</button>`;
+        initDrawCanvas();
+        return;
+      }
+      if (V.isActor && V.stage === 'guessA') {
+        w.innerHTML = head + `<div class="role-hint">你是第 2 棒：看第 1 棒的画，猜他写的词</div>
+          <canvas class="mini-canvas" id="guessCanvas" width="900" height="540"></canvas>
+          <div class="guess-box"><input id="gd" maxlength="12" placeholder="猜一个词" autocomplete="off" onkeydown="if(event.key==='Enter')submitGuess()"><button onclick="submitGuess()">猜</button></div>`;
+        drawReplay(document.getElementById('guessCanvas'), V.pic1 || []);
+        return;
+      }
+      if (V.isActor && V.stage === 'draw2') {
+        w.innerHTML = head + `<div class="role-hint">你是第 3 棒：把第 2 棒猜到的词画出来 →「${esc(V.guessA || '')}」</div>
+          <div id="drawBox">${drawBoxHtml()}</div>
+          <button class="btn-ok" onclick="submitPic()">画好了，传给第 4 棒</button>`;
+        initDrawCanvas();
+        return;
+      }
+      if (V.isActor && V.stage === 'guessB') {
+        w.innerHTML = head + `<div class="role-hint">你是第 4 棒：看第 3 棒的画，猜它是什么</div>
+          <canvas class="mini-canvas" id="guessCanvas" width="900" height="540"></canvas>
+          <div class="guess-box"><input id="gd" maxlength="12" placeholder="最后猜一次" autocomplete="off" onkeydown="if(event.key==='Enter')submitGuess()"><button onclick="submitGuess()">猜</button></div>`;
+        drawReplay(document.getElementById('guessCanvas'), V.pic2 || []);
+        return;
+      }
+      w.innerHTML = head + '<div class="empty">轮到你的环节时会自动出现</div>';
+    }
+    function submitWord() {
+      const inp = document.getElementById('wd');
+      const v = (inp && inp.value) ? inp.value.trim() : '';
+      if (!v || [...v].length > 12) { toast('词需为 1~12 字'); return; }
+      socket.emit('drawing_word', { room: 'drawing', word: v }, (res) => { if (res && res.msg && !res.success) toast(res.msg); });
+    }
+    function submitPic() {
+      if (!dStrokes.length) { toast('先画一点内容再提交'); return; }
+      socket.emit('drawing_pic', { room: 'drawing', strokes: dStrokes }, (res) => { if (res && res.msg && !res.success) toast(res.msg); });
+    }
+    function submitGuess() {
+      const inp = document.getElementById('gd');
+      const v = (inp && inp.value) ? inp.value.trim() : '';
+      if (!v || [...v].length > 12) { toast('请输入 1~12 字的词'); return; }
+      socket.emit('drawing_guess', { room: 'drawing', word: v }, (res) => { if (res && res.msg && !res.success) toast(res.msg); });
+    }
+    function nextRound() {
+      socket.emit('drawing_next', { room: 'drawing' }, (res) => { if (res && res.msg && !res.success) toast(res.msg); });
+    }
+    function toast(t) {
+      const el = document.createElement('div');
+      el.className = 'msg-line';
+      el.textContent = t;
+      document.getElementById('wrap').appendChild(el);
+      setTimeout(() => el.remove(), 2500);
+    }
+
+    socket.on('drawing_update', (v) => { V = v; render(); });
+    socket.on('connect', () => {
+      socket.emit('get_display_names', (r) => { if (r && r.success) _dm = r.map; });
+      socket.emit('heartbeat', sessionStorage.getItem('playerName'), sessionStorage.getItem('isTest') === 'true', true);
+      setTimeout(() => socket.emit('drawing_pull', (res) => {
+        if (res && !res.success) { document.getElementById('wrap').innerHTML = '<div class="err">未在对局中，请返回房间</div>'; }
+      }), 400);
+    });
+  </script>
+</body>
+</html>

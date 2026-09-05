@@ -48,6 +48,16 @@ const GAME_ROOMS = {
     playerMap: new Map(),
     leaveTimers: {}
   },
+  drawing: {
+    roomId: 'drawing_001',
+    gameType: 'drawing',
+    hostName: null,
+    maxPlayers: 4,
+    seats: { 1: null, 2: null, 3: null, 4: null },
+    spectators: [],
+    playerMap: new Map(),
+    leaveTimers: {}
+  },
   light: {
     roomId: 'light_001',
     gameType: 'light',
@@ -332,10 +342,132 @@ function broadcastAchievementSummary(roomId, game) {
 
 const GAME_URL_MAP = {
   yahtzee: '/yahtzee.html',
-  light: '/light.html'
+  light: '/light.html',
+  drawing: '/drawing.html'
 };
 
 const yahtzeeGames = {};
+const drawingGames = {}; // 画猜接龙（drawing）对局
+// 通用取"某房间当前进行中的对局"（yahtzee / light / drawing 共用）
+function activeGameOf(room) {
+  if (!room) return null;
+  return room.gameType === 'drawing' ? (drawingGames[room.roomId] || null) : (yahtzeeGames[room.roomId] || null);
+}
+
+// ========== 画猜接龙（drawing）：四人一轮一链，棒次轮转 ==========
+// 一轮链条：写词(第1棒·自己画原词) → 猜图(第2棒) → 画猜词(第3棒·看到第2棒猜的词来画) → 猜图(第4棒) → 揭晓对照
+// 第2棒猜的是"第1棒的画"，第4棒猜的是"第3棒的画"；成功 = 第4棒猜词 === 第1棒原词。
+function drawingRoles(g, round) {
+  const n = g.order.length;
+  const base = ((round || 1) - 1) % n;
+  return {
+    writer: g.order[base % n],
+    guessA: g.order[(base + 1) % n],
+    drawer: g.order[(base + 2) % n],
+    guessB: g.order[(base + 3) % n]
+  };
+}
+function drawingStageSeq() {
+  return ['word', 'draw1', 'guessA', 'draw2', 'guessB', 'reveal'];
+}
+function drawingActorFor(g, stage) {
+  const roles = drawingRoles(g, g.round);
+  if (stage === 'word' || stage === 'draw1') return roles.writer;
+  if (stage === 'guessA') return roles.guessA;
+  if (stage === 'guessB') return roles.guessB;
+  if (stage === 'draw2') return roles.drawer;
+  return null;
+}
+function initDrawingGame(roomId, playerNames) {
+  const game = {
+    roomId,
+    gameType: 'drawing',
+    order: playerNames,
+    round: 1,
+    stage: 'word',
+    word: null,
+    pic1: [],
+    guessA: null,
+    pic2: [],
+    guessB: null,
+    lastReveal: null
+  };
+  drawingGames[roomId] = game;
+  return game;
+}
+function drawingNorm(s) { return String(s || '').trim().replace(/\s+/g, ''); }
+function drawingRoleName(g) {
+  const roles = drawingRoles(g, g.round);
+  return { writer: roles.writer, guessA: roles.guesser, drawer: roles.drawer, guessB: roles.guesserB };
+}
+function drawingAdvance(g, room) {
+  const seq = drawingStageSeq();
+  const idx = seq.indexOf(g.stage);
+  g.stage = idx >= 0 && idx < seq.length - 1 ? seq[idx + 1] : g.stage;
+  if (g.stage === 'reveal') {
+    const normB = drawingNorm(g.guessB);
+    const normA = drawingNorm(g.guessA);
+    g.lastReveal = {
+      word: g.word, guessA: g.guessA, guessB: g.guessB,
+      success: !!normB && normB === drawingNorm(g.word),
+      firstLink: !!normA && normA === drawingNorm(g.word),
+      round: g.round,
+      roles: drawingRoles(g, g.round)
+    };
+  }
+  broadcastDrawingState(room);
+}
+function broadcastDrawingState(room) {
+  const g = drawingGames[room.roomId];
+  if (!g) return;
+  const roles = drawingRoles(g, g.round);
+  const stage = g.stage;
+  const isReveal = stage === 'reveal';
+  const publicText = {
+    word: '第 1 棒 · 写词（并画出这个词）',
+    draw1: '第 1 棒 · 正在画这个词',
+    guessA: '第 2 棒 · 看图猜词',
+    draw2: '第 3 棒 · 正在画第 2 棒猜到的词',
+    guessB: '第 4 棒 · 看图猜词',
+    reveal: '本轮揭晓'
+  };
+  const sendTo = (name, view) => {
+    const sid = room.playerMap.get(name);
+    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('drawing_update', view);
+  };
+  for (const name of g.order) {
+    const view = {
+      gameType: 'drawing',
+      round: g.round,
+      stage,
+      you: name,
+      isHost: room.hostName === name,
+      roles: { writer: roles.writer, guessA: roles.guessA, drawer: roles.drawer, guessB: roles.guessB },
+      stageText: publicText[stage] || '',
+      actor: isReveal ? '' : drawingActorFor(g, stage),
+      isActor: !isReveal && drawingActorFor(g, stage) === name
+    };
+    if (isReveal) {
+      view.reveal = g.lastReveal || { word: g.word, guessA: g.guessA, guessB: g.guessB, success: false, firstLink: false, round: g.round, roles };
+    } else {
+      // 分角色保密：只有当前环节需要的可见内容会下发
+      view.wordVisible = stage === 'word' || stage === 'draw1';           // 写词/画第一棒：写词者需要词
+      if (view.wordVisible && name === roles.writer) view.myWord = g.word;
+      if (stage === 'guessA' && name === roles.guessA) view.pic1 = g.pic1;
+      if (stage === 'draw2' && name === roles.drawer) view.guessA = g.guessA; // 画第3棒：看到第2棒猜的词
+      if (stage === 'guessB' && name === roles.guesserB) view.pic2 = g.pic2;
+      // 已完成的中间结果在对应环节只给下一步执行者看（保密传递）
+    }
+    sendTo(name, view);
+  }
+  // 观战者：只发进度
+  for (const sp of room.spectators) {
+    const sid = room.playerMap.get(sp);
+    if (sid && io.sockets.sockets.has(sid)) {
+      io.to(sid).emit('drawing_update', { gameType: 'drawing', round: g.round, stage, stageText: publicText[stage] || '', spectator: true });
+    }
+  }
+}
 
 function formatTime(ts) {
   const d = new Date(ts);
@@ -382,7 +514,7 @@ function transferHost(room) {
 
 function syncRoomState(room, selfName) {
   const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === selfName)?.[0] || null;
-  const nowGame = yahtzeeGames[room.roomId];
+  const nowGame = activeGameOf(room);
   const data = {
     roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers,
     seats: room.seats, spectators: room.spectators, mySeat,
@@ -398,7 +530,7 @@ function syncRoomState(room, selfName) {
 
 function broadcastRoom(room) {
   transferHost(room);
-  const nowGame = yahtzeeGames[room.roomId];
+  const nowGame = activeGameOf(room);
   const gameStarted = !!nowGame;
   const gamePlayers = nowGame ? nowGame.playerOrder : [];
   io.to(room.roomId).emit('room_update', {
@@ -444,6 +576,10 @@ function resetRoom(room) {
   if (yahtzeeGames[room.roomId]) {
     delete yahtzeeGames[room.roomId];
     console.log(`🔄 房间 ${room.roomId} 的进行中对局已清除`);
+  }
+  if (drawingGames[room.roomId]) {
+    delete drawingGames[room.roomId];
+    console.log(`🔄 房间 ${room.roomId} 的画猜接龙已清除`);
   }
   if (gameEndTimers[room.roomId]) {
     clearTimeout(gameEndTimers[room.roomId]);
@@ -882,7 +1018,7 @@ io.on('connection', (socket) => {
     room.playerMap.set(playerName, socket.id);
     socket.join(room.roomId);
 
-    const gameInProgress = yahtzeeGames[room.roomId];
+    const gameInProgress = activeGameOf(room);
     const seatedCount = Object.values(room.seats).filter(Boolean).length;
     const isAlreadySeated = Object.values(room.seats).some(s => s?.name === playerName);
     const isGamePlayer = !!(gameInProgress && gameInProgress.playerOrder.includes(playerName));
@@ -924,8 +1060,10 @@ io.on('connection', (socket) => {
     syncRoomState(room, playerName);
     broadcastRoom(room);
 
-    const gameData = yahtzeeGames[room.roomId];
-    if (gameData) {
+    const gameData = activeGameOf(room);
+    if (gameData && room.gameType === 'drawing') {
+      broadcastDrawingState(room);
+    } else if (gameData) {
       socket.emit('game_state', {
         players: gameData.players,
         playerOrder: gameData.playerOrder,
@@ -950,7 +1088,7 @@ io.on('connection', (socket) => {
       }
     }
     if (!room) return;
-    if (yahtzeeGames[room.roomId]) return;
+    if (activeGameOf(room)) return;
     let emptySeat = null;
     for (let i=1; i<=room.maxPlayers; i++) {
       if (!room.seats[i]) { emptySeat = i; break; }
@@ -1011,7 +1149,7 @@ io.on('connection', (socket) => {
       }
     }
     if (!room) return;
-    if (yahtzeeGames[room.roomId]) return;
+    if (activeGameOf(room)) return;
     for (let i in room.seats) {
       if (room.seats[i]?.name === name) {
         room.seats[i].ready = !room.seats[i].ready;
@@ -1032,7 +1170,7 @@ io.on('connection', (socket) => {
       }
     }
     if (!room) return;
-    if (yahtzeeGames[room.roomId]) return;
+    if (activeGameOf(room)) return;
 
     // 人数校验：必须是 2/3/4，且不能小于当前已入座人数（防止三人时改成两人）
     const seatedCount = Object.values(room.seats).filter(Boolean).length;
@@ -1056,12 +1194,13 @@ io.on('connection', (socket) => {
     if (!name) return;
     let cleared = false;
     for (const room of Object.values(GAME_ROOMS)) {
-      if (room.playerMap.has(name) && yahtzeeGames[room.roomId]) {
+      if (room.playerMap.has(name) && activeGameOf(room)) {
         if (gameEndTimers[room.roomId]) {
           clearTimeout(gameEndTimers[room.roomId]);
           delete gameEndTimers[room.roomId];
         }
         delete yahtzeeGames[room.roomId];
+        delete drawingGames[room.roomId];
         Object.keys(room.seats).forEach(seatId => {
           if (room.seats[seatId]) room.seats[seatId].ready = false;
         });
@@ -1407,20 +1546,28 @@ io.on('connection', (socket) => {
       }
     }
     if (!room) return;
-    if (yahtzeeGames[room.roomId]) return;
+    if (activeGameOf(room)) return;
     // 若上一局的"结算后自动清理"定时器还挂着，先清掉（避免误删本局）
     if (gameEndTimers[room.roomId]) {
       clearTimeout(gameEndTimers[room.roomId]);
       delete gameEndTimers[room.roomId];
     }
     const players = Object.values(room.seats).filter(Boolean);
-    if (players.length < 2 || !players.every(p => p.ready)) return;
+    const needPlayers = room.gameType === 'drawing' ? 4 : 2; // 画猜接龙为四人版
+    if (players.length < needPlayers || !players.every(p => p.ready)) return;
     if (room.gameType === 'yahtzee') {
       const playerNames = players.map(p => p.name);
       initYahtzeeGame(room.roomId, playerNames);
+    } else if (room.gameType === 'drawing') {
+      const playerNames = players.map(p => p.name);
+      initDrawingGame(room.roomId, playerNames);
     }
     broadcastRoom(room);
-    broadcastYahtzeeState(room.roomId);
+    if (room.gameType === 'drawing') {
+      broadcastDrawingState(room);
+    } else {
+      broadcastYahtzeeState(room.roomId);
+    }
     setTimeout(()=>{
       io.to(room.roomId).emit('game_start', {
         gameUrl: GAME_URL_MAP[room.gameType] + "?room=" + room.roomId
@@ -1572,6 +1719,91 @@ io.on('connection', (socket) => {
       }
     }
     broadcastYahtzeeState(room.roomId);
+  });
+
+  // ========== 画猜接龙（drawing）：玩家提交 ==========
+  function drawingFindRoomOf(name) {
+    return Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'drawing' && drawingGames[r.roomId]) || null;
+  }
+  // 写词：第 1 棒
+  socket.on('drawing_word', ({ room: roomArg, word }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = roomArg ? GAME_ROOMS[roomArg] : drawingFindRoomOf(name);
+    if (!room || !name) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const g = drawingGames[room.roomId];
+    const roles = g && drawingRoles(g, g.round);
+    if (!g || g.stage !== 'word' || roles.writer !== name) { if (cb) cb({ success: false, msg: '当前不是写词阶段' }); return; }
+    const w = String(word || '').trim();
+    if (!w || [...w].length > 12) { if (cb) cb({ success: false, msg: '词需为 1~12 字' }); return; }
+    g.word = w;
+    drawingAdvance(g, room);
+    if (cb) cb({ success: true });
+  });
+  // 作画：第 1 棒画自己的词 / 第 3 棒画猜到的词（strokes 整份提交）
+  socket.on('drawing_pic', ({ room: roomArg, strokes }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = roomArg ? GAME_ROOMS[roomArg] : drawingFindRoomOf(name);
+    if (!room || !name) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const g = drawingGames[room.roomId];
+    const roles = g && drawingRoles(g, g.round);
+    if (!g || !Array.isArray(strokes)) { if (cb) cb({ success: false, msg: '请先画一画' }); return; }
+    if (g.stage === 'draw1' && roles.writer === name) {
+      g.pic1 = strokes.map(s => ({ t: s.t, c: s.c, w: s.w, p: (s.p || []).slice(0, 2000) })).slice(0, 500);
+      drawingAdvance(g, room);
+      if (cb) cb({ success: true });
+      return;
+    }
+    if (g.stage === 'draw2' && roles.drawer === name) {
+      g.pic2 = strokes.map(s => ({ t: s.t, c: s.c, w: s.w, p: (s.p || []).slice(0, 2000) })).slice(0, 500);
+      drawingAdvance(g, room);
+      if (cb) cb({ success: true });
+      return;
+    }
+    if (cb) cb({ success: false, msg: '当前不能作画' });
+  });
+  // 猜词：第 2 棒看图猜 / 第 4 棒看图猜
+  socket.on('drawing_guess', ({ room: roomArg, word }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = roomArg ? GAME_ROOMS[roomArg] : drawingFindRoomOf(name);
+    if (!room || !name) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const g = drawingGames[room.roomId];
+    const roles = g && drawingRoles(g, g.round);
+    const w = String(word || '').trim();
+    if (!g || !w || [...w].length > 12) { if (cb) cb({ success: false, msg: '请输入你猜的词（1~12 字）' }); return; }
+    if (g.stage === 'guessA' && roles.guessA === name) {
+      g.guessA = w;
+      drawingAdvance(g, room);
+      if (cb) cb({ success: true });
+      return;
+    }
+    if (g.stage === 'guessB' && roles.guessB === name) {
+      g.guessB = w;
+      drawingAdvance(g, room);
+      if (cb) cb({ success: true });
+      return;
+    }
+    if (cb) cb({ success: false, msg: '当前不能猜词' });
+  });
+  // 揭晓后开下一轮（房主）
+  socket.on('drawing_next', ({ room: roomArg }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = roomArg ? GAME_ROOMS[roomArg] : drawingFindRoomOf(name);
+    if (!room || room.hostName !== name) { if (cb) cb({ success: false, msg: '仅房主可开始下一轮' }); return; }
+    const g = drawingGames[room.roomId];
+    if (!g || g.stage !== 'reveal') { if (cb) cb({ success: false, msg: '尚未到下一轮时机' }); return; }
+    g.round++;
+    g.word = null; g.pic1 = []; g.guessA = null; g.pic2 = []; g.guessB = null; g.lastReveal = null;
+    g.stage = 'word';
+    broadcastDrawingState(room);
+    if (cb) cb({ success: true });
+  });
+
+  // 画猜接龙页面刷新后重拉自己的状态
+  socket.on('drawing_pull', (cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? drawingFindRoomOf(name) : null;
+    if (room) broadcastDrawingState(room);
+    if (cb) cb({ success: !!room });
   });
 
   // ========== 默契空间（主页数据 / 进入 / 问答小游戏） ==========

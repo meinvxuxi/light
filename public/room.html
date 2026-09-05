@@ -399,7 +399,11 @@
     }
 
     function enterGame() {
-      window.location.href = '/yahtzee.html?room=' + (roomId || (latestRoom && latestRoom.roomId) || 'yahtzee_001');
+      const urlMap = { yahtzee: '/yahtzee.html', light: '/light.html', drawing: '/drawing.html' };
+      const fallback = { yahtzee: 'yahtzee_001', light: 'light_001', drawing: 'drawing_001' };
+      const g = (gameName in urlMap) ? gameName : 'yahtzee';
+      const rid = roomId || (latestRoom && latestRoom.roomId) || fallback[g];
+      window.location.href = urlMap[g] + '?room=' + rid;
     }
 
     function updateBtnStates(room) {
@@ -407,7 +411,8 @@
       const seats = room.seats || {};
       const allReady = Object.values(seats).every(s => !s || s.ready);
       const playerCount = Object.values(seats).filter(Boolean).length;
-      const canStart = isHost && allReady && playerCount >= 2;
+      const needPlayers = gameName === 'drawing' ? 4 : 2; // 画猜接龙为四人版
+      const canStart = isHost && allReady && playerCount >= needPlayers;
 
       // 开始按钮始终可点：不符合条件时点击会在 startGame 里弹网页内小提示（见下方 showToast）
       document.getElementById('btnStart').disabled = false;
