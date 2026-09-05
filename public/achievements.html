@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>荣誉墙</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #f0f2f5; color: #2c3e50; font-family: 'Segoe UI', 'PingFang SC', sans-serif; padding: 16px 12px; }
+    .headbar { max-width: 680px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; font-size: .9rem; }
+    .title { font-weight: 700; font-size: 1.08rem; }
+    .back { color: #4a90d9; text-decoration: none; font-size: .88rem; }
+    .back:hover { text-decoration: underline; }
+    .filter { max-width: 680px; margin: 14px auto 2px; display: flex; gap: 6px; }
+    .g-tab { background: none; border: none; padding: 5px 14px; font-size: .88rem; cursor: pointer; color: #6b7a90; border-radius: 8px; }
+    .g-tab:hover { color: #4a90d9; background: none; }
+    .g-tab.active { color: #4a90d9; font-weight: 700; border-bottom: 2px solid #4a90d9; border-radius: 0; }
+    .t-tag { font-style: normal; font-size: .62rem; background: #fff1e0; color: #b45309; border-radius: 4px; padding: 1px 4px; margin-left: 3px; }
+    .wrap { max-width: 680px; margin: 0 auto; padding: 12px 6px 60px; }
+    .empty { text-align: center; color: #9aa5b1; padding: 40px 0; font-size: .9rem; }
+    .qhead { font-size: .78rem; color: #9aa5b1; letter-spacing: 2px; margin: 20px 0 8px; }
+    .ach-card { background: #fff; border: 1px solid #edf0f4; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+    .ach-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .ach-name { font-weight: 700; }
+    .q-tag { font-size: .68rem; border-radius: 5px; padding: 1px 7px; font-weight: 600; }
+    .q-legend { background: #fff1e0; color: #ff9800; }
+    .q-epic { background: #f3e8fb; color: #9c27b0; }
+    .q-rare { background: #e9f6ec; color: #4caf50; }
+    .q-common { background: #eef0f3; color: #9e9e9e; }
+    .q-hidden { background: #fdeceb; color: #d32f2f; }
+    .p-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: .88rem; }
+    .p-name em { font-style: normal; font-size: .75rem; color: #9aa5b1; margin-left: 4px; }
+    .p-first { font-size: .78rem; color: #9aa5b1; }
+    .p-tri { margin-left: auto; cursor: pointer; color: #9aa5b1; user-select: none; padding: 0 4px; font-size: .8rem; }
+    .p-tri:hover { color: #4a90d9; }
+    .p-detail { display: none; background: #fafbfd; border-radius: 8px; padding: 6px 12px; font-size: .8rem; color: #6c7a8c; margin: 2px 0 8px; line-height: 1.7; }
+    .p-detail.open { display: block; }
+  </style>
+</head>
+<body>
+  <div class="headbar">
+    <span class="title">荣誉墙</span>
+    <a class="back" href="/lobby.html">返回大厅</a>
+  </div>
+
+  <div class="filter">
+    <button class="g-tab active" data-game="yahtzee" onclick="setGame('yahtzee')">快艇骰子</button>
+    <button class="g-tab" data-game="more" onclick="setGame('more')">更多游戏</button>
+  </div>
+
+  <div class="wrap" id="achList">
+    <div class="empty">加载中…</div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // 守卫：未登录回登录页；游客不可见荣誉墙（回大厅）
+    const myName = sessionStorage.getItem('playerName');
+    if (!myName) { window.location.href = '/index.html'; }
+    if (sessionStorage.getItem('isGuest') === 'true') { window.location.href = '/lobby.html'; }
+
+    const QUALITY_ORDER = ['legend', 'epic', 'rare', 'common', 'hidden'];
+    const QUALITY_LABEL = { legend: '传说', epic: '史诗', rare: '稀有', common: '普通', hidden: '隐藏' };
+
+    function fmtTime(ts) {
+      if (!ts) return '';
+      const d = new Date(ts);
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    function toggleDetail(playerName, achId) {
+      const d = document.getElementById('detail-' + achId + '-' + playerName);
+      const tri = document.getElementById('tri-' + achId + '-' + playerName);
+      if (!d) return;
+      const open = d.classList.toggle('open');
+      tri.textContent = open ? '▾' : '▸';
+    }
+
+    let achData = null;       // 最近一次从服务器拉到的数据
+    let curGame = 'yahtzee';  // 当前选中的游戏筛选
+
+    function setGame(game) {
+      curGame = game;
+      document.querySelectorAll('.g-tab').forEach(b => b.classList.toggle('active', b.getAttribute('data-game') === game));
+      render();
+    }
+
+    function render() {
+      const data = achData;
+      const list = (data && data.list) || [];
+      const testList = (data && data.testList) || [];
+      const meta = (data && data.meta) || {};
+      const el = document.getElementById('achList');
+
+      if (curGame === 'more') {
+        el.innerHTML = '<div class="empty">更多游戏的成就尚未开放，敬请期待</div>';
+        return;
+      }
+
+      // 测试账号登录时，额外合并显示"测试记录"（正式玩家看不到测试数据）
+      const isTestUser = sessionStorage.getItem('isTest') === 'true' &&
+                         sessionStorage.getItem('isGuest') !== 'true';
+      const all = list.slice();
+      if (isTestUser) testList.forEach(r => all.push(Object.assign({}, r, { isTest: true })));
+
+      const byId = {};
+      all.filter(r => meta[r.achievementId] && meta[r.achievementId].game === curGame)
+         .forEach(r => { (byId[r.achievementId] = byId[r.achievementId] || []).push(r); });
+
+      if (!Object.keys(byId).length) {
+        el.innerHTML = '<div class="empty">还没有任何成就记录，快去游戏里解锁吧～</div>';
+        return;
+      }
+
+      // 过滤：只显示"有玩家触发过"的成就；按品质高级→低级分组；同成就按首次触发时间早者在前
+      let html = '';
+      QUALITY_ORDER.forEach(q => {
+        const ids = Object.keys(byId).filter(id => (meta[id] && meta[id].quality === q));
+        if (!ids.length) return;
+        html += `<div class="qhead">${QUALITY_LABEL[q]}</div>`;
+        ids.forEach(id => {
+          const recs = byId[id].slice().sort((a, b) => a.firstTime - b.firstTime);
+          const rows = recs.map(r => {
+            const detail = (r.events && r.events.length)
+              ? r.events.map(t => '· ' + fmtTime(t)).join('<br>')
+              : '· 首次：' + fmtTime(r.firstTime) + '<br>· 最近：' + fmtTime(r.lastTime);
+            const dId = 'detail-' + id + '-' + r.playerName;
+            const tId = 'tri-' + id + '-' + r.playerName;
+            const nameHtml = r.playerName + (r.isTest ? ' <em class="t-tag">测试</em>' : '');
+            return `
+              <div class="p-row">
+                <span class="p-name">${nameHtml}<em>x${r.count}</em></span>
+                <span class="p-first">首触 ${fmtTime(r.firstTime)}</span>
+                <span class="p-tri" id="${tId}" onclick="toggleDetail('${r.playerName}', '${id}')">▸</span>
+              </div>
+              <div class="p-detail" id="${dId}">${detail}</div>`;
+          }).join('');
+          html += `
+            <div class="ach-card">
+              <div class="ach-top">
+                <span class="ach-name">${(meta[id] && meta[id].name) || id}</span>
+                <span class="q-tag q-${q}">${QUALITY_LABEL[q]}</span>
+              </div>
+              ${rows}
+            </div>`;
+        });
+      });
+
+      el.innerHTML = html || '<div class="empty">还没有任何成就记录，快去游戏里解锁吧～</div>';
+    }
+
+    const socket = io();
+    socket.on('connect', () => {
+      socket.emit('get_achievements', (res) => {
+        if (res && res.success) { achData = res; render(); }
+        else document.getElementById('achList').innerHTML = '<div class="empty">加载失败，请刷新重试</div>';
+      });
+    });
+  </script>
+</body>
+</html>

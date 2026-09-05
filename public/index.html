@@ -2,168 +2,138 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>拍灯大作战</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title> 训练室 · 登录</title>
+  <link rel="stylesheet" href="/css/style.css">
   <style>
-    body {
-      margin: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      background: #1a1a2e;
-      font-family: 'Segoe UI', sans-serif;
-      touch-action: manipulation; /* 防止手机双击缩放 */
-    }
-    #light {
-      width: 200px;
-      height: 200px;
-      border-radius: 50%;
-      background: #333;
-      margin-bottom: 30px;
-      box-shadow: 0 0 30px rgba(0,0,0,0.5);
-      transition: background 0.1s, box-shadow 0.1s;
-    }
-    #light.on {
-      background: #f9d71c;
-      box-shadow: 0 0 80px #f9d71c;
-    }
-    .scores {
-      display: flex;
-      gap: 40px;
-      margin-bottom: 30px;
-      color: white;
-      font-size: 24px;
-    }
-    .player {
-      text-align: center;
-    }
-    .score {
-      font-size: 48px;
-      font-weight: bold;
-      margin-top: 5px;
-    }
-    .buttons {
-      display: flex;
-      gap: 30px;
-    }
-    button {
-      padding: 20px 40px;
-      font-size: 28px;
-      border: none;
-      border-radius: 20px;
-      background: #e94560;
-      color: white;
-      font-weight: bold;
-      cursor: pointer;
-      box-shadow: 0 8px 0 #8a1f35;
-      transition: transform 0.05s, box-shadow 0.05s;
-      touch-action: manipulation;
-    }
-    button:active {
-      transform: translateY(4px);
-      box-shadow: 0 4px 0 #8a1f35;
-    }
-    #message {
-      margin-top: 30px;
-      color: white;
-      font-size: 22px;
-      min-height: 30px;
-    }
-  </style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-<script src="/socket.io/socket.io.js"></script>
+body {
+  background: #f0f2f5;
+  color: #2c3e50;
+  font-family: 'Segoe UI', 'PingFang SC', sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.login-box {
+  background: white;
+  padding: 50px 40px;
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  text-align: center;
+  width: 360px;
+  max-width: 92vw;
+}
+
+.login-box h1 {
+  font-size: 1.8rem;
+  margin-bottom: 30px;
+  color: #2c3e50;
+}
+
+.login-box input {
+  width: 100%;
+  padding: 14px;
+  margin-bottom: 15px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 1rem;
+  outline: none;
+  transition: border 0.2s;
+}
+
+.login-box input:focus {
+  border-color: #4a90d9;
+}
+
+.login-box button {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-bottom: 10px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #4a90d9;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #357abd;
+}
+
+.btn-guest {
+  background: #e8edf2;
+  color: #5a6c7d;
+}
+
+.btn-guest:hover {
+  background: #d5dde5;
+}
+
+.error {
+  color: #e74c3c;
+  font-size: 0.9rem;
+  margin-top: 8px;
+  min-height: 20px;
+}
+  </style>
 </head>
 <body>
-  <div id="light"></div>
-  <div class="scores">
-    <div class="player">
-      玩家1
-      <div id="score1" class="score">0</div>
-    </div>
-    <div class="player">
-      玩家2
-      <div id="score2" class="score">0</div>
-    </div>
+  <div class="login-box">
+    <h1>JBG训练室</h1>
+    <input type="password" id="keyInput" placeholder="输入你的密钥" >
+    <br>
+    <button id="loginBtn">开始训练</button>
+    <button id="guestBtn" class="btn-guest">🎒 偷赛训！（游客登录）</button>
+    <div id="errorMsg" class="error"></div>
   </div>
-  <div class="buttons">
-    <button id="btn1">⚡ 玩家1拍</button>
-    <button id="btn2">⚡ 玩家2拍</button>
-  </div>
-  <div id="message"></div>
 
+  <script src="/socket.io/socket.io.js"></script>
   <script>
-    // ---------- 连接服务器 ----------
-const socket = io();
-let myRole = 0; // 0=旁观，1=玩家1，2=玩家2
+    const socket = io();
+    const input = document.getElementById('keyInput');
+    const btn = document.getElementById('loginBtn');
+    const error = document.getElementById('errorMsg');
 
-// 界面元素
-const lightEl = document.getElementById('light');
-const score1El = document.getElementById('score1');
-const score2El = document.getElementById('score2');
-const msgEl = document.getElementById('message');
-const btn1 = document.getElementById('btn1');
-const btn2 = document.getElementById('btn2');
-
-// ---------- 服务器告诉我，我是谁 ----------
-socket.on('your_role', (role) => {
-  myRole = role;
-  if (role === 1) {
-    msgEl.textContent = '你是玩家1，等待对手...';
-    btn1.style.display = 'inline-block';
-    btn2.style.display = 'none';
-  } else if (role === 2) {
-    msgEl.textContent = '你是玩家2，等待对手...';
-    btn2.style.display = 'inline-block';
-    btn1.style.display = 'none';
-  } else {
-    msgEl.textContent = '房间已满，你是旁观者';
-    btn1.style.display = 'none';
-    btn2.style.display = 'none';
-  }
+   btn.addEventListener('click', () => {
+  const key = input.value.trim().toLowerCase();
+  if (!key) return;
+  socket.emit('login', key, (res) => {
+    if (res.success) {
+      sessionStorage.setItem('playerName', res.name);
+      // 🔥 必须加这一行！！！
+       sessionStorage.setItem('isTest', res.isTest ? 'true' : 'false'); 
+      sessionStorage.setItem('isGuest', 'false');
+      window.location.href = '/lobby.html';
+    } else {
+      error.textContent = res.message || '密钥错误';
+    }
+  });
 });
 
-// ---------- 接收服务器发来的游戏状态，更新界面 ----------
-socket.on('game_state', (state) => {
-  // 更新灯
-  if (state.lightOn) {
-    lightEl.classList.add('on');
-  } else {
-    lightEl.classList.remove('on');
-  }
-  // 更新分数
-  score1El.textContent = state.score1;
-  score2El.textContent = state.score2;
-  // 更新提示文字
-  msgEl.textContent = state.message;
+    // 回车键直接登录
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') btn.click();
+    });
+    // 游客登录
+document.getElementById('guestBtn').addEventListener('click', () => {
+  const guestName = '游客' + Math.floor(Math.random() * 900 + 100);
+  socket.emit('guest_login', guestName, (res) => {
+    sessionStorage.setItem('playerName', res.name);
+    sessionStorage.setItem('isGuest', 'true');
+    sessionStorage.setItem('isTest', 'false');   // 防止继承上一个"测试账号"的标记
+    window.location.href = '/lobby.html';
+  });
 });
-
-// ---------- 点击按钮时，发送拍灯指令给服务器 ----------
-btn1.addEventListener('click', () => {
-  if (myRole === 1) {
-    socket.emit('slap', 1);
-  }
-});
-btn2.addEventListener('click', () => {
-  if (myRole === 2) {
-    socket.emit('slap', 2);
-  }
-});
-
-// ---------- 键盘快捷键（电脑测试用，可选） ----------
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'a' || e.key === 'A') {
-    e.preventDefault();
-    if (myRole === 1) socket.emit('slap', 1);
-  } else if (e.key === 'l' || e.key === 'L') {
-    e.preventDefault();
-    if (myRole === 2) socket.emit('slap', 2);
-  }
-});
-
-// 初始化灯为熄灭状态
-lightEl.classList.remove('on');
   </script>
 </body>
 </html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>留言板</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #f0f2f5; color: #2c3e50; font-family: 'Segoe UI', 'PingFang SC', sans-serif; padding: 16px 12px; }
+    .headbar { max-width: 680px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; font-size: .9rem; }
+    .title { font-weight: 700; font-size: 1.08rem; }
+    .back { color: #4a90d9; text-decoration: none; font-size: .88rem; }
+    .back:hover { text-decoration: underline; }
+    .filter { max-width: 680px; margin: 14px auto 8px; display: flex; gap: 6px; }
+    .g-tab { background: none; border: none; padding: 5px 14px; font-size: .88rem; cursor: pointer; color: #6b7a90; border-radius: 8px; }
+    .g-tab:hover { color: #4a90d9; background: none; }
+    .g-tab.active { color: #4a90d9; font-weight: 700; border-bottom: 2px solid #4a90d9; border-radius: 0; }
+    .wrap { max-width: 680px; margin: 0 auto; padding: 4px 6px 40px; }
+    .list { background: #fff; border: 1px solid #edf0f4; border-radius: 12px; padding: 10px 14px; min-height: 220px; max-height: 52vh; overflow-y: auto; }
+    .msg { padding: 8px 2px; border-bottom: 1px solid #f2f4f7; }
+    .msg:last-child { border-bottom: none; }
+    .msg .mhead { font-size: .76rem; color: #9aa5b1; margin-bottom: 2px; }
+    .msg .mhead .g { margin-left: 4px; color: #f0a020; }
+    .msg .mtext { font-size: .92rem; line-height: 1.5; word-break: break-word; }
+    .compose { display: flex; gap: 8px; margin-top: 12px; }
+    .compose input { flex: 1; padding: 10px 12px; border: 1px solid #d7dde3; border-radius: 10px; font-size: .9rem; outline: none; }
+    .compose button { padding: 0 18px; border: none; border-radius: 10px; background: #2c3e50; color: #fff; font-size: .88rem; cursor: pointer; }
+    .compose button:disabled { background: #dfe3e8; color: #98a2ad; cursor: not-allowed; }
+    .guest-hint { text-align: center; margin-top: 10px; font-size: .8rem; color: #adb5bd; }
+    .empty { text-align: center; color: #adb5bd; font-size: .85rem; padding: 40px 0; }
+    .err { max-width: 680px; margin: 6px auto 0; font-size: .8rem; color: #e74c3c; min-height: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="headbar">
+    <span class="title">留言板</span>
+    <a class="back" href="/lobby.html">返回大厅</a>
+  </div>
+
+  <div class="filter" id="tabs">
+    <button class="g-tab" data-tab="official" onclick="setTab('official')">玩家留言</button>
+    <button class="g-tab" data-tab="guest" onclick="setTab('guest')">游客留言</button>
+  </div>
+
+  <div class="wrap">
+    <div class="list" id="msgList"><div class="empty">加载中…</div></div>
+    <div class="compose" id="composeRow">
+      <input id="msgInput" maxlength="100" placeholder="说点什么…（最多 100 字）" onkeydown="if(event.key==='Enter')sendMsg()">
+      <button id="sendBtn" onclick="sendMsg()">发送</button>
+    </div>
+    <div class="guest-hint" id="guestHint" style="display:none;">仅游客可以在「游客留言」区留言</div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const myName = sessionStorage.getItem('playerName');
+    if (!myName) { window.location.href = '/index.html'; }
+    const isGuest = sessionStorage.getItem('isGuest') === 'true';
+
+    const data = { official: [], guest: [] };   // 本地两块留言缓存（新在上）
+    let curTab = isGuest ? 'guest' : 'official';
+
+    // 游客只显示游客留言区（隐藏玩家留言 tab）
+    if (isGuest) {
+      document.querySelector('[data-tab="official"]').style.display = 'none';
+    }
+
+    // 默认按身份选中对应留言板：正式玩家=玩家留言，游客=游客留言
+    setTab(curTab);
+
+    function setTab(t) {
+      curTab = t;
+      document.querySelectorAll('#tabs .g-tab').forEach(b => b.classList.toggle('active', b.getAttribute('data-tab') === t));
+      // 输入框可见性：只有"当前板块允许你发言"才显示
+      // （正式玩家在游客区不能发言 → 隐藏输入框并显示提示；游客只能发游客区）
+      const canPost = isGuest ? (curTab === 'guest') : (curTab === 'official');
+      document.getElementById('composeRow').style.display = canPost ? 'flex' : 'none';
+      document.getElementById('guestHint').style.display = (!canPost && curTab === 'guest') ? 'block' : 'none';
+      render();
+    }
+
+    function fmtTime(ts) {
+      const d = new Date(ts);
+      const p = n => String(n).padStart(2, '0');
+      return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    function render() {
+      const list = data[curTab];
+      const el = document.getElementById('msgList');
+      if (!list.length) { el.innerHTML = '<div class="empty">还没有留言，来说第一句吧～</div>'; return; }
+      el.innerHTML = '';
+      // 倒序展示：最新在最下面
+      for (const m of list) {
+        const row = document.createElement('div');
+        row.className = 'msg';
+        const head = document.createElement('div');
+        head.className = 'mhead';
+        head.textContent = m.name + ' · ' + fmtTime(m.ts);
+        if (m.name.startsWith('游客')) {
+          const g = document.createElement('span');
+          g.className = 'g';
+          g.textContent = '游客';
+          head.appendChild(g);
+        }
+        const body = document.createElement('div');
+        body.className = 'mtext';
+        body.textContent = m.text;
+        row.appendChild(head);
+        row.appendChild(body);
+        el.appendChild(row);
+      }
+      el.scrollTop = el.scrollHeight; // 滚到最新
+    }
+
+    const socket = io();
+
+    // 心跳：让服务器识别当前身份（留言页是新打开的页面/新连接，必须续接身份才能发留言）
+    function sendHeartbeat() {
+      if (socket.connected) socket.emit('heartbeat', sessionStorage.getItem('playerName'), sessionStorage.getItem('isTest') === 'true', false);
+    }
+    socket.on('connect', sendHeartbeat);
+    setInterval(sendHeartbeat, 10000);
+
+    socket.on('connect', () => {
+      socket.emit('get_board', (res) => {
+        if (res && res.success) {
+          data.official = (res.official || []).slice();
+          data.guest = (res.guest || []).slice();
+          render();
+        }
+      });
+    });
+
+    // 实时收到新留言
+    socket.on('board_new', ({ type, msg }) => {
+      if (!msg) return;
+      data[type].push(msg);
+      const cap = 120;
+      if (data[type].length > cap) data[type].shift();
+      if (curTab === type) render();
+    });
+
+    function sendMsg() {
+      const input = document.getElementById('msgInput');
+      const err = document.getElementById('err');
+      const text = input.value.trim();
+      if (!text) return;
+      socket.emit('post_board_message', { text }, (res) => {
+        if (res && res.success) {
+          input.value = '';
+          err.textContent = '';
+        } else {
+          err.textContent = (res && res.msg) || '发送失败';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

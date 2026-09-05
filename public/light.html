@@ -1,0 +1,93 @@
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const myName = sessionStorage.getItem('playerName');
+const isGuest = sessionStorage.getItem('isGuest') === 'true';
+
+// ==============================================
+// 🔒 不在本页重发密钥：客户端代码中不得出现密钥明文。
+// 身份在线状态由下方"心跳"自动续接（heartbeat 会带玩家名），
+// 首次登录已在 index.html 用密钥完成。
+// ==============================================
+
+if (!myName) {
+  window.location.href = '/index.html';
+} else {
+  document.getElementById('myName').textContent = myName;
+}
+
+// ========== 心跳发送（防止被踢 + 刷新/跳转后自动续接身份） ==========
+function sendHeartbeat() {
+  if (socket.connected) socket.emit('heartbeat', myName, sessionStorage.getItem('isTest') === 'true', true);
+}
+socket.on('connect', sendHeartbeat);
+setInterval(sendHeartbeat, 10000);
+
+// ==========================
+// 下面是正常渲染逻辑，不动！
+// ==========================
+const allNames = ['玩家1', '玩家2', '玩家3', '玩家4'];
+
+function formatLastSeen(timestamp) {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${month}/${day} ${hours}:${minutes}`;
+}
+
+socket.emit('get_online_users');
+
+socket.on('online_users', (users) => {
+  const regularPlayers = allNames.map(name => {
+    const found = users.find(u => u.name === name);
+    return {
+      name: name,
+      isOnline: !!found && found.status === '在线',
+      isGuest: found ? found.isGuest : false,
+      status: found ? found.status : '离线',
+      lastSeen: found ? found.lastSeen : null
+    };
+  });
+
+  const guests = users.filter(u => u.isGuest);
+
+  const container = document.getElementById('onlineUsers');
+  container.innerHTML = regularPlayers.map(p => {
+    const guestTag = p.isGuest ? '<span class="guest-tag">🎒游客</span>' : '';
+    const statusText = p.isOnline ? p.status : '离线';
+    const lastSeenText = !p.isOnline && p.lastSeen 
+      ? `<div class="last-seen">上次上线：${formatLastSeen(p.lastSeen)}</div>` 
+      : '';
+    return `
+      <div class="player-card ${p.isOnline ? 'online' : 'offline'}">
+        <div class="name">${p.name}${guestTag}</div>
+        <div class="status-text">${p.isOnline ? '🟢 ' + statusText : '⚫ ' + statusText}</div>
+        ${lastSeenText}
+      </div>
+    `;
+  }).join('');
+
+  const guestCount = guests.length;
+  document.getElementById('guestCount').textContent = guestCount;
+  const guestListEl = document.getElementById('guestList');
+  guestListEl.innerHTML = guestCount > 0 
+    ? guests.map(g => `🎒 ${g.name}`).join('<br>') 
+    : '暂无游客';
+});
+
+document.getElementById('guestToggle').addEventListener('click', () => {
+  const list = document.getElementById('guestList');
+  const btn = document.getElementById('guestToggle');
+  const count = document.getElementById('guestCount').textContent;
+  if (list.style.display === 'none' || list.style.display === '') {
+    list.style.display = 'block';
+    btn.innerHTML = `🎒 在线游客 <span id="guestCount">${count}</span> ▴`;
+  } else {
+    list.style.display = 'none';
+    btn.innerHTML = `🎒 在线游客 <span id="guestCount">${count}</span> ▾`;
+  }
+});
+</script>

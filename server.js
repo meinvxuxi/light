@@ -1,125 +1,1192 @@
 const express = require('express');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
 
-// 托管 public 文件夹里的静态文件
+const io = new Server(server, {
+  cors: { origin: "*" },
+  allowEIO3: true,
+  pingTimeout: 30000,
+  pingInterval: 10000,
+});
+
 app.use(express.static('public'));
 
-// ---------- 游戏状态 ----------
-const WIN_SCORE = 5;
-let lightOn = false;
-let score1 = 0;
-let score2 = 0;
-let timeoutId = null;
-let gameEnded = false;
-let messageText = '等待对手连接...';
+const HEARTBEAT_TIMEOUT = 30000;
 
-function broadcastState() {
-  io.emit('game_state', {
-    lightOn,
-    score1,
-    score2,
-    gameEnded,
-    message: messageText
-  });
+const VALID_KEYS = {
+  'aaaa': '玩家1',
+  'bbbb': '玩家2',
+  'cccc': '玩家3',
+  'dddd': '玩家4',
+  'test1': '测试者1',
+  'test2': '测试者2',
+  'test3': '测试者3',
+  'test4': '测试者4'
+};
+const TEST_NAMES = ['测试者1', '测试者2', '测试者3', '测试者4']; // 测试账号（开发者工具/数据跳过落盘用）
+const OFFICIAL_PLAYERS = Object.values(VALID_KEYS);
+
+const onlineUsers = new Map();
+const socketToUser = new Map();
+const userLastOnline = new Map();
+const userLastHeartbeat = new Map();
+
+const GAME_ROOMS = {
+  yahtzee: {
+    roomId: 'yahtzee_001',
+    gameType: 'yahtzee',
+    hostName: null,
+    maxPlayers: 4,
+    seats: { 1: null, 2: null, 3: null, 4: null },
+    spectators: [],
+    playerMap: new Map(),
+    leaveTimers: {}
+  },
+  light: {
+    roomId: 'light_001',
+    gameType: 'light',
+    hostName: null,
+    maxPlayers: 4,
+    seats: { 1: null, 2: null, 3: null, 4: null },
+    spectators: [],
+    playerMap: new Map(),
+    leaveTimers: {}
+  }
+};
+
+const offlineTimers = new Map();
+const gameEndTimers = {}; // roomId -> 结算后自动清理对局的定时器（防止误删新开对局）
+
+// ========== 成就系统：集中式成就总管 ==========
+const DATA_DIR = path.join(__dirname, 'data');
+const ACH_FILE = path.join(DATA_DIR, 'achievements.json');        // 正式玩家成就
+const ACH_TEST_FILE = path.join(DATA_DIR, 'test-achievements.json'); // 测试账号成就（不影响正式数据）
+
+// ⚙️ 持久化开关：开发/测试期=false（成就只存内存，重启即刷新、不写 data/）；
+// 正式版上线时改为 true，即自动恢复"读入 + 写入 data/ 文件"。
+const PERSIST_ACHIEVEMENTS = false;
+
+// 成就定义：id -> { name, quality, game }
+const ACHIEVEMENTS = {
+  yahtzee_roll:     { name: 'Yahtzee！',        quality: 'common', game: 'yahtzee' },
+  upper_bonus:      { name: '上层建筑',          quality: 'common', game: 'yahtzee' },
+  slow_fill:        { name: '龟速填分',          quality: 'common', game: 'yahtzee' },
+  reroll_master:    { name: '重掷大师',          quality: 'common', game: 'yahtzee' },
+  fullhouse_brothers: { name: '葫芦兄弟',        quality: 'rare', game: 'yahtzee' },
+  score_250:        { name: '250来袭！',         quality: 'rare', game: 'yahtzee' },
+  same_score:       { name: '同分异构',          quality: 'rare', game: 'yahtzee' },
+  score_300:        { name: '快艇领域大神',       quality: 'epic', game: 'yahtzee' },
+  seat_full:        { name: '座无虚席',          quality: 'epic', game: 'yahtzee' },
+  yahtzee_twice:    { name: '？！艇艇！？',       quality: 'epic', game: 'yahtzee' },
+  first_roll:       { name: '一发入魂',          quality: 'legend', game: 'yahtzee' },
+  low_score:        { name: '认真的吗？',        quality: 'hidden', game: 'yahtzee' }
+};
+const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
+
+// 内存中的成就记录（启动时从 data/ 读入）
+let achRecords = [];
+let achTestRecords = [];
+
+function isTestAccount(name) { return name.startsWith('测试者'); }
+
+function loadAchRecords(file, fallback) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) || []; }
+  catch (e) { return fallback; }
+}
+function saveAchRecords(file, list) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(list, null, 2));
+  } catch (e) { console.error('❌ 成就写入失败：', e.message); }
 }
 
-function scheduleLight() {
-  if (gameEnded) return;
-  const delay = 2000 + Math.random() * 3000;
-  timeoutId = setTimeout(() => {
-    if (gameEnded) return;
-    lightOn = true;
-    messageText = '💡 灯亮了！！快拍！';
-    broadcastState();
-
-    timeoutId = setTimeout(() => {
-      if (lightOn && !gameEnded) {
-        lightOn = false;
-        messageText = '⏰ 没人拍，重新亮灯...';
-        broadcastState();
-        scheduleLight();
-      }
-    }, 5000);
-  }, delay);
-}
-
-function playerScores(player) {
-  if (gameEnded) return;
-  if (!lightOn) return;   // 灯没亮，忽略
-
-  lightOn = false;
-  clearTimeout(timeoutId);
-
-  if (player === 1) {
-    score1++;
-    messageText = '🎉 玩家1 拍中！';
+// 记录一次成就（正式玩家 -> achievements.json；测试账号 -> test-achievements.json）
+function recordAchievement(playerName, achievementId) {
+  const isTest = isTestAccount(playerName);
+  const file = isTest ? ACH_TEST_FILE : ACH_FILE;
+  const list = isTest ? achTestRecords : achRecords;
+  const now = Date.now();
+  const rec = list.find(r => r.achievementId === achievementId && r.playerName === playerName);
+  if (rec) {
+    rec.count++;
+    rec.lastTime = now;
+    // 历史明细：每次触发时间（旧数据无 events 则忽略，新触发开始累积）
+    if (rec.events) rec.events.push(now);
   } else {
-    score2++;
-    messageText = '🎉 玩家2 拍中！';
+    list.push({
+      achievementId,
+      playerName,
+      count: 1,
+      firstTime: now,
+      lastTime: now,
+      events: [now],                 // 荣誉墙"▸ 展开每次触发时间"用
+      highestTier: ACH_QUALITY_NO[ACHIEVEMENTS[achievementId]?.quality] || 1
+    });
   }
-
-  if (score1 >= WIN_SCORE) {
-    gameEnded = true;
-    messageText = '🏆 玩家1 获胜！';
-  } else if (score2 >= WIN_SCORE) {
-    gameEnded = true;
-    messageText = '🏆 玩家2 获胜！';
-  }
-
-  broadcastState();
-  if (!gameEnded) scheduleLight();
+  if (isTest) achTestRecords = list; else achRecords = list;
+  // 落盘规则：
+  //  - 正式玩家：仅在 PERSIST_ACHIEVEMENTS=true 时写 data/achievements.json（开发期只内存）
+  //  - 测试账号：永远只存内存（重启即刷新），不写任何文件
+  if (!isTest && PERSIST_ACHIEVEMENTS) saveAchRecords(ACH_FILE, achRecords);
 }
 
-// ---------- Socket.IO 连接处理 ----------
-io.on('connection', (socket) => {
-  console.log('新连接：' + socket.id);
+// 统一解锁入口：记录 + 本局去重播报 + 汇总。
+// repeatable=true 表示"同局多次可重复累积次数，但只播报一次"（如每次投出快艇）。
+function announceAchievement(game, roomId, playerName, achievementId, repeatable) {
+  if (!game || game.mock) return;
+  const meta = ACHIEVEMENTS[achievementId];
+  if (!meta) return;
+  if (!game.achievementsByPlayer) game.achievementsByPlayer = {};
+  if (!game.achievementsByPlayer[playerName]) game.achievementsByPlayer[playerName] = [];
+  const byPlayer = game.achievementsByPlayer[playerName];
+  const already = byPlayer.includes(achievementId);
 
-  // 分配角色：先连的是玩家1，第二个是玩家2
-  const count = io.sockets.sockets.size;
-  let role = 0;
-  if (count === 1) role = 1;
-  else if (count === 2) role = 2;
-  else role = 0; // 旁观
+  if (already && !repeatable) return;          // 一次性成就：本局已拿过就不重复记录
+  recordAchievement(playerName, achievementId); // 每次事件都累积次数
+  if (!already) byPlayer.push(achievementId);
+  if (already && repeatable) return;           // 已播报过，仅累积次数
 
-  socket.emit('your_role', role);
+  if (meta.quality === 'hidden') return;        // 隐藏成就只进结算汇总，不实时播报
+  io.to(roomId).emit('achievement_unlocked', {
+    id: achievementId, name: meta.name, quality: meta.quality, playerName
+  });
+}
 
-  // 如果两个人到齐，开始游戏
-  if (count === 2) {
-    score1 = 0; score2 = 0;
-    lightOn = false;
-    gameEnded = false;
-    messageText = '两名玩家到齐，准备开始！';
-    broadcastState();
-    scheduleLight();
+// 结算：对每名玩家广播"本局成就汇总"（含即时成就，标明达成玩家）
+function broadcastAchievementSummary(roomId, game) {
+  if (!game || game.mock) return;
+  const byPlayer = game.achievementsByPlayer || {};
+  const players = {};
+  for (const [name, ids] of Object.entries(byPlayer)) {
+    if (!ids || !ids.length) continue;
+    players[name] = ids.map(id => ({
+      id,
+      name: (ACHIEVEMENTS[id] && ACHIEVEMENTS[id].name) || id,
+      quality: (ACHIEVEMENTS[id] && ACHIEVEMENTS[id].quality) || 'common'
+    }));
   }
+  if (Object.keys(players).length) io.to(roomId).emit('achievement_summary', { players });
+}
 
-  // 发送当前状态给新连上的玩家
-  socket.emit('game_state', {
-    lightOn, score1, score2, gameEnded, message: messageText
+const GAME_URL_MAP = {
+  yahtzee: '/yahtzee.html',
+  light: '/light.html'
+};
+
+const yahtzeeGames = {};
+
+function formatTime(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,0)}-${String(d.getDate()).padStart(2,0)} ${String(d.getHours()).padStart(2,0)}:${String(d.getMinutes()).padStart(2,0)}`;
+}
+
+let timer;
+function broadcast() {
+  clearTimeout(timer);
+  timer = setTimeout(() => {
+    const list = [];
+    for (const user of onlineUsers.values()) {
+      const isReallyOnline = userLastHeartbeat.has(user.name) && (Date.now() - userLastHeartbeat.get(user.name) < HEARTBEAT_TIMEOUT);
+      list.push({ 
+        name: user.name, 
+        isGuest: user.isGuest, 
+        status: isReallyOnline ? '在线' : '离线（无心跳）', 
+        lastSeen: user.lastSeen 
+      });
+    }
+    for (const [name, ts] of userLastOnline) {
+      if (!onlineUsers.has(name)) {
+        list.push({ name, isGuest: false, status: `离线 ${formatTime(ts)}`, lastSeen: ts });
+      }
+    }
+    io.emit('online_users', list);
+  }, 200);
+}
+
+function transferHost(room) {
+  const seatedPlayers = Object.values(room.seats).filter(Boolean);
+  const newHost = seatedPlayers[0]?.name;
+
+  if (newHost && newHost !== room.hostName) {
+    room.hostName = newHost;
+    io.to(room.roomId).emit('host_changed', { newHost });
+    console.log(`🔄 房主自动转移给：${newHost}`);
+  } else if (!newHost) {
+    room.hostName = null;
+    console.log('🔄 房间无玩家，房主清空');
+  }
+}
+
+function syncRoomState(room, selfName) {
+  const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === selfName)?.[0] || null;
+  const data = {
+    roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers,
+    seats: room.seats, spectators: room.spectators, mySeat,
+    myReady: mySeat ? room.seats[mySeat].ready : false
+  };
+  const sid = room.playerMap.get(selfName);
+  if (sid && io.sockets.sockets.has(sid)) {
+    io.to(sid).emit('room_update', data);
+  }
+}
+
+function broadcastRoom(room) {
+  transferHost(room);
+  io.to(room.roomId).emit('room_update', {
+    roomId: room.roomId,
+    hostName: room.hostName,
+    maxPlayers: room.maxPlayers,
+    seats: room.seats,
+    spectators: room.spectators
+  });
+  room.playerMap.forEach((_, uname) => {
+    const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === uname)?.[0] || null;
+    const sid = room.playerMap.get(uname);
+    if (sid && io.sockets.sockets.has(sid)) {
+      io.to(sid).emit('room_update', {
+        roomId: room.roomId,
+        hostName: room.hostName,
+        maxPlayers: room.maxPlayers,
+        seats: room.seats,
+        spectators: room.spectators,
+        mySeat,
+        myReady: mySeat ? room.seats[mySeat].ready : false
+      });
+    }
+  });
+}
+
+// ========== 核心修复：彻底移除离线玩家 ==========
+// force=true 表示玩家主动退出房间，必须无条件移除；
+// force 缺省时先做保险检查：若该玩家名当前映射的 socket 还活着
+// （例如页面刷新 / 从房间页跳转到游戏页 / 后台标签心跳被浏览器节流），
+// 说明只是"误判离线"，此时不真移除，只清掉移除计时器。
+function removeOfflinePlayer(room, playerName, force) {
+  if (!force) {
+    const curSid = room.playerMap.get(playerName);
+    if (curSid && io.sockets.sockets.has(curSid)) {
+      if (room.leaveTimers[playerName]) {
+        clearTimeout(room.leaveTimers[playerName]);
+        delete room.leaveTimers[playerName];
+      }
+      console.log(`⏳ ${playerName} 的 socket 仍在线，跳过离线移除（疑似刷新/跳转中）`);
+      return;
+    }
+  }
+  // 移除座位
+  for (let i in room.seats) {
+    if (room.seats[i]?.name === playerName) delete room.seats[i];
+  }
+  // 移除观战
+  room.spectators = room.spectators.filter(n => n !== playerName);
+  // 移除玩家映射
+  room.playerMap.delete(playerName);
+  // 清理计时器
+  if (room.leaveTimers[playerName]) {
+    clearTimeout(room.leaveTimers[playerName]);
+    delete room.leaveTimers[playerName];
+  }
+  // 🆕 清理心跳和在线记录（防止脏数据）
+  userLastHeartbeat.delete(playerName);
+  userLastOnline.delete(playerName);
+  
+  console.log(`❌ 移除离线玩家：${playerName}`);
+  transferHost(room);
+  broadcastRoom(room);
+}
+
+const UPPER_CATS = ['ones', 'twos', 'threes', 'fours', 'fives', 'sixes'];
+const LOWER_CATS = ['threeOfAKind', 'fourOfAKind', 'fullHouse', 'smallStraight', 'largeStraight', 'yahtzee', 'chance'];
+
+// 从骰子中提取葫芦点数组 {t: 三元点数, p: 对子点数}；不是葫芦（无 3+2）返回 null
+function getFullHouseCombo(dice) {
+  const counts = {};
+  dice.forEach(d => counts[d] = (counts[d] || 0) + 1);
+  const triple = Object.keys(counts).find(d => counts[d] === 3);
+  const pair = Object.keys(counts).find(d => counts[d] === 2);
+  return (triple && pair) ? { t: Number(triple), p: Number(pair) } : null;
+}
+
+// 掷骰完成后的即时成就检测（真实掷骰与开发者工具的"自定义骰子"共用）
+function afterYahtzeeRoll(game, roomId, name) {
+  const p = game.players[name];
+  if (!p) return;
+  if (new Set(p.dice).size === 1) {
+    p.yahtzeeCount = (p.yahtzeeCount || 0) + 1;
+    announceAchievement(game, roomId, name, 'yahtzee_roll', true);  // 可重复累积
+    if (p.rollCount === 1) announceAchievement(game, roomId, name, 'first_roll');   // 一发入魂
+    if (p.yahtzeeCount === 2) announceAchievement(game, roomId, name, 'yahtzee_twice'); // ？！艇艇！？
+  }
+}
+
+// 结算时判定：250 / 300 / 低分(<100) / 座无虚席 / 同分异构
+function evaluateSettlementAchievements(game, roomId) {
+  const totals = {};
+  game.playerOrder.forEach(name => {
+    const p = game.players[name];
+    const upper = UPPER_CATS.reduce((s, c) => s + (p.scores[c] || 0), 0);
+    const bonus = upper >= 63 ? 35 : 0;
+    const lower = LOWER_CATS.reduce((s, c) => s + (p.scores[c] || 0), 0);
+    const yahtzeeBonus = p.yahtzeeBonus || 0;
+    totals[name] = { upper, bonus, lower, yahtzeeBonus, total: upper + bonus + lower + yahtzeeBonus };
   });
 
-  // 收到拍灯
-  socket.on('slap', (player) => {
-    playerScores(player);
+  game.playerOrder.forEach(name => {
+    const t = totals[name].total;
+    if (t >= 300) announceAchievement(game, roomId, name, 'score_300');
+    if (t >= 250) announceAchievement(game, roomId, name, 'score_250');
+    if (t < 100) announceAchievement(game, roomId, name, 'low_score'); // 一律算非故意
+    if ((game.players[name].yahtzeeCount || 0) >= 1 && totals[name].upper >= 63) {
+      announceAchievement(game, roomId, name, 'seat_full');
+    }
   });
 
-  // 断开处理
+  // 同分异构：总分完全相同的玩家 ≥2 则全部解锁
+  const byTotal = {};
+  game.playerOrder.forEach(n => {
+    const t = totals[n].total;
+    (byTotal[t] = byTotal[t] || []).push(n);
+  });
+  Object.values(byTotal).forEach(names => {
+    if (names.length >= 2) names.forEach(n => announceAchievement(game, roomId, n, 'same_score'));
+  });
+}
+
+function initYahtzeeGame(roomId, playerNames, isMock) {
+  const game = {
+    roomId, players: {}, playerOrder: playerNames,
+    currentPlayerIndex: 0, phase: 'playing', round: 1,
+    mock: isMock === true,      // 开发者工具生成的模拟局：不判定/不记录成就
+    comboMap: {},               // 葫芦组合 key "三元-对子" -> [玩家名]
+    achievementsByPlayer: {}    // 玩家名 -> 本局已达成成就 id 列表
+  };
+  playerNames.forEach(name => {
+    game.players[name] = {
+      dice: [1,1,1,1,1], kept: [false,false,false,false,false],
+      rollCount: 0, scores: {}, previewScores: {},
+      yahtzeeBonus: 0,  // 重复快艇 +100 累计（随总分结算）
+      yahtzeeCount: 0,  // 本局投出快艇次数
+      submitLog: []     // 每轮提交记录 { category, rollCount }
+    };
+  });
+  yahtzeeGames[roomId] = game;
+  return game;
+}
+
+function getYahtzeeScores(dice) {
+  const sum = (arr) => arr.reduce((a,b)=>a+b,0);
+  const count = (n) => dice.filter(d=>d===n).length * n;
+  
+  const counts = {};
+  dice.forEach(d => counts[d] = (counts[d]||0)+1);
+  const vals = Object.values(counts).sort((a,b)=>b-a);
+  const uniqueVals = [...new Set(dice)].sort((a,b)=>a-b);
+  const uniqueCount = uniqueVals.length;
+
+  return {
+    ones: count(1), twos: count(2), threes: count(3), 
+    fours: count(4), fives: count(5), sixes: count(6),
+    threeOfAKind: vals.some(v=>v>=3) ? sum(dice) : 0,
+    fourOfAKind: vals.some(v => v >= 4) ? sum(dice) : 0,
+    fullHouse: (uniqueCount === 2 && vals[0] === 3 && vals[1] === 2) ? 25 : 0,
+    smallStraight: [
+      [1,2,3,4], [2,3,4,5], [3,4,5,6]
+    ].some(seq => seq.every(num => dice.includes(num))) ? 30 : 0,
+    largeStraight: (uniqueCount === 5 && uniqueVals[4] - uniqueVals[0] === 4) ? 40 : 0,
+    yahtzee: vals[0] === 5 ? 50 : 0,
+    chance: sum(dice)
+  };
+}
+
+// ========== 开发者工具辅助：把"想展示的总分"摊成一张模拟计分卡 ==========
+// 仅供测试胜利/结算界面使用，类别分数为"按该类别合理上限加权分配"的模拟值，
+// 13 格之和一定等于 total。前 12 类有上限，超出部分全部放进"机会"（无上限）。
+function buildMockScores(total) {
+  const ids = ['ones','twos','threes','fours','fives','sixes',
+    'threeOfAKind','fourOfAKind','fullHouse','smallStraight','largeStraight','yahtzee','chance'];
+  const caps = [5,10,15,20,25,30,30,30,25,30,40,50]; // 前 12 类的"数值上限"
+  const sumCaps = caps.reduce((a,b)=>a+b,0);
+  const base = Math.min(Math.max(0, total), sumCaps);   // 分配给前 12 类的部分
+  const extra = Math.max(0, total - sumCaps);           // 超出部分 → 机会
+
+  // 按权重摊到前 12 类（向下取整）
+  const arr = caps.map(c => Math.floor(base * c / sumCaps));
+  // 把取整丢掉的余数随机补回去（每格最多到上限）
+  let rem = base - arr.reduce((a,b)=>a+b,0);
+  const order = [...caps.keys()].sort(() => Math.random() - 0.5);
+  for (const i of order) {
+    if (rem <= 0) break;
+    if (arr[i] < caps[i]) { arr[i]++; rem--; }
+  }
+  arr.push(extra); // 第 13 格 = 机会
+
+  const scores = {};
+  ids.forEach((id, i) => { scores[id] = arr[i]; });
+  return scores;
+}
+
+function broadcastYahtzeeState(roomId) {
+  const game = yahtzeeGames[roomId];
+  if (!game) return;
+  io.to(roomId).emit('game_state', {
+    players: game.players,
+    playerOrder: game.playerOrder,
+    currentPlayer: game.playerOrder[game.currentPlayerIndex],
+    phase: game.phase, 
+    round: game.round,
+    allDice: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.dice])),
+    allScores: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.scores])),
+    allPreviewScores: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.previewScores]))
+  });
+}
+
+// 定时检测心跳超时
+function checkOfflinePlayersByHeartbeat() {
+  const now = Date.now();
+  for (const room of Object.values(GAME_ROOMS)) {
+    for (const [playerName] of room.playerMap) {
+      const lastHb = userLastHeartbeat.get(playerName) || 0;
+      if (now - lastHb > HEARTBEAT_TIMEOUT) {
+        removeOfflinePlayer(room, playerName);
+      }
+    }
+  }
+}
+setInterval(checkOfflinePlayersByHeartbeat, 10000);
+
+io.on('connection', (socket) => {
+  console.log(`\n🟢 新连接 | socketID = ${socket.id}`);
+
+  // 主动退出房间
+  socket.on('leave_room', (gameType, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || !gameType) {
+      if (cb) cb({ success: false, msg: '参数错误' });
+      return;
+    }
+    const room = GAME_ROOMS[gameType];
+    if (!room) {
+      if (cb) cb({ success: false, msg: '房间不存在' });
+      return;
+    }
+    removeOfflinePlayer(room, name, true); // 主动退出房间：强制移除（不走"在线就跳过"的保险）
+    onlineUsers.delete(name);
+    userLastOnline.set(name, Date.now());
+    userLastHeartbeat.delete(name);
+    broadcast();
+    if (cb) cb({ success: true, msg: '已退出房间' });
+    console.log(`🚪 玩家主动退出房间：${name} (${gameType})`);
+  });
+
+  // ========== 心跳处理（兼"身份自动续接"，核心修复） ==========
+  // 玩家从房间页跳转到游戏页 / 刷新页面时，浏览器会断开旧连接并建立一条新 socket，
+  // 这条新连接默认不被服务器认识。心跳到这里时统一做"续接"：
+  //   1) 记录 名字 <-> 新 socket.id（让 yahtzee_action 等操作能找到操作者）；
+  //   2) 若玩家因旧连接断开被移出 onlineUsers，则重新登记为在线；
+  //   3) 若来自房间上下文页面（inRoom === true），把该玩家所在房间的 playerMap
+  //      指向新 socket、加入 socket.io 房间，并取消 30 秒的离线移除计时器，
+  //      避免跳转后 30 秒被 removeOfflinePlayer 误踢。
+  // 参数：playerName 玩家名；isTest 是否测试者；inRoom 当前页面是否属于房间上下文。
+  socket.on('heartbeat', (playerName, isTest, inRoom) => {
+    if (!playerName) return;
+
+    socketToUser.set(socket.id, playerName);
+
+    const isOfficialPlayer = Object.values(VALID_KEYS).includes(playerName);
+    const isGuestUser = playerName.startsWith('游客');
+    if (isOfficialPlayer || isGuestUser) {
+      const user = onlineUsers.get(playerName);
+      if (user) {
+        user.lastSeen = Date.now();
+        onlineUsers.set(playerName, user);
+      } else {
+        onlineUsers.set(playerName, {
+          name: playerName,
+          isGuest: isGuestUser,
+          isTest: isTest === true,
+          lastSeen: Date.now()
+        });
+      }
+      userLastOnline.delete(playerName);
+    }
+
+    if (inRoom === true) {
+      for (const room of Object.values(GAME_ROOMS)) {
+        if (room.playerMap.has(playerName)) {
+          room.playerMap.set(playerName, socket.id);
+          socket.join(room.roomId);
+          if (room.leaveTimers[playerName]) {
+            clearTimeout(room.leaveTimers[playerName]);
+            delete room.leaveTimers[playerName];
+          }
+          break;
+        }
+      }
+    }
+
+    userLastHeartbeat.set(playerName, Date.now());
+    broadcast();
+    socket.emit('heartbeat_ack', { success: true });
+  });
+
+  // 主动拉取游戏状态
+  // 【修复】返回方式：直接 socket.emit('game_state')，与广播的结构完全一致。
+  // 前端 yahtzee.html 只监听 'game_state' 事件（没传 cb），若只走 cb 回传会导致永远收不到状态。
+  socket.on('get_game_state', (roomId, cb) => {
+    const game = yahtzeeGames[roomId];
+    if (!game) {
+      if (cb) cb({ success: false, msg: '游戏未开始' });
+      return;
+    }
+    socket.emit('game_state', {
+      players: game.players,
+      playerOrder: game.playerOrder,
+      currentPlayer: game.playerOrder[game.currentPlayerIndex],
+      phase: game.phase,
+      round: game.round,
+      allDice: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.dice])),
+      allScores: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.scores])),
+      allPreviewScores: Object.fromEntries(Object.entries(game.players).map(([name, p]) => [name, p.previewScores]))
+    });
+    if (cb) cb({ success: true });
+  });
+
+  socket.on('leave_spectate', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    let room = null;
+    for (let r of Object.values(GAME_ROOMS)) {
+      if (r.playerMap.has(name)) {
+        room = r;
+        break;
+      }
+    }
+    if (!room) return;
+    room.spectators = room.spectators.filter(n => n !== name);
+    broadcastRoom(room);
+  });
+
+  // 登录逻辑
+  socket.on('login', (key, cb) => {
+    const name = VALID_KEYS[key];
+    if (!name) {
+      if (typeof cb === 'function') cb({ success: false, message: '密钥错误' });
+      return;
+    }
+    const existingTimer = offlineTimers.get(name);
+    if (existingTimer) { clearTimeout(existingTimer); offlineTimers.delete(name); }
+    onlineUsers.delete(name);
+    socketToUser.set(socket.id, name);
+    const isTestKey = key.startsWith('test'); // test1~test4 都算测试账号
+    onlineUsers.set(name, { name, isGuest: false, isTest: isTestKey, lastSeen: Date.now() });
+    userLastOnline.delete(name);
+    userLastHeartbeat.set(name, Date.now());
+    socket.isTest = isTestKey;
+    if (typeof cb === 'function') cb({ success: true, name, isTest: isTestKey });
+    broadcast();
+  });
+
+  socket.on('guest_login', (name, cb) => {
+    if (!name) name = `游客${Math.floor(Math.random() * 900 + 100)}`;
+    const existingTimer = offlineTimers.get(name);
+    if (existingTimer) { clearTimeout(existingTimer); offlineTimers.delete(name); }
+    onlineUsers.delete(name);
+    socketToUser.set(socket.id, name);
+    onlineUsers.set(name, { name, isGuest: true, lastSeen: Date.now() });
+    userLastHeartbeat.set(name, Date.now());
+    if (typeof cb === 'function') cb({ success: true, name });
+    broadcast();
+  });
+
+  socket.on('get_online_users', () => {
+    const list = [];
+    for (const user of onlineUsers.values()) {
+      const isReallyOnline = userLastHeartbeat.has(user.name) && (Date.now() - userLastHeartbeat.get(user.name) < HEARTBEAT_TIMEOUT);
+      list.push({ 
+        name: user.name, 
+        isGuest: user.isGuest, 
+        status: isReallyOnline ? '在线' : '离线（无心跳）', 
+        lastSeen: user.lastSeen 
+      });
+    }
+    for (const [name, ts] of userLastOnline) {
+      if (!onlineUsers.has(name)) {
+        list.push({ name, isGuest: false, status: `离线 ${formatTime(ts)}`, lastSeen: ts });
+      }
+    }
+    socket.emit('online_users', list);
+  });
+
+  socket.on('join_room', ({ game, playerName, isTest }, cb) => {
+    socketToUser.set(socket.id, playerName);
+
+    const existingTimer = offlineTimers.get(playerName);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      offlineTimers.delete(playerName);
+    }
+
+    const isOfficialPlayer = Object.values(VALID_KEYS).includes(playerName);
+    const isGuestUser = playerName.startsWith('游客');
+    if (playerName && (isOfficialPlayer || isGuestUser)) {
+      onlineUsers.set(playerName, {
+        name: playerName,
+        isGuest: isGuestUser,
+        isTest: isTest,
+        lastSeen: Date.now()
+      });
+      userLastHeartbeat.set(playerName, Date.now());
+      userLastOnline.delete(playerName);
+      broadcast();
+    }
+
+    const room = GAME_ROOMS[game] || GAME_ROOMS.light;
+
+    if (room.leaveTimers[playerName]) {
+      clearTimeout(room.leaveTimers[playerName]);
+      delete room.leaveTimers[playerName];
+    }
+
+    room.playerMap.set(playerName, socket.id);
+    socket.join(room.roomId);
+
+    const gameInProgress = yahtzeeGames[room.roomId];
+    const seatedCount = Object.values(room.seats).filter(Boolean).length;
+    const isAlreadySeated = Object.values(room.seats).some(s => s?.name === playerName);
+
+    // 修复：先把"是否已在座"放在最前面判断。
+    // 玩家从游戏结算页返回房间时，他的座位还在（即使满座 4/4 或上一局刚结束），
+    // 若按旧逻辑会因"座位已满/游戏进行中"被判进观战 → 出现"坐着 + 观战"同时存在。
+    if (isAlreadySeated) {
+      room.spectators = room.spectators.filter(n => n !== playerName); // 同时在观战名单则清掉
+    } else if (gameInProgress || seatedCount >= room.maxPlayers) {
+      if (!room.spectators.includes(playerName)) {
+        room.spectators.push(playerName);
+      }
+    } else {
+      let emptySeat = null;
+      for (let i=1; i<=room.maxPlayers; i++) {
+        if (!room.seats[i]) { emptySeat = i; break; }
+      }
+      if (emptySeat) {
+        room.spectators = room.spectators.filter(n=>n!==playerName);
+        room.seats[emptySeat] = { name: playerName, ready: false };
+        if (!room.hostName) {
+          room.hostName = playerName;
+        }
+      }
+    }
+
+    if (typeof cb === 'function') {
+      cb({ roomId: room.roomId, isHost: room.hostName === playerName });
+    }
+
+    syncRoomState(room, playerName);
+    broadcastRoom(room);
+
+    const gameData = yahtzeeGames[room.roomId];
+    if (gameData) {
+      socket.emit('game_state', {
+        players: gameData.players,
+        playerOrder: gameData.playerOrder,
+        currentPlayer: gameData.playerOrder[gameData.currentPlayerIndex],
+        phase: gameData.phase, 
+        round: gameData.round,
+        allDice: Object.fromEntries(Object.entries(gameData.players).map(([name, p]) => [name, p.dice])),
+        allScores: Object.fromEntries(Object.entries(gameData.players).map(([name, p]) => [name, p.scores])),
+        allPreviewScores: Object.fromEntries(Object.entries(gameData.players).map(([name, p]) => [name, p.previewScores]))
+      });
+    }
+  });
+
+  socket.on('take_seat', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    let room = null;
+    for (let r of Object.values(GAME_ROOMS)) {
+      if (r.playerMap.has(name)) {
+        room = r;
+        break;
+      }
+    }
+    if (!room) return;
+    if (yahtzeeGames[room.roomId]) return;
+    let emptySeat = null;
+    for (let i=1; i<=room.maxPlayers; i++) {
+      if (!room.seats[i]) { emptySeat = i; break; }
+    }
+    if (!emptySeat) return;
+    room.spectators = room.spectators.filter(n => n !== name);
+    room.seats[emptySeat] = {
+      name: name,
+      ready: false,
+      isHost: room.hostName === name
+    };
+    broadcastRoom(room);
+  });
+
+  socket.on('leave_seat', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    let room = null;
+    for (let r of Object.values(GAME_ROOMS)) {
+      if (r.playerMap.has(name)) {
+        room = r;
+        break;
+      }
+    }
+    if (!room) return;
+    for (let i in room.seats) {
+      if (room.seats[i]?.name === name) delete room.seats[i];
+    }
+    if (!room.spectators.includes(name)) {
+      room.spectators.push(name);
+    }
+    broadcastRoom(room);
+  });
+
+  socket.on('spectate', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    let room = null;
+    for (let r of Object.values(GAME_ROOMS)) {
+      if (r.playerMap.has(name)) {
+        room = r;
+        break;
+      }
+    }
+    if (!room) return;
+    if (!room.spectators.includes(name)) room.spectators.push(name);
+    broadcastRoom(room);
+  });
+
+  socket.on('toggle_ready', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    let room = null;
+    for (let r of Object.values(GAME_ROOMS)) {
+      if (r.playerMap.has(name)) {
+        room = r;
+        break;
+      }
+    }
+    if (!room) return;
+    if (yahtzeeGames[room.roomId]) return;
+    for (let i in room.seats) {
+      if (room.seats[i]?.name === name) {
+        room.seats[i].ready = !room.seats[i].ready;
+        break;
+      }
+    }
+    broadcastRoom(room);
+  });
+
+  socket.on('change_settings', ({ maxPlayers }, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    let room = null;
+    for (let r of Object.values(GAME_ROOMS)) {
+      if (r.playerMap.has(name) && r.hostName === name) {
+        room = r;
+        break;
+      }
+    }
+    if (!room) return;
+    if (yahtzeeGames[room.roomId]) return;
+
+    // 人数校验：必须是 2/3/4，且不能小于当前已入座人数（防止三人时改成两人）
+    const seatedCount = Object.values(room.seats).filter(Boolean).length;
+    if (![2, 3, 4].includes(maxPlayers)) {
+      if (cb) cb({ success: false, msg: '人数只能设置为 2 / 3 / 4' });
+      return;
+    }
+    if (maxPlayers < seatedCount) {
+      if (cb) cb({ success: false, msg: `当前已有 ${seatedCount} 人入座，人数不能少于 ${seatedCount} 人` });
+      return;
+    }
+
+    room.maxPlayers = maxPlayers;
+    broadcastRoom(room);
+    if (cb) cb({ success: true, maxPlayers });
+  });
+
+  // 结算页"返回房间"：立即清理本房间的对局并复位准备状态，方便重新开局
+  socket.on('return_room', (cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    let cleared = false;
+    for (const room of Object.values(GAME_ROOMS)) {
+      if (room.playerMap.has(name) && yahtzeeGames[room.roomId]) {
+        if (gameEndTimers[room.roomId]) {
+          clearTimeout(gameEndTimers[room.roomId]);
+          delete gameEndTimers[room.roomId];
+        }
+        delete yahtzeeGames[room.roomId];
+        Object.keys(room.seats).forEach(seatId => {
+          if (room.seats[seatId]) room.seats[seatId].ready = false;
+        });
+        broadcastRoom(room);
+        cleared = true;
+        break;
+      }
+    }
+    if (cb) cb({ success: true, cleared });
+  });
+
+  // ========== 开发者工具：直接结算（仅测试账号可调用） ==========
+  // 前端传入 [{ name, total }]，服务器据此生成/覆盖一场 phase=finished 的对局并广播，
+  // 所有在游戏页的人会立刻看到"最终排名 + 返回房间"的结算界面。
+  socket.on('dev_finish_yahtzee', ({ players }, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || !TEST_NAMES.includes(name)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    let room = null;
+    for (const r of Object.values(GAME_ROOMS)) {
+      if (r.playerMap.has(name)) { room = r; break; }
+    }
+    if (!room) room = GAME_ROOMS.yahtzee;
+
+    const list = Array.isArray(players) ? players : [];
+    const rows = list.map(p => ({
+      name: String(p && p.name || '').trim(),
+      total: Math.max(0, Math.floor(Number(p && p.total) || 0))
+    })).filter(p => p.name);
+    if (rows.length === 0) {
+      if (cb) cb({ success: false, msg: '请至少填写一个玩家名' });
+      return;
+    }
+
+    // 清掉旧局的自动清理定时器，避免误删本场模拟对局
+    if (gameEndTimers[room.roomId]) {
+      clearTimeout(gameEndTimers[room.roomId]);
+      delete gameEndTimers[room.roomId];
+    }
+
+    const game = {
+      roomId: room.roomId,
+      players: {},
+      playerOrder: rows.map(r => r.name),
+      currentPlayerIndex: 0,
+      phase: 'finished',
+      round: 14,
+      mock: true,                 // 模拟对局：不判定/不记录成就
+      comboMap: {},
+      achievementsByPlayer: {}
+    };
+    rows.forEach(r => {
+      game.players[r.name] = {
+        dice: [1,1,1,1,1],
+        kept: [false,false,false,false,false],
+        rollCount: 0,
+        scores: buildMockScores(r.total),
+        previewScores: {},
+        yahtzeeBonus: 0,
+        yahtzeeCount: 0,
+        submitLog: []
+      };
+    });
+    yahtzeeGames[room.roomId] = game;
+    broadcastYahtzeeState(room.roomId);
+    if (cb) cb({ success: true, names: rows.map(r => r.name) });
+  });
+
+  // ========== 开发者工具：自定义本轮骰子（定点测试即时成就） ==========
+  // 仅测试账号可用。默认作用到"当前行动玩家"，也可指定玩家名。
+  // 会把该玩家的 5 颗骰子设为指定点数（当作一次掷骰：rollCount+1、触发即时成就）。
+  socket.on('dev_set_dice', ({ name: targetName, dice }, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || !TEST_NAMES.includes(name)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    let room = null;
+    for (const r of Object.values(GAME_ROOMS)) {
+      if (r.playerMap.has(name)) { room = r; break; }
+    }
+    if (!room) { if (cb) cb({ success: false, msg: '未找到房间' }); return; }
+    const game = yahtzeeGames[room.roomId];
+    if (!game || game.phase !== 'playing') {
+      if (cb) cb({ success: false, msg: '没有进行中的对局（请先开始一局再用）' });
+      return;
+    }
+    const pname = (targetName && game.players[targetName]) ? targetName : game.playerOrder[game.currentPlayerIndex];
+    const p = game.players[pname];
+    if (p.rollCount >= 3) {
+      if (cb) cb({ success: false, msg: `${pname} 本回合已掷满 3 次，请先提交计分再测` });
+      return;
+    }
+    const arr = (Array.isArray(dice) ? dice : []).slice(0, 5).map(Number);
+    if (arr.length !== 5 || arr.some(n => !Number.isInteger(n) || n < 1 || n > 6)) {
+      if (cb) cb({ success: false, msg: '请填写 5 个 1~6 的点数' });
+      return;
+    }
+    p.dice = arr;
+    p.kept = [false, false, false, false, false];
+    p.rollCount++;
+    p.previewScores = getYahtzeeScores(p.dice);
+    afterYahtzeeRoll(game, room.roomId, pname); // 复用掷骰的即时成就判定
+    broadcastYahtzeeState(room.roomId);
+    if (cb) cb({ success: true, name: pname, rollCount: p.rollCount });
+  });
+
+  // ========== 荣誉墙：拉取成就记录 + 元数据 ==========
+  // list = 正式玩家记录；testList = 测试账号记录（仅测试账号在荣誉墙可见，正式玩家不可见）
+  socket.on('get_achievements', (cb) => {
+    if (typeof cb === 'function') {
+      cb({
+        success: true,
+        list: achRecords.map(r => ({ ...r })),
+        testList: achTestRecords.map(r => ({ ...r })),
+        meta: ACHIEVEMENTS
+      });
+    }
+  });
+
+  // ========== 开发者助手：一键触发成就（仅测试账号，只写内存、不落盘） ==========
+  socket.on('test_trigger_achievement', (achievementId, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || !TEST_NAMES.includes(name)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    if (!achievementId || !ACHIEVEMENTS[achievementId]) {
+      if (cb) cb({ success: false, msg: '未知成就：' + achievementId });
+      return;
+    }
+    recordAchievement(name, achievementId); // 测试者：内存记录，重启即刷新
+    if (cb) cb({ success: true, name, achievementId, achievementName: ACHIEVEMENTS[achievementId].name });
+  });
+
+  // ========== 留言板 ==========
+  // 拉取留言（正式=玩家留言；游客=游客留言）
+  socket.on('get_board', (cb) => {
+    if (typeof cb === 'function') cb({
+      success: true,
+      official: boardMessages.official.slice(),
+      guest: boardMessages.guest.slice()
+    });
+  });
+
+  // 发布留言：游客 -> 游客留言；正式玩家/测试者 -> 玩家留言
+  socket.on('post_board_message', ({ text }, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name) { if (cb) cb({ success: false, msg: '未识别身份' }); return; }
+    const clean = String(text || '').trim();
+    if (!clean) { if (cb) cb({ success: false, msg: '留言不能为空' }); return; }
+    if (clean.length > 100) { if (cb) cb({ success: false, msg: '留言太长啦（最多 100 字）' }); return; }
+    const isGuestUser = name.startsWith('游客');
+    const type = isGuestUser ? 'guest' : 'official';
+    const msg = { name, text: clean, ts: Date.now() };
+    boardMessages[type].push(msg);
+    if (boardMessages[type].length > BOARD_MAX) boardMessages[type].shift();
+    io.emit('board_new', { type, msg });
+    if (cb) cb({ success: true, type });
+  });
+
+  socket.on('start_game', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    let room = null;
+    for (let r of Object.values(GAME_ROOMS)) {
+      if (r.playerMap.has(name) && r.hostName === name) {
+        room = r;
+        break;
+      }
+    }
+    if (!room) return;
+    if (yahtzeeGames[room.roomId]) return;
+    // 若上一局的"结算后自动清理"定时器还挂着，先清掉（避免误删本局）
+    if (gameEndTimers[room.roomId]) {
+      clearTimeout(gameEndTimers[room.roomId]);
+      delete gameEndTimers[room.roomId];
+    }
+    const players = Object.values(room.seats).filter(Boolean);
+    if (players.length < 2 || !players.every(p => p.ready)) return;
+    if (room.gameType === 'yahtzee') {
+      const playerNames = players.map(p => p.name);
+      initYahtzeeGame(room.roomId, playerNames);
+    }
+    broadcastRoom(room);
+    broadcastYahtzeeState(room.roomId);
+    setTimeout(()=>{
+      io.to(room.roomId).emit('game_start', {
+        gameUrl: GAME_URL_MAP[room.gameType] + "?room=" + room.roomId
+      });
+    }, 300);
+  });
+
+  socket.on('yahtzee_action', ({ action, index, category }) => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+
+    let room = null;
+    for (let r of Object.values(GAME_ROOMS)) {
+      const game = yahtzeeGames[r.roomId];
+      if (game && game.playerOrder.includes(name)) {
+        room = r;
+        break;
+      }
+    }
+    if (!room) return;
+
+    const game = yahtzeeGames[room.roomId];
+    if (!game || game.playerOrder[game.currentPlayerIndex] !== name) return;
+    if (game.phase !== 'playing') return;
+
+    const playerData = game.players[name];
+
+    if (action === 'roll') {
+      if (playerData.rollCount >= 3) return;
+      for (let i=0; i<5; i++) if (!playerData.kept[i]) playerData.dice[i] = Math.floor(Math.random()*6)+1;
+      playerData.rollCount++;
+      playerData.previewScores = getYahtzeeScores(playerData.dice);
+      afterYahtzeeRoll(game, room.roomId, name); // 即时成就检测（快艇/一发入魂/艇艇）
+    } else if (action === 'toggle_keep') {
+      if (playerData.rollCount === 0) return;
+      playerData.kept[index] = !playerData.kept[index];
+    } else if (action === 'select_category') {
+      // 仅计算预览，不做其他动作（前端也可自行计算，此处保留）
+      playerData.previewScores = getYahtzeeScores(playerData.dice);
+    } else if (action === 'submit_score') {
+      if (playerData.rollCount === 0 || playerData.scores[category] !== undefined) return;
+      const rolledDice = [...playerData.dice];   // 快照：稍后会被清空
+      const usedRolls = playerData.rollCount;
+      const wasYahtzeeFilled = playerData.scores.yahtzee !== undefined; // 提交前是否已填过快艇格
+      const isYahtzeeRoll = new Set(rolledDice).size === 1;
+      playerData.scores[category] = getYahtzeeScores(playerData.dice)[category];
+      playerData.dice = [1,1,1,1,1]; 
+      playerData.kept = [false,false,false,false,false];
+      playerData.rollCount = 0; 
+      playerData.previewScores = {};
+      
+      // ---- 对局统计与成就（mock 局跳过）----
+      if (!game.mock) {
+        playerData.submitLog.push({ category, rollCount: usedRolls });
+
+        // 重复快艇 +100：已填过快艇格后的后续快艇
+        if (isYahtzeeRoll && wasYahtzeeFilled && category !== 'yahtzee') {
+          playerData.yahtzeeBonus = (playerData.yahtzeeBonus || 0) + 100;
+        }
+        // 龟速填分：前 5 次提交全在上区
+        if (playerData.submitLog.length === 5 &&
+            playerData.submitLog.every(e => UPPER_CATS.includes(e.category))) {
+          announceAchievement(game, room.roomId, name, 'slow_fill');
+        }
+        // 重掷大师：13 次提交全部用满重掷（rollCount === 3）
+        if (playerData.submitLog.length === 13 &&
+            playerData.submitLog.every(e => e.rollCount === 3)) {
+          announceAchievement(game, room.roomId, name, 'reroll_master');
+        }
+        // 上层建筑：上区小计 ≥63
+        const upperSum = UPPER_CATS.reduce((s, c) => s + (playerData.scores[c] || 0), 0);
+        if (upperSum >= 63) announceAchievement(game, room.roomId, name, 'upper_bonus');
+        // 葫芦兄弟：记录葫芦点数组，同组合 ≥2 人解锁
+        if (category === 'fullHouse' && playerData.scores.fullHouse > 0) {
+          const combo = getFullHouseCombo(rolledDice);
+          if (combo) {
+            const key = combo.t + '-' + combo.p;
+            (game.comboMap[key] = game.comboMap[key] || []).push(name);
+            if (game.comboMap[key].length >= 2) {
+              game.comboMap[key].forEach(n => announceAchievement(game, room.roomId, n, 'fullhouse_brothers'));
+            }
+          }
+        }
+      }
+
+      game.currentPlayerIndex++;
+      if (game.currentPlayerIndex >= game.playerOrder.length) {
+        game.currentPlayerIndex = 0;
+        game.round++;
+        if (game.round > 13) { 
+          game.phase = 'finished';
+          // 结算：判定结算型成就 + 广播"本局成就汇总"（mock 局跳过）
+          if (!game.mock) {
+            evaluateSettlementAchievements(game, room.roomId);
+            broadcastAchievementSummary(room.roomId, game);
+          }
+          gameEndTimers[room.roomId] = setTimeout(() => {
+            delete yahtzeeGames[room.roomId];
+            delete gameEndTimers[room.roomId];
+            Object.keys(room.seats).forEach(seatId => {
+              if (room.seats[seatId]) {
+                room.seats[seatId].ready = false;
+              }
+            });
+            broadcastRoom(room);
+          }, 60000); // 兜底 60 秒自动清理；正常流程由玩家点"返回房间"立即清理
+        }
+      }
+    }
+    broadcastYahtzeeState(room.roomId);
+  });
+
   socket.on('disconnect', () => {
-    console.log('玩家断开');
-    gameEnded = true;
-    clearTimeout(timeoutId);
-    messageText = '对手断开，等待重连...';
-    broadcastState();
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    socketToUser.delete(socket.id);
+
+    // 防误删：若该玩家名已被"另一条还活着的连接"接管
+    // （典型场景：刚从房间页跳转到游戏页 / 刚刷新页面，新连接先到了），
+    // 则旧连接的断开不算离线——不删在线名单、不排队移除，交给新连接的心跳去续接。
+    let hasAnotherAlive = false;
+    for (const [sid, uname] of socketToUser) {
+      if (uname === name && sid !== socket.id && io.sockets.sockets.has(sid)) {
+        hasAnotherAlive = true;
+        break;
+      }
+    }
+    if (hasAnotherAlive) return;
+
+    onlineUsers.delete(name);
+    userLastOnline.set(name, Date.now());
+
+    for (let room of Object.values(GAME_ROOMS)) {
+      if (room.playerMap.has(name)) {
+        room.leaveTimers[name] = setTimeout(() => {
+          removeOfflinePlayer(room, name);
+        }, HEARTBEAT_TIMEOUT);
+      }
+    }
+    broadcast();
   });
 });
 
-// ---------- 启动服务器 ----------
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`裁判就位，端口：${PORT}`);
+setInterval(() => {
+  for (const room of Object.values(GAME_ROOMS)) {
+    broadcastRoom(room);
+  }
+  broadcast();
+}, 3000);
+
+// 启动时读回成就数据（开发/测试期为内存模式：不读不写 data/，重启即刷新）
+// 测试账号成就永远只存内存（不读不写文件）
+if (PERSIST_ACHIEVEMENTS) {
+  achRecords = loadAchRecords(ACH_FILE, []);
+  console.log(`✅ 正式成就数据已加载：${achRecords.length} 条`);
+} else {
+  achRecords = [];
+  console.log('🧪 成就系统处于【内存模式】：成就重启即刷新，不写入 data/（正式版将 PERSIST_ACHIEVEMENTS 改为 true 即落盘）');
+}
+achTestRecords = []; // 测试者成就始终内存态
+
+// ========== 留言板（开发期内存，重启即清空；正式版可仿照 PERSIST_ACHIEVEMENTS 加落盘） ==========
+const BOARD_MAX = 120; // 每块最多保留条数
+let boardMessages = { official: [], guest: [] }; // { name, text, ts }
+
+server.listen(3000, () => {
+  console.log('🏰 服务器启动：端口 3000');
+  console.log('✅ 单房间系统已启动');
+  console.log('✅ 自动房主转移已开启');
+  console.log('✅ 3秒自动同步已开启');
+  console.log('✅ 游戏进行中禁止新玩家入座已开启');
+  console.log('✅ 心跳检测（30秒超时）已开启');
+  console.log('✅ 主动退出房间逻辑已新增');
+  console.log('✅ 游戏状态主动拉取接口已新增');
 });

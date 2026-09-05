@@ -1,0 +1,193 @@
+<script>
+  if (sessionStorage.getItem('isTest') !== 'true') {
+    window.location.href = '/index.html';
+  }
+</script>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🔧 开发者工具</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 30px;
+      min-height: 100vh;
+    }
+    h1 { color: #4a90d9; margin-bottom: 20px; }
+    .panel {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 20px;
+      margin: 15px 0;
+    }
+    .panel h3 { margin-bottom: 12px; color: #f0c040; }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    .btn-trigger { background: #27ae60; color: white; }
+    .btn-trigger:hover { background: #1e8449; }
+    .btn-reset { background: #e74c3c; color: white; }
+    .btn-reset:hover { background: #c0392b; }
+    .btn-info { background: #4a90d9; color: white; }
+    .btn-info:hover { background: #357abd; }
+    select {
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #4a90d9;
+      background: #1a1a2e;
+      color: white;
+      font-size: 0.9rem;
+      margin-right: 10px;
+    }
+    .log {
+      background: #0d1117;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .back-link {
+      color: #4a90d9;
+      text-decoration: none;
+      display: inline-block;
+      margin-bottom: 20px;
+    }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <a href="/lobby.html" class="back-link">← 返回大厅</a>
+  <h1>🔧 开发者工具</h1>
+
+  <!-- 成就测试 -->
+  <div class="panel">
+    <h3>🏅 一键触发成就（仅测试账号；内存记录，重启即刷新）</h3>
+    <select id="achievementSelect">
+      <option value="">-- 选择成就 --</option>
+      <optgroup label="快艇骰子">
+        <option value="yahtzee_roll">Yahtzee！</option>
+        <option value="upper_bonus">上层建筑</option>
+        <option value="slow_fill">龟速填分</option>
+        <option value="reroll_master">重掷大师</option>
+        <option value="fullhouse_brothers">葫芦兄弟</option>
+        <option value="score_250">250来袭！</option>
+        <option value="same_score">同分异构</option>
+        <option value="score_300">快艇领域大神</option>
+        <option value="seat_full">座无虚席</option>
+        <option value="yahtzee_twice">？！艇艇！？</option>
+        <option value="first_roll">一发入魂</option>
+        <option value="low_score">认真的吗？</option>
+      </optgroup>
+      <optgroup label="更多游戏">
+        <option value="" disabled>暂无成就</option>
+      </optgroup>
+    </select>
+    <button class="btn-trigger" onclick="triggerAchievement()">触发</button>
+    <button class="btn-info" onclick="window.location.href='/achievements.html'">查看荣誉墙</button>
+    <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
+      用 test1~test4 登录后一键触发成就，再到荣誉墙查看效果；测试数据只存内存，重启即清空。
+    </p>
+  </div>
+
+  <!-- 数据管理 -->
+  <div class="panel">
+    <h3>💾 数据管理</h3>
+    <button class="btn-reset" onclick="resetAchievements()">🗑️ 重置所有成就数据</button>
+    <button class="btn-info" onclick="showOnlineUsers()">👥 查看在线用户</button>
+    <button class="btn-info" onclick="showServerData()">📊 查看服务器数据</button>
+  </div>
+
+  <!-- 日志 -->
+  <div class="log" id="log">📋 操作日志将显示在这里...</div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const logEl = document.getElementById('log');
+
+    // ===== 心跳：让服务器识别"当前登录者是谁"（本页是新连接，刷新后身份要靠心跳续接）=====
+    // 只有测试账号能进入本页，isTest 固定为 true；inRoom=false（不在房间上下文）
+    function sendHeartbeat() {
+      if (socket.connected) socket.emit('heartbeat', sessionStorage.getItem('playerName'), true, false);
+    }
+    socket.on('connect', sendHeartbeat);
+    setInterval(sendHeartbeat, 10000);
+
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      logEl.textContent = `[${time}] ${msg}\n` + logEl.textContent;
+    }
+
+    // 检查是否测试者
+    socket.on('connect', () => {
+      const isTest = sessionStorage.getItem('isTest') === 'true';
+      if (!isTest) {
+        log('⚠️ 你不是测试者，部分功能不可用');
+      } else {
+        log('✅ 测试者已连接');
+      }
+    });
+
+    function triggerAchievement() {
+      const id = document.getElementById('achievementSelect').value;
+      if (!id) { log('⚠️ 请先选择一个成就'); return; }
+      socket.emit('test_trigger_achievement', id, (res) => {
+        if (res && res.success) {
+          log('✅ 已触发：' + ((res && res.achievementName) || id) + '（内存记录，重启即清空）');
+        } else {
+          log('❌ ' + ((res && res.msg) || '触发失败'));
+        }
+      });
+    }
+
+    function resetAchievements() {
+      if (confirm('确定要重置所有成就数据吗？此操作不可恢复！')) {
+        socket.emit('test_reset_achievements');
+        log('🗑️ 已发送重置成就数据请求');
+      }
+    }
+
+    function showOnlineUsers() {
+      socket.emit('get_online_users');
+      log('👥 已请求在线用户列表');
+    }
+
+    function showServerData() {
+      socket.emit('test_get_server_data');
+      log('📊 已请求服务器数据');
+    }
+
+    // 监听服务器回复
+    socket.on('online_users', (users) => {
+      log('👥 在线用户：' + users.map(u => u.name).join(', '));
+    });
+
+    socket.on('test_server_data', (data) => {
+      log('📊 服务器数据：' + JSON.stringify(data, null, 2));
+    });
+
+    socket.on('achievement_update', ({ achievementId, playerName }) => {
+      log(`🏅 成就触发：${playerName} 获得 ${achievementId}`);
+    });
+
+    socket.on('test_achievement_result', (msg) => {
+      log('📢 ' + msg);
+    });
+  </script>
+</body>
+</html>
