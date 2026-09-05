@@ -30,6 +30,7 @@ const VALID_KEYS = {
 };
 const TEST_NAMES = ['测试者1', '测试者2', '测试者3', '测试者4']; // 测试账号（开发者工具/数据跳过落盘用）
 const OFFICIAL_PLAYERS = Object.values(VALID_KEYS);
+const GUEST_KEY = '12345'; // 🎒 游客通道口令（暂定，之后可改；防外人随意进入游客区）
 
 const onlineUsers = new Map();
 const socketToUser = new Map();
@@ -591,7 +592,14 @@ io.on('connection', (socket) => {
     broadcast();
   });
 
-  socket.on('guest_login', (name, cb) => {
+  socket.on('guest_login', (name, key, cb) => {
+    // 兼容旧式调用 guest_login(name, cb)
+    if (typeof key === 'function') { cb = key; key = undefined; }
+    // 游客通道需口令（仅一个口令，不区分游客）
+    if (key !== GUEST_KEY) {
+      if (typeof cb === 'function') cb({ success: false, message: '游客口令错误' });
+      return;
+    }
     if (!name) name = `游客${Math.floor(Math.random() * 900 + 100)}`;
     const existingTimer = offlineTimers.get(name);
     if (existingTimer) { clearTimeout(existingTimer); offlineTimers.delete(name); }

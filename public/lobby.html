@@ -209,6 +209,30 @@
       .player-card .name { font-size: .8rem; }
       .player-card .status-text { font-size: .65rem; }
     }
+
+    /* ===== 简洁化 v2.9：去卡片盒、纯文本化 ===== */
+    .player-card, .player-card.online, .player-card.offline {
+      background: none;
+      border: none;
+      border-right: 1px solid #e3e7ec;
+      box-shadow: none;
+      border-radius: 0;
+      padding: 6px 8px;
+    }
+    .player-card:last-child { border-right: none; }
+    .player-card.offline { opacity: .7; }
+    .player-card .name { font-size: .95rem; }
+    .player-card.online .status-text { color: #27ae60; font-weight: 600; }
+    .guest-toggle { background: none; border: none; color: #6b7a90; font-size: .8rem; padding: 2px 4px; }
+    .guest-toggle:hover { color: #4a90d9; }
+    .guest-section { margin-top: 6px; }
+    .mb-preview { border: none; background: none; padding: 0; min-height: 0; }
+    .mb-row { padding: 4px 0; }
+    @media (max-width: 480px) {
+      .player-card { padding: 6px 2px; }
+      .player-card .name { font-size: .82rem; }
+      .player-card .status-text { font-size: .66rem; }
+    }
   </style>
 </head>
 <body>

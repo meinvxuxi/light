@@ -391,7 +391,7 @@
       const allReady = seatedList.every(s => s.ready);
 
       if (playerCount < 2) {
-        showToast('😅 等等我们的神偷大人！人数还不够（至少 2 人才能开局）');
+        showToast('少人？人数还不够（至少 2 人才能开局）');
         return;
       }
       if (!allReady) {
@@ -402,7 +402,7 @@
       const maxPlayers = (latestRoom && latestRoom.maxPlayers) || serverMaxPlayers;
       if (playerCount < maxPlayers) {
         // 未满员：仅提醒不阻止（规则仍是 ≥2 人即可开局），提示停留一下后自动开始
-        showToast('🤫 等等我们的神偷大人！人数还没满，马上开始！');
+        showToast('多人？人数还没满，马上开始！');
         isRoomProcessing = true;
         document.getElementById('btnStart').disabled = true;
         setTimeout(() => {
@@ -441,15 +441,12 @@
       }, 1000);
     }
 
-    // ========== 修复：返回大厅时等待服务器确认 ==========
+    // ========== 返回大厅：彻底离开房间（离座/取消观战并移出房间） ==========
+    // 离开后回到大厅，在线身份由大厅的心跳自动恢复
     function goToLobby() {
-      if (mySeat !== null) {
-        socket.emit('leave_seat', () => {
-          window.location.href = '/lobby.html';
-        });
-      } else {
+      socket.emit('leave_room', gameName, () => {
         window.location.href = '/lobby.html';
-      }
+      });
     }
 
     socket.on('game_start', (data) => {

@@ -45,10 +45,12 @@
     });
 
     document.getElementById('guestBtn').addEventListener('click', () => {
-      socket.emit('guest_login', '游客' + Math.floor(Math.random() * 1000), (res) => {
+      const gkey = prompt('请输入游客口令');
+      if (!gkey) return;
+      socket.emit('guest_login', '游客' + Math.floor(Math.random() * 1000), gkey, (res) => {
         document.getElementById('status').textContent = res.success 
           ? '✅ ' + res.name + ' 登录成功' 
-          : '❌ 登录失败';
+          : '❌ ' + ((res && res.message) || '登录失败');
       });
     });
   </script>

@@ -19,13 +19,10 @@ body {
 }
 
 .login-box {
-  background: white;
-  padding: 50px 40px;
-  border-radius: 20px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+
   text-align: center;
-  width: 360px;
-  max-width: 92vw;
+  width: 320px;
+  max-width: 90vw;
 }
 
 .login-box h1 {
@@ -71,12 +68,20 @@ body {
 }
 
 .btn-guest {
-  background: #e8edf2;
-  color: #5a6c7d;
+  background: none;
+  color: #4a90d9;
+  border: none;
+  width: auto;
+  padding: 0;
+  font-size: .8rem;
+  text-decoration: underline;
+  display: block;
+  margin: 8px auto 0;
 }
 
 .btn-guest:hover {
-  background: #d5dde5;
+  background: none;
+  color: #2b7cc0;
 }
 
 .error {
@@ -84,6 +89,27 @@ body {
   font-size: 0.9rem;
   margin-top: 8px;
   min-height: 20px;
+}
+
+.guest-key-row {
+  margin-top: 6px;
+}
+
+.guest-key-row input {
+  width: 62%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #9db4cc;
+  color: #2c3e50;
+  font-size: .82rem;
+  text-align: center;
+  outline: none;
+  padding: 2px 4px;
+}
+
+.guest-key-row input::placeholder {
+  color: #b3bfcb;
+  font-size: .76rem;
 }
   </style>
 </head>
@@ -93,7 +119,10 @@ body {
     <input type="password" id="keyInput" placeholder="输入你的密钥" >
     <br>
     <button id="loginBtn">开始训练</button>
-    <button id="guestBtn" class="btn-guest">🎒 偷赛训！（游客登录）</button>
+    <button id="guestBtn" class="btn-guest">偷赛训！（游客登录）</button>
+    <div class="guest-key-row" id="guestKeyRow" style="display:none;">
+      <input type="password" id="guestKeyInput" placeholder="输入游客口令，回车进入" autocomplete="off">
+    </div>
     <div id="errorMsg" class="error"></div>
   </div>
 
@@ -124,16 +153,28 @@ body {
     input.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') btn.click();
     });
-    // 游客登录
-document.getElementById('guestBtn').addEventListener('click', () => {
-  const guestName = '游客' + Math.floor(Math.random() * 900 + 100);
-  socket.emit('guest_login', guestName, (res) => {
-    sessionStorage.setItem('playerName', res.name);
-    sessionStorage.setItem('isGuest', 'true');
-    sessionStorage.setItem('isTest', 'false');   // 防止继承上一个"测试账号"的标记
-    window.location.href = '/lobby.html';
-  });
-});
+    // ===== 游客登录（需口令） =====
+    const guestKeyRow = document.getElementById('guestKeyRow');
+    const guestKeyInput = document.getElementById('guestKeyInput');
+    document.getElementById('guestBtn').addEventListener('click', () => {
+      guestKeyRow.style.display = 'block';
+      guestKeyInput.focus();
+    });
+
+    function confirmGuest() {
+      const key = guestKeyInput.value.trim();
+      error.textContent = '';
+      if (!key) { error.textContent = '请输入游客口令'; return; }
+      const guestName = '游客' + Math.floor(Math.random() * 900 + 100);
+      socket.emit('guest_login', guestName, key, (res) => {
+        if (!res || !res.success) { error.textContent = (res && res.message) || '游客口令错误'; return; }
+        sessionStorage.setItem('playerName', res.name);
+        sessionStorage.setItem('isGuest', 'true');
+        sessionStorage.setItem('isTest', 'false');   // 防止继承上一个"测试账号"的标记
+        window.location.href = '/lobby.html';
+      });
+    }
+    guestKeyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmGuest(); });
   </script>
 </body>
 </html>
