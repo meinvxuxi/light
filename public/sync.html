@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>排行榜</title>
+  <title>默契空间</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #f0f2f5; color: #2c3e50; font-family: 'Segoe UI', 'PingFang SC', sans-serif; padding: 16px 12px; }
@@ -11,42 +11,34 @@
     .title { font-weight: 700; font-size: 1.08rem; }
     .back { color: #4a90d9; text-decoration: none; font-size: .88rem; }
     .back:hover { text-decoration: underline; }
-    .wrap { max-width: 620px; margin: 0 auto; padding: 16px 4px 60px; }
-    .tabs { display: flex; gap: 22px; border-bottom: 1px solid #e8ecf1; padding-bottom: 8px; }
-    .lb-tab { color: #6b7a90; font-size: .92rem; cursor: pointer; padding: 2px 2px 4px; border-bottom: 2px solid transparent; user-select: none; }
-    .lb-tab:hover { color: #4a90d9; }
-    .lb-tab.active { color: #4a90d9; border-bottom-color: #4a90d9; font-weight: 600; }
-    .lb-list { padding-top: 6px; }
-    .lb-row { display: flex; align-items: baseline; gap: 10px; padding: 10px 2px; border-bottom: 1px dashed #eef0f4; font-size: .92rem; }
-    .lb-row:last-child { border-bottom: none; }
-    .lb-rank { width: 28px; color: #9aa5b1; font-size: .82rem; flex: none; }
-    .lb-rank.top { color: #4a90d9; font-weight: 700; }
-    .lb-who { color: #2c3e50; font-weight: 600; }
-    .lb-title { font-size: .7rem; color: #b6bec9; background: #eef1f5; border-radius: 20px; padding: 1px 8px; }
-    .lb-stat { margin-left: auto; color: #7f8fa6; font-size: .82rem; white-space: nowrap; }
+    .wrap { max-width: 620px; margin: 0 auto; padding: 14px 4px 60px; }
+    .lab { font-size: .76rem; color: #9aa5b1; letter-spacing: 1px; margin: 18px 0 4px; border-bottom: 1px solid #e8ecf1; padding: 0 2px 6px; }
+    .sc-row { display: flex; align-items: baseline; gap: 8px; padding: 10px 4px; border-bottom: 1px dashed #eef0f4; cursor: pointer; user-select: none; }
+    .sc-row:last-of-type { border-bottom: none; }
+    .sc-row:hover .who { color: #4a90d9; }
+    .sc-row .who { font-weight: 700; color: #4a90d9; }
+    .sc-row .me-tag { font-size: .7rem; color: #9aa5b1; }
+    .sc-row .sc { margin-left: auto; color: #6b7a90; font-size: .84rem; white-space: nowrap; }
+    .sc-row .tl { color: #e08a2d; font-size: .74rem; white-space: nowrap; }
     .empty { text-align: center; color: #adb5bd; padding: 46px 0; font-size: .88rem; }
     .err { text-align: center; color: #e74c3c; padding: 34px 0; font-size: .9rem; }
+    @media (max-width: 480px) { .sc-row { flex-wrap: wrap; } .sc-row .sc { margin-left: auto; } }
   </style>
 </head>
 <body>
   <div class="headbar">
-    <span class="title">排行榜</span>
+    <span class="title">默契空间</span>
     <a class="back" href="/lobby.html">返回大厅</a>
   </div>
-  <div class="wrap">
-    <div class="tabs">
-      <span class="lb-tab active" id="tabBoard" onclick="switchTab('board')">快艇榜</span>
-      <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
-    </div>
-    <div class="lb-list" id="lbList"><div class="empty">加载中…</div></div>
-  </div>
+  <div class="wrap" id="wrap"><div class="empty">加载中…</div></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const myName = sessionStorage.getItem('playerName');
     if (!myName) { window.location.href = '/index.html'; }
-    let board = [], achBoard = [], curTab = 'board';
-
+    if (sessionStorage.getItem('isGuest') === 'true') { window.location.href = '/lobby.html'; }
+    let _dm = {};
+    function dn(n) { return _dm[n] || n; }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
     // ===== 主题引擎（五套：初始/粉/绿 + 各角色背景） =====
@@ -59,13 +51,9 @@
       const s = document.createElement('style');
       s.id = 'dynThemeStyle';
       const scoped = (prefix, selList) => selList.split(',').map(x => prefix + ' ' + x.trim()).join(',');
-      const col = '.back,.back:hover,.lb-tab.active';
-      const pink =
-        scoped('body.dyn-pink', col) + '{color:#f06292!important}' +
-        'body.dyn-pink .lb-tab.active{border-bottom-color:#ffb3c6!important}';
-      const green =
-        scoped('body.dyn-green', col) + '{color:#6f9e63!important}' +
-        'body.dyn-green .lb-tab.active{border-bottom-color:#a9c79e!important}';
+      const col = '.back,.back:hover,.sc-row .who,.tl';
+      const pink = scoped('body.dyn-pink', col) + '{color:#f06292!important}';
+      const green = scoped('body.dyn-green', col) + '{color:#6f9e63!important}';
       s.textContent = pink + '\n' + green;
       document.head.appendChild(s);
     }
@@ -104,42 +92,36 @@
     window.addEventListener('pageshow', () => { paintSaved(); if (socket.connected) applyTheme(); });
     setInterval(sendHeartbeat, 10000);
 
-    function switchTab(tab) {
-      curTab = tab;
-      document.getElementById('tabBoard').classList.toggle('active', tab === 'board');
-      document.getElementById('tabAch').classList.toggle('active', tab === 'ach');
-      render();
+    function openPair(key) {
+      const [a, b] = key.split('|');
+      window.location.href = '/pair.html?pair=' + encodeURIComponent(key);
     }
-    function render() {
-      const el = document.getElementById('lbList');
-      const rows = curTab === 'board' ? board : achBoard;
-      if (!rows.length) {
-        el.innerHTML = '<div class="empty">' + (curTab === 'board' ? '还没有对局记录，去打一局吧～' : '还没有成就记录') + '</div>';
+    function rowHtml(c, isMe) {
+      const tag = isMe ? '<span class="me-tag">我</span>' : '';
+      const tls = (c.titles && c.titles.length) ? '　<span class="tl">' + c.titles.map(esc).join(' / ') + '</span>' : '';
+      return `<div class="sc-row" ondblclick="openPair('${c.key}')">
+        <span class="who">${esc(dn(c.a))}${tag}</span>
+        <span>×</span>
+        <span class="who">${esc(dn(c.b))}${c.b === myName ? '<span class="me-tag">我</span>' : ''}</span>
+        ${tls}
+        <span class="sc">默契 ${c.score} 分</span>
+      </div>`;
+    }
+    function render(res) {
+      const w = document.getElementById('wrap');
+      if (!res || !res.success) {
+        w.innerHTML = `<div class="err">${esc((res && res.msg) || '加载失败，请刷新重试')}</div>`;
         return;
       }
-      el.innerHTML = rows.map((r, i) => {
-        const rankCls = i < 3 ? 'lb-rank top' : 'lb-rank';
-        const stat = curTab === 'board'
-          ? `单局最高 ${r.best} 分`
-          : `${r.count} 个成就`;
-        return `<div class="lb-row">
-          <span class="${rankCls}">${i + 1}</span>
-          <span class="lb-who">${esc(r.displayName)}</span>
-          ${r.title ? `<span class="lb-title">${esc(r.title)}</span>` : ''}
-          <span class="lb-stat">${stat}</span>
-        </div>`;
-      }).join('');
+      w.innerHTML = `
+        <div class="lab">我与他们（双击进入该组合的默契空间）</div>
+        ${res.first.map(c => rowHtml(c, true)).join('') || '<div class="empty">暂无组合</div>'}
+        <div class="lab">其他玩家之间</div>
+        ${res.second.map(c => rowHtml(c, false)).join('') || '<div class="empty">暂无组合</div>'}`;
     }
     socket.on('connect', () => {
-      socket.emit('get_leaderboard', (res) => {
-        if (res && res.success) {
-          board = res.board || [];
-          achBoard = res.achBoard || [];
-          render();
-        } else {
-          document.getElementById('lbList').innerHTML = '<div class="err">加载失败，请刷新重试</div>';
-        }
-      });
+      socket.emit('get_display_names', (r) => { if (r && r.success) _dm = r.map; });
+      socket.emit('get_sync_home', render);
     });
   </script>
 </body>

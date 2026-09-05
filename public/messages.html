@@ -20,8 +20,11 @@
     .msg { padding: 8px 2px; border-bottom: 1px solid #f2f4f7; }
     .msg:last-child { border-bottom: none; }
     .msg .mhead { font-size: .76rem; color: #9aa5b1; margin-bottom: 2px; }
+    .msg .mhead.sys { color: #4a90d9; font-weight: 600; }
     .msg .mhead .g { margin-left: 4px; color: #f0a020; }
     .msg .mtext { font-size: .92rem; line-height: 1.5; word-break: break-word; }
+    body.dyn-pink .msg .mhead.sys { color: #f06292; }
+    body.dyn-green .msg .mhead.sys { color: #6f9e63; }
     .compose { display: flex; gap: 8px; margin-top: 12px; }
     .compose input { flex: 1; padding: 10px 12px; border: 1px solid #d7dde3; border-radius: 10px; font-size: .9rem; outline: none; }
     .compose button { padding: 0 18px; border: none; border-radius: 10px; background: #2c3e50; color: #fff; font-size: .88rem; cursor: pointer; }
@@ -96,12 +99,14 @@
       const el = document.getElementById('msgList');
       if (!list.length) { el.innerHTML = '<div class="empty">还没有留言，来说第一句吧～</div>'; return; }
       el.innerHTML = '';
-      // 倒序展示：最新在最下面
-      for (const m of list) {
+      // 最新在最上面：从新到旧 自上而下排列
+      const newest = list.slice().reverse();
+      for (const m of newest) {
         const row = document.createElement('div');
         row.className = 'msg';
         const head = document.createElement('div');
         head.className = 'mhead';
+        if (m.name === '系统') head.classList.add('sys');
         head.textContent = dn(m.name) + ' · ' + fmtTime(m.ts);
         if (m.name.startsWith('游客')) {
           const g = document.createElement('span');
@@ -116,16 +121,16 @@
         row.appendChild(body);
         el.appendChild(row);
       }
-      el.scrollTop = el.scrollHeight; // 滚到最新
+      el.scrollTop = 0; // 停在最上面（最新）
     }
 
     const socket = io();
 
     // ===== p1 主题应用 =====
     // ===== 主题引擎 =====
-    const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg' };
-    const THEME_MOBILE = { p4: '/assets/avatars/p4/zuixin4.jpg' };
-    const THEME_ALPHA = { p1: 0.82, p2: 0.75, p3: 0.75, p4: 0.82 };
+    const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg', pomelo: '/assets/avatars/p3/nene.jpg' };
+    const THEME_MOBILE = { p4: '/assets/avatars/p4/zuixin4.jpg', pomelo: '/assets/avatars/p3/nene2.jpg' };
+    const THEME_ALPHA = { p1: 0.82, p2: 0.75, p3: 0.75, p4: 0.82, pomelo: 0.6 };
     const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches;
     function ensureThemeStyle() {
       if (document.getElementById('dynThemeStyle')) return;
@@ -164,7 +169,7 @@
       const b = document.body;
       b.classList.remove('dyn-pink', 'dyn-green');
       if (id && id !== 'initial') {
-        b.classList.add(id === 'p3' ? 'dyn-green' : 'dyn-pink');
+        b.classList.add((id === 'p3' || id === 'pomelo') ? 'dyn-green' : 'dyn-pink');
         const img = (IS_MOBILE && THEME_MOBILE[id]) ? THEME_MOBILE[id] : THEME_IMG[id];
         const a = THEME_ALPHA[id] || 0.82;
         if (img) { b.style.backgroundImage = "linear-gradient(rgba(255,255,255," + a + "), rgba(255,255,255," + a + ")), url('" + img + "')"; b.style.backgroundSize = 'cover'; b.style.backgroundAttachment = 'fixed'; b.style.backgroundPosition = 'center'; }

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>默契空间</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #f0f2f5; color: #2c3e50; font-family: 'Segoe UI', 'PingFang SC', sans-serif; padding: 16px 12px; }
+    .headbar { max-width: 620px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; font-size: .9rem; }
+    .title { font-weight: 700; font-size: 1.08rem; }
+    .back { color: #4a90d9; text-decoration: none; font-size: .88rem; }
+    .back:hover { text-decoration: underline; }
+    .wrap { max-width: 620px; margin: 0 auto; padding: 14px 4px 60px; }
+    .meta { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .mpair { font-size: 1.2rem; font-weight: 700; color: #4a90d9; }
+    .w-item { padding: 10px 2px; border-bottom: 1px dashed #eef0f4; font-size: .9rem; line-height: 1.6; }
+    .w-item:last-child { border-bottom: none; }
+    .w-item .w-time { color: #9aa5b1; font-size: .76rem; }
+    .mdetail { color: #7f8fa6; font-size: .84rem; }
+    .mtl { color: #e08a2d; font-size: .78rem; background: #fbf4ea; border-radius: 12px; padding: 1px 9px; }
+    .present { font-size: .8rem; color: #27ae60; margin-top: 6px; }
+    .present.wait { color: #9aa5b1; }
+    .lab { font-size: .76rem; color: #9aa5b1; letter-spacing: 1px; margin: 20px 0 4px; border-bottom: 1px solid #e8ecf1; padding: 0 2px 6px; }
+    .g-row { display: flex; align-items: center; gap: 10px; padding: 12px 4px; border-bottom: 1px dashed #eef0f4; }
+    .g-row .g-name { font-weight: 700; }
+    .g-row .g-desc { color: #9aa5b1; font-size: .78rem; }
+    .g-row .go { margin-left: auto; color: #4a90d9; font-size: .84rem; cursor: pointer; white-space: nowrap; }
+    .g-row .go:hover { text-decoration: underline; }
+    .g-row .soon { margin-left: auto; color: #c0c7cf; font-size: .78rem; white-space: nowrap; }
+    .qa-head { display: flex; justify-content: space-between; font-size: .8rem; color: #9aa5b1; margin-bottom: 8px; }
+    .qa-q { font-size: 1.05rem; font-weight: 700; margin-bottom: 12px; line-height: 1.5; }
+    .qa-opt { padding: 10px 14px; border: 1px solid #dfe3e8; border-radius: 10px; margin-bottom: 8px; font-size: .95rem; cursor: pointer; }
+    .qa-opt.sel { background: rgba(74,144,217,.14); border-color: #4a90d9; font-weight: 700; }
+    .qa-opt.dis { opacity: .55; cursor: default; }
+    .qa-wait { color: #9aa5b1; font-size: .82rem; text-align: center; margin-top: 6px; }
+    .match-tip { display: none; text-align: center; padding: 10px 14px; border-radius: 12px; margin: 6px 0 10px; font-size: 1rem; font-weight: 700; color: #2f6fb2; background: rgba(74,144,217,.13); border: 1px solid rgba(74,144,217,.45); }
+    .match-tip.show { display: block; }
+    .match-tip.miss { color: #7f8fa6; background: rgba(122,134,150,.1); border-color: rgba(122,134,150,.3); }
+    .score-line { font-size: .84rem; color: #6b7a90; margin: 10px 0 4px; }
+    .btn-ok { padding: 9px 26px; border: none; border-radius: 8px; background: #4a90d9; color: #fff; font-size: .9rem; font-weight: 600; cursor: pointer; }
+    .btn-ok:disabled { background: #c0c7cf; cursor: not-allowed; }
+    .sec-hide { display: none; }
+    .err { text-align: center; color: #e74c3c; padding: 34px 0; font-size: .9rem; }
+    .t-new { color: #e08a2d; font-weight: 700; font-size: .95rem; margin: 10px 0; }
+    body.dyn-pink .qa-opt.sel { background: rgba(240,98,146,.13); border-color: #f06292; }
+    body.dyn-green .qa-opt.sel { background: rgba(111,158,99,.15); border-color: #6f9e63; }
+    body.dyn-pink .match-tip { color: #d8567f; background: rgba(240,98,146,.13); border-color: rgba(240,98,146,.5); }
+    body.dyn-green .match-tip { color: #4f8a45; background: rgba(111,158,99,.14); border-color: rgba(111,158,99,.5); }
+  </style>
+</head>
+<body>
+  <div class="headbar">
+    <span class="title">默契空间</span>
+    <a class="back" href="/sync.html" id="backLink">返回默契主页</a>
+  </div>
+  <div class="wrap" id="wrap"><div class="err">加载中…</div></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const myName = sessionStorage.getItem('playerName');
+    if (!myName) { window.location.href = '/index.html'; }
+    if (sessionStorage.getItem('isGuest') === 'true') { window.location.href = '/sync.html'; }
+    const pairKey = (new URLSearchParams(location.search).get('pair') || '').trim();
+    const pairNames = pairKey ? pairKey.split('|') : [];
+    const isMember = pairNames.includes(myName);
+    if (!pairKey || pairNames.length !== 2) {
+      document.getElementById('wrap').innerHTML = '<div class="err">无法进入该默契空间</div>';
+      throw new Error('pair deny');
+    }
+    let _dm = {};
+    function dn(n) { return _dm[n] || n; }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+    // ===== 主题引擎（五套） =====
+    const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg', pomelo: '/assets/avatars/p3/nene.jpg' };
+    const THEME_MOBILE = { p4: '/assets/avatars/p4/zuixin4.jpg', pomelo: '/assets/avatars/p3/nene2.jpg' };
+    const THEME_ALPHA = { p1: 0.82, p2: 0.75, p3: 0.75, p4: 0.82, pomelo: 0.6 };
+    const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches;
+    function ensureThemeStyle() {
+      if (document.getElementById('dynThemeStyle')) return;
+      const s = document.createElement('style');
+      s.id = 'dynThemeStyle';
+      const scoped = (prefix, selList) => selList.split(',').map(x => prefix + ' ' + x.trim()).join(',');
+      const col = '.back,.back:hover,.g-row .go,.mpair';
+      const pink =
+        scoped('body.dyn-pink', col) + '{color:#f06292!important}' +
+        'body.dyn-pink .btn-ok{background:#f06292!important;border-color:#f06292!important}' +
+        'body.dyn-pink .btn-ok:hover{background:#e0507f!important}' +
+        'body.dyn-pink .mtl{color:#d8567f!important;background:#ffe9f0!important}';
+      const green =
+        scoped('body.dyn-green', col) + '{color:#6f9e63!important}' +
+        'body.dyn-green .btn-ok{background:#6f9e63!important;border-color:#6f9e63!important}' +
+        'body.dyn-green .btn-ok:hover{background:#5b8a50!important}' +
+        'body.dyn-green .mtl{color:#5b8a50!important;background:#e6f1e2!important}';
+      s.textContent = pink + '\n' + green;
+      document.head.appendChild(s);
+    }
+    function paintTheme(id) {
+      ensureThemeStyle();
+      const b = document.body;
+      b.classList.remove('dyn-pink', 'dyn-green');
+      if (id && id !== 'initial') {
+        b.classList.add((id === 'p3' || id === 'pomelo') ? 'dyn-green' : 'dyn-pink');
+        const img = (IS_MOBILE && THEME_MOBILE[id]) ? THEME_MOBILE[id] : THEME_IMG[id];
+        const a = THEME_ALPHA[id] || 0.82;
+        if (img) { b.style.backgroundImage = "linear-gradient(rgba(255,255,255," + a + "), rgba(255,255,255," + a + ")), url('" + img + "')"; b.style.backgroundSize = 'cover'; b.style.backgroundAttachment = 'fixed'; b.style.backgroundPosition = 'center'; }
+      } else {
+        b.style.backgroundImage = ''; b.style.backgroundSize = ''; b.style.backgroundAttachment = ''; b.style.backgroundPosition = '';
+      }
+    }
+    function sendHeartbeat() {
+      if (socket.connected) socket.emit('heartbeat', sessionStorage.getItem('playerName'), sessionStorage.getItem('isTest') === 'true', false);
+    }
+    const socket = io();
+    function paintSaved() {
+      const saved = localStorage.getItem('myTheme');
+      if (saved) paintTheme(saved);
+    }
+    function applyTheme() {
+      if (!socket.connected) return;
+      socket.emit('get_profile', (r) => {
+        if (!r || !r.success) return;
+        const t = r.theme || 'initial';
+        localStorage.setItem('myTheme', t);
+        paintTheme(t);
+      });
+    }
+    socket.on('connect', () => { paintSaved(); sendHeartbeat(); applyTheme(); });
+    setTimeout(() => { paintSaved(); if (socket.connected) applyTheme(); }, 600);
+    window.addEventListener('pageshow', () => { paintSaved(); if (socket.connected) applyTheme(); });
+    setInterval(sendHeartbeat, 10000);
+
+    // 当前组合信息（服务器下发的 score/titles/phase/members/ready 均以广播为准）
+    let pairInfo = { score: 0, titles: [], phase: 'idle', members: [], readyGame: null, readyVotes: [] };
+    let qaMode = false;       // 是否进入问答视图
+    let myAnswered = false;
+    let roundGain = 0;
+    let wallMode = false;     // 是否打开画作墙
+    let wallList = [];
+
+    function fmtTs(ts) {
+      const d = new Date(ts), p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    function metaHtml() {
+      const [a, b] = pairNames;
+      const tls = pairInfo.titles && pairInfo.titles.length ? '　' + pairInfo.titles.map(t => `<span class="mtl">${esc(t)}</span>`).join(' ') : '';
+      const viewer = !isMember;
+      const present = viewer
+        ? `<div class="present wait">只读查看：你不是该组合的成员，可查看默契分 / 称号 / 画作墙</div>`
+        : (pairInfo.members.length >= 2
+          ? `<div class="present">双方已就位，选择小游戏后双方准备即开始</div>`
+          : `<div class="present wait">等待 ${esc(dn(pairNames.find(n => n !== myName)))} 进入默契空间…</div>`);
+      return `<div class="meta">
+        <span class="mpair">${esc(dn(a))} × ${esc(dn(b))}</span>${tls}
+        <span class="mdetail">默契 ${pairInfo.score} 分</span>
+      </div>${present}`;
+    }
+    function qaCtrlHtml() {
+      const votes = pairInfo.readyVotes || [];
+      const n = votes.length;
+      const mine = votes.includes(myName);
+      const busyOther = pairInfo.readyGame && pairInfo.readyGame !== 'qa';
+      if (busyOther) return '<span class="soon">其他游戏准备中</span>';
+      return mine
+        ? `<span class="go" onclick="toggleQA()">已准备（${n}/2）· 取消</span>`
+        : `<span class="go" onclick="toggleQA()">准备（${n}/2）</span>`;
+    }
+    function menuHtml() {
+      return `<div class="lab">双人小游戏</div>
+        <div class="g-row">
+          <span class="g-name">默契问答</span>
+          <span class="g-desc">同一道题各自作答，相同即加分</span>
+          ${qaCtrlHtml()}
+        </div>
+        <div class="g-row">
+          <span class="g-name">你画我猜</span>
+          <span class="g-desc">一人画一人猜 · 共用画布</span>
+          <span class="soon">开发中</span>
+        </div>
+        <div class="g-row">
+          <span class="g-name">画作墙</span>
+          <span class="g-desc">两人合作画作收藏</span>
+          <span class="go" onclick="toWall()">查看</span>
+        </div>`;
+    }
+    function viewerHtml() {
+      return `<div class="lab">可查看</div>
+        <div class="g-row">
+          <span class="g-name">画作墙</span>
+          <span class="g-desc">两人的合作画作收藏</span>
+          <span class="go" onclick="toWall()">查看</span>
+        </div>
+        <div class="g-row">
+          <span class="g-name">默契问答</span>
+          <span class="g-desc">仅组合成员可进行</span>
+          <span class="soon">成员专属</span>
+        </div>`;
+    }
+    function renderRoot() {
+      if (wallMode) { renderWall(); return; }
+      const w = document.getElementById('wrap');
+      w.innerHTML = metaHtml();
+      if (!qaMode) w.innerHTML += isMember ? menuHtml() : viewerHtml();
+    }
+    // ===== 画作墙 =====
+    function toWall() {
+      wallMode = true;
+      document.getElementById('wrap').innerHTML = '<div class="empty">加载画作墙…</div>';
+      socket.emit('get_sync_wall', { pair: pairKey }, (res) => {
+        wallList = (res && res.wall) || [];
+        renderWall();
+      });
+    }
+    function renderWall() {
+      const w = document.getElementById('wrap');
+      const items = wallList.slice().reverse(); // 最新在前
+      const body = items.length
+        ? items.map(it => `<div class="w-item">
+            <div class="w-time">${fmtTs(it.ts)}</div>
+            <div>词：${esc(it.word || '')}</div>
+            <div>答案：${esc(it.answer || '')}</div>
+          </div>`).join('')
+        : '<div class="empty">还没有画作，等这对组合玩一次你画我猜就会出现在这里～</div>';
+      w.innerHTML = metaHtml() + `
+        <div class="lab">画作墙</div>${body}
+        <div style="margin-top:14px;"><span class="go" onclick="leaveWall()">返回</span></div>`;
+    }
+    function leaveWall() {
+      wallMode = false;
+      qaMode = false;
+      renderRoot();
+    }
+    function toggleQA() {
+      const mine = (pairInfo.readyVotes || []).includes(myName);
+      socket.emit('sync_ready', { pair: pairKey, game: 'qa', ready: !mine }, (res) => {
+        if (res && res.msg && !res.success) { renderRoot(); return; }
+      });
+    }
+    function toMenu() {
+      qaMode = false;
+      renderRoot();
+    }
+    // —— 问答视图 ——
+    function enterQA() {
+      qaMode = true;
+      myAnswered = false;
+      const w = document.getElementById('wrap');
+      w.innerHTML = metaHtml() + `
+        <div class="lab">默契问答</div>
+        <div class="qa-head"><span id="qaProg">第 1 / 5 题</span><span id="qaGain">本轮默契 +0</span></div>
+        <div class="qa-q" id="qaQ">准备中…</div>
+        <div id="qaOpts"></div>
+        <div class="match-tip" id="qaTip"></div>
+        <div class="qa-wait" id="qaWait"></div>`;
+    }
+    function answerQA(i) {
+      if (myAnswered) return;
+      myAnswered = true;
+      document.querySelectorAll('#qaOpts .qa-opt').forEach((o, idx) => {
+        o.classList.add('dis');
+        if (idx === i) o.classList.add('sel');
+      });
+      document.getElementById('qaWait').textContent = '已作答，等待对方…';
+      socket.emit('sync_answer', { pair: pairKey, choice: i }, () => {});
+    }
+    // —— 服务器事件 ——
+    function onState(st) {
+      if (!st || st.key !== pairKey) return;
+      pairInfo = {
+        score: st.score, titles: st.titles || [], phase: st.phase,
+        members: st.members || [], readyGame: st.readyGame || null, readyVotes: st.readyVotes || []
+      };
+      if (st.phase === 'playing') {
+        if (!qaMode) enterQA();
+      } else if (st.phase === 'idle') {
+        if (qaMode) { qaMode = false; renderRoot(); }
+        else renderRoot();
+      } else {
+        renderRoot();
+      }
+    }
+    socket.on('sync_state', onState);
+    socket.on('sync_question', (data) => {
+      if (!data || !qaMode) return;
+      myAnswered = false;
+      document.getElementById('qaProg').textContent = `第 ${data.index + 1} / ${data.total} 题`;
+      document.getElementById('qaQ').textContent = data.q;
+      document.getElementById('qaTip').className = 'match-tip';
+      document.getElementById('qaWait').textContent = '';
+      document.getElementById('qaOpts').innerHTML = data.opts.map((o, i) =>
+        `<div class="qa-opt" onclick="answerQA(${i})">${esc(o)}</div>`).join('');
+    });
+    socket.on('sync_result', (data) => {
+      if (!data || !qaMode) return;
+      const tip = document.getElementById('qaTip');
+      if (data.match) {
+        tip.className = 'match-tip show';
+        tip.innerHTML = '心有灵犀！';
+      } else {
+        tip.className = 'match-tip show miss';
+        tip.innerHTML = '没能心有灵犀，下一题再试试';
+      }
+      const gainEl = document.getElementById('qaGain');
+      if (gainEl) gainEl.textContent = '本轮默契 +' + data.gainSoFar;
+      document.getElementById('qaWait').textContent = '';
+    });
+    socket.on('sync_finish', (data) => {
+      if (!data || !qaMode) return;
+      const w = document.getElementById('wrap');
+      pairInfo.score = data.newScore;
+      pairInfo.titles = data.titles || [];
+      const titleMsg = data.newTitle
+        ? `<div class="t-new">解锁默契称号「${esc(data.newTitle)}」，系统已在留言板发出祝贺！</div>`
+        : '';
+      w.innerHTML = metaHtml() + `
+        <div class="lab">默契问答 · 本轮结束</div>
+        <div class="score-line">本局心有灵犀 ${data.gain / 2} 次，默契分 +${data.gain}</div>
+        ${titleMsg}
+        <div style="margin-top:14px;"><span class="go" onclick="toMenu()">返回菜单</span></div>`;
+      qaMode = true;
+    });
+    // 返回默契主页前通知服务器离开会话（仅组合成员；访客不进入会话）
+    function goBack() {
+      if (isMember) socket.emit('sync_leave', { pair: pairKey });
+      window.location.href = '/sync.html';
+    }
+    document.getElementById('backLink').addEventListener('click', (e) => {
+      e.preventDefault();
+      goBack();
+    });
+    window.addEventListener('pagehide', () => {
+      if (isMember) socket.emit('sync_leave', { pair: pairKey });
+    });
+    // —— 进入 ——
+    socket.on('connect', () => {
+      socket.emit('get_display_names', (r) => { if (r && r.success) _dm = r.map; });
+      socket.emit('sync_enter', { pair: pairKey }, (res) => {
+        if (res && res.success) {
+          pairInfo = Object.assign({}, pairInfo, {
+            score: res.score || 0,
+            titles: res.titles || [],
+            phase: res.phase || 'idle',
+            members: res.members || []
+          });
+          renderRoot();
+        } else {
+          document.getElementById('wrap').innerHTML = '<div class="err">' + esc((res && res.msg) || '进入失败') + '</div>';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

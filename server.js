@@ -188,9 +188,9 @@ function seedTestProfile(name) {
 
 // 正式玩家档案（内存态 + users.json 落盘）：开发期也落盘，便于测试改昵称/主题
 let usersData = {};
-const THEMES = ['initial', 'p1', 'p2', 'p3', 'p4']; // 已知主题集合
-// 专属主题归属：正式玩家各有自己的素材主题；测试账号可体验 p1
-const OWNER_THEME = { '玩家1': 'p1', '玩家2': 'p2', '玩家3': 'p3', '玩家4': 'p4' };
+const THEMES = ['initial', 'p1', 'p2', 'p3', 'p4', 'pomelo']; // 已知主题集合
+// 专属主题归属：每位正式玩家可拥有 1~N 个素材主题（玩家3 现拥有 摸鱼ing=p3 与 pomelo 两套）；测试账号可体验 p1
+const OWNER_THEMES = { '玩家1': ['p1'], '玩家2': ['p2'], '玩家3': ['p3', 'pomelo'], '玩家4': ['p4'] };
 
 // ⚙️ 持久化开关（环境变量控制）：默认开发/测试期=false（成就只存内存，重启即刷新、不写 data/）；
 // 正式部署时设置环境变量 PERSIST_ACHIEVEMENTS=true，即自动恢复"读入 + 写入 data/ 文件"。
@@ -1252,7 +1252,7 @@ io.on('connection', (socket) => {
       titleChoice: (u.title || ''),
       canEdit: OFFICIAL_ACCOUNT_NAMES.includes(name),
       allowedThemes: ['initial']
-        .concat(OWNER_THEME[name] ? [OWNER_THEME[name]] : [])
+        .concat(OWNER_THEMES[name] || [])
         .concat(isTestAccount(name) ? ['p1'] : [])
     });
   });
@@ -1280,8 +1280,8 @@ io.on('connection', (socket) => {
       }
     }
     let t = THEMES.includes(theme) ? theme : 'initial';
-    // 专属主题归属：正式玩家只能用自己素材的主题；测试账号可体验 p1
-    if (t !== 'initial' && OWNER_THEME[name] !== t && !(isTestEdit && t === 'p1')) {
+    // 专属主题归属：正式玩家只能用自己拥有的素材主题；测试账号可体验 p1
+    if (t !== 'initial' && !(OWNER_THEMES[name] || []).includes(t) && !(isTestEdit && t === 'p1')) {
       if (cb) cb({ success: false, msg: '这是其他玩家的专属主题，不能使用' });
       return;
     }
@@ -1574,10 +1574,152 @@ io.on('connection', (socket) => {
     broadcastYahtzeeState(room.roomId);
   });
 
+  // ========== 默契空间（主页数据 / 进入 / 问答小游戏） ==========
+  socket.on('get_sync_home', (cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || name.startsWith('游客')) { if (cb) cb({ success: false, msg: '仅正式玩家或测试账号可用' }); return; }
+    const members = OFFICIAL_ACCOUNT_NAMES.includes(name)
+      ? OFFICIAL_ACCOUNT_NAMES.slice()
+      : OFFICIAL_ACCOUNT_NAMES.concat([name]);
+    const others = members.filter(n => n !== name);
+    const combo = (a, b) => {
+      const key = syncPairKey(a, b);
+      const p = syncGetPair(key);
+      return { a, b, key, score: p.score, titles: p.titles };
+    };
+    const first = others.map(o => combo(name, o));
+    const second = [];
+    for (let i = 0; i < others.length; i++) for (let j = i + 1; j < others.length; j++) second.push(combo(others[i], others[j]));
+    if (cb) cb({ success: true, me: name, first, second });
+  });
+
+  // 进入某双人默契空间：成员进入可参与小游戏；非成员以"访客"进入只读查看（默契分/称号/画作墙）
+  socket.on('sync_enter', ({ pair }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const [a, b] = syncNamesOf(key);
+    if (!name || name.startsWith('游客')) {
+      if (cb) cb({ success: false, msg: '无法进入该默契空间' });
+      return;
+    }
+    const isMember = name === a || name === b;
+    if (!isMember && !OFFICIAL_ACCOUNT_NAMES.includes(name) && !TEST_NAMES.includes(name)) {
+      if (cb) cb({ success: false, msg: '无法进入该默契空间' });
+      return;
+    }
+    if (!isMember) {
+      // 访客：只读查看，不进会话、不参与小游戏
+      const p = syncGetPair(key);
+      if (cb) cb({ success: true, role: 'viewer', key, score: p.score, titles: p.titles });
+      return;
+    }
+    socket.join('sync:' + key);
+    socketSyncKey.set(socket.id, key);
+    if (!syncSessions.has(key)) {
+      syncSessions.set(key, { players: [a, b], members: new Set(), phase: 'idle', roundQs: [], qi: 0, answers: {}, gains: 0, answered: 0, readyGame: null, readyVotes: [] });
+    }
+    const sess = syncSessions.get(key);
+    sess.members.add(name);
+    syncEmitState(key);
+    if (cb) cb({ success: true, role: 'member', members: [...sess.members], phase: sess.phase, score: syncGetPair(key).score, titles: syncGetPair(key).titles });
+  });
+
+  // 画作墙：拉取某组合保存的画作（成员与访客都可查看）
+  socket.on('get_sync_wall', ({ pair }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    if (!name || name.startsWith('游客')) {
+      if (cb) cb({ success: false, msg: '无权查看' });
+      return;
+    }
+    if (cb) cb({ success: true, wall: (syncData.wall && syncData.wall[key]) || [] });
+  });
+
+  // 小游戏"准备"：两人各自准备/取消，同一时间只能准备一个，双方都就绪才自动开始
+  // game 目前为 'qa'（后续小游戏扩展同机制）
+  socket.on('sync_ready', ({ pair, game, ready }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const g = String(game || '');
+    const sess = syncSessions.get(key);
+    if (!sess || !sess.members.has(name) || g !== 'qa') {
+      if (cb) cb({ success: false, msg: '无法准备该小游戏' });
+      return;
+    }
+    if (sess.phase !== 'idle') { if (cb) cb({ success: false, msg: '游戏进行中' }); return; }
+    if (!sess.readyGame) sess.readyGame = g;
+    if (sess.readyGame !== g) { if (cb) cb({ success: false, msg: '已准备其他小游戏，请先取消' }); return; }
+    if (ready === false) {
+      // 取消准备
+      sess.readyVotes = (sess.readyVotes || []).filter(n => n !== name);
+      if (!sess.readyVotes.length) sess.readyGame = null;
+      syncEmitState(key);
+      if (cb) cb({ success: true });
+      return;
+    }
+    if (!sess.readyVotes.includes(name)) sess.readyVotes.push(name);
+    if (sess.members.size >= 2 && sess.readyVotes.length >= 2) {
+      // 双方都已准备 → 开始默契问答
+      syncStartRound(sess);
+      sess.readyGame = null;
+      sess.readyVotes = [];
+      syncEmitState(key);
+      syncBroadcastQuestion(key);
+      if (cb) cb({ success: true, started: true });
+      return;
+    }
+    syncEmitState(key);
+    if (cb) cb({ success: true, started: false });
+  });
+
+  // 回答当前默契问答题
+  socket.on('sync_answer', ({ pair, choice }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const sess = syncSessions.get(key);
+    if (!sess || sess.phase !== 'playing' || !sess.members.has(name)) return;
+    if (sess.answers[name] !== undefined) return; // 已答
+    const item = sess.roundQs[sess.qi];
+    if (!item || typeof choice !== 'number' || choice < 0 || choice >= item.opts.length) return;
+    sess.answers[name] = choice;
+    sess.answered++;
+    if (sess.answered >= 2) {
+      const [pa, pb] = sess.players;
+      const match = sess.answers[pa] === sess.answers[pb];
+      if (match) sess.gains += 2;
+      io.to('sync:' + key).emit('sync_result', { qi: sess.qi, match, total: sess.roundQs.length, gainSoFar: sess.gains });
+      setTimeout(() => {
+        const s2 = syncSessions.get(key);
+        if (!s2 || s2.phase !== 'playing') return;
+        s2.qi++;
+        s2.answered = 0;
+        s2.answers = {};
+        if (s2.qi < s2.roundQs.length) {
+          syncBroadcastQuestion(key);
+        } else {
+          syncFinishRound(key);
+        }
+      }, 2000);
+    }
+    if (cb) cb({ success: true });
+  });
+
+  // 主动离开默契页（返回默契主页/大厅时调用；断线也会兜底清理）
+  socket.on('sync_leave', ({ pair }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '') || socketSyncKey.get(socket.id);
+    if (name && key) syncLeaveKey(name, key);
+    if (cb) cb({ success: true });
+  });
+
   socket.on('disconnect', () => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
     socketToUser.delete(socket.id);
+
+    // 默契空间：离开会话（断线兜底）
+    const syncKey = socketSyncKey.get(socket.id);
+    if (syncKey) syncLeaveKey(name, syncKey);
 
     // 防误删：若该玩家名已被"另一条还活着的连接"接管
     // （典型场景：刚从房间页跳转到游戏页 / 刚刷新页面，新连接先到了），
@@ -1640,6 +1782,140 @@ if (PERSIST_TIMELINE) {
 // ========== 留言板（开发期内存，重启即清空；正式版可仿照 PERSIST_ACHIEVEMENTS 加落盘） ==========
 const BOARD_MAX = 120; // 每块最多保留条数
 let boardMessages = { official: [], guest: [] }; // { name, text, ts }
+
+// ========== 默契空间（双人默契分 / 称号 / 小游戏；画作墙预留 data/sync.json） ==========
+const SYNC_FILE = path.join(DATA_DIR, 'sync.json');
+// 落盘开关：默认开发/测试=内存模式（重启即清空）；正式部署设环境变量 PERSIST_SYNC=true 才写入 data/sync.json
+const PERSIST_SYNC = process.env.PERSIST_SYNC === 'true';
+// 称号分档（默契分累计，跨所有双人小游戏）
+const SYNC_TITLES = [
+  { name: '初次邂逅', min: 1 },
+  { name: '渐入佳境', min: 30 },
+  { name: '心有灵犀', min: 80 },
+  { name: '灵魂搭档', min: 200 },
+  { name: '天作之合', min: 500 }
+];
+const SYNC_ROUND_QS = 5;          // 每轮默契问答题数
+const SYNC_QUESTION_POOL = [
+  { q: '更喜欢白天还是黑夜？', opts: ['白天', '黑夜'] },
+  { q: '可乐和雪碧，选一个？', opts: ['可乐', '雪碧'] },
+  { q: '猫和狗，更喜欢谁？', opts: ['猫', '狗'] },
+  { q: '甜口还是咸口？', opts: ['甜口', '咸口'] },
+  { q: '你属于早睡型还是晚睡型？', opts: ['早睡型', '晚睡型'] },
+  { q: '夏天还是冬天更让你开心？', opts: ['夏天', '冬天'] },
+  { q: '火锅辣度怎么选？', opts: ['微辣', '中辣', '特辣', '不吃辣'] },
+  { q: '奶茶糖度怎么选？', opts: ['三分糖', '五分糖', '七分糖', '全糖'] },
+  { q: '出去玩更想选哪项？', opts: ['逛街', '看电影', '宅家', '运动'] },
+  { q: '聚会更爱吃什么？', opts: ['烧烤', '火锅', '炸鸡', '甜品'] },
+  { q: '旅行更想去哪里？', opts: ['海边', '山里', '大城市', '国外'] },
+  { q: '打游戏更看重什么？', opts: ['赢了开心', '一起玩开心', '随便玩玩'] },
+  { q: '手机里最多的表情是什么？', opts: ['笑哭', '赞', '爱心', '狗头'] },
+  { q: '追剧更在意什么？', opts: ['剧情', '颜值', '搞笑', '什么都不挑'] },
+  { q: '买饮料会先看什么？', opts: ['口味', '颜值包装', '新品', '价格'] },
+  { q: '更喜欢哪种放松方式？', opts: ['睡觉', '刷手机', '出门走走', '和朋友聊'] }
+];
+// syncData.pairs[pairKey] = { score, titles:[], updatedAt }；wall[pairKey] 预留画作墙
+let syncData = { pairs: {}, wall: {} };
+const syncSessions = new Map();   // pairKey -> 会话（含小游戏状态）
+const socketSyncKey = new Map();  // socketId -> pairKey（正在默契页）
+const testPairState = new Map();  // 含测试者的组合：默契分只内存体验不落盘
+function syncPairKey(a, b) { return [a, b].sort().join('|'); }
+function syncNamesOf(key) { return String(key).split('|'); }
+function syncIsOfficialPair(a, b) { return OFFICIAL_ACCOUNT_NAMES.includes(a) && OFFICIAL_ACCOUNT_NAMES.includes(b); }
+function syncTitlesFor(score) { return SYNC_TITLES.filter(t => score >= t.min).map(t => t.name); }
+function syncGetPair(key) {
+  if (syncIsOfficialPair(...syncNamesOf(key))) {
+    if (!syncData.pairs[key]) syncData.pairs[key] = { score: 0, titles: [], updatedAt: 0 };
+    return syncData.pairs[key];
+  }
+  if (!testPairState.has(key)) testPairState.set(key, { score: 0, titles: [], updatedAt: 0 });
+  return testPairState.get(key);
+}
+function syncSavePair(key) {
+  if (PERSIST_SYNC && syncIsOfficialPair(...syncNamesOf(key))) {
+    try { fs.writeFileSync(SYNC_FILE, JSON.stringify(syncData, null, 2)); } catch (e) { console.error('❌ 默契空间写入失败：', e.message); }
+  }
+}
+// 默契问答新一轮：抽取 roundQs 道不重复题，重置状态
+function syncStartRound(sess) {
+  const pool = SYNC_QUESTION_POOL.slice();
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  sess.phase = 'playing';
+  sess.roundQs = pool.slice(0, Math.min(SYNC_ROUND_QS, pool.length));
+  sess.qi = 0;
+  sess.answers = {};
+  sess.gains = 0;
+  sess.answered = 0;
+}
+function syncEmitState(pairKey) {
+  const sess = syncSessions.get(pairKey);
+  if (!sess) return;
+  io.to('sync:' + pairKey).emit('sync_state', {
+    key: pairKey,
+    members: [...sess.members],
+    phase: sess.phase,
+    readyGame: sess.readyGame || null,
+    readyVotes: sess.readyVotes || [],
+    score: syncGetPair(pairKey).score,
+    titles: syncGetPair(pairKey).titles
+  });
+}
+function syncBroadcastQuestion(pairKey) {
+  const sess = syncSessions.get(pairKey);
+  if (!sess || sess.phase !== 'playing') return;
+  const item = sess.roundQs[sess.qi];
+  if (!item) return;
+  io.to('sync:' + pairKey).emit('sync_question', { index: sess.qi, q: item.q, opts: item.opts, total: sess.roundQs.length });
+}
+function syncFinishRound(pairKey) {
+  const sess = syncSessions.get(pairKey);
+  if (!sess) return;
+  const pair = syncGetPair(pairKey);
+  const [a, b] = syncNamesOf(pairKey);
+  const beforeTitles = pair.titles.slice();
+  if (sess.gains > 0) {
+    pair.score += sess.gains;
+    pair.updatedAt = Date.now();
+    pair.titles = syncTitlesFor(pair.score);
+  }
+  const newTitle = pair.titles.filter(t => !beforeTitles.includes(t));
+  syncSavePair(pairKey);
+  io.to('sync:' + pairKey).emit('sync_finish', { gain: sess.gains, newScore: pair.score, titles: pair.titles, newTitle: newTitle[0] || '' });
+  // 官方组合解锁新称号 → 系统自动在玩家留言板发祝贺
+  if (newTitle.length && syncIsOfficialPair(a, b)) {
+    const text = `💐 祝贺 ${getDisplayName(a)} 与 ${getDisplayName(b)} 解锁默契称号「${newTitle[0]}」！`;
+    boardMessages.official.push({ name: '系统', text, ts: Date.now() });
+    if (boardMessages.official.length > BOARD_MAX) boardMessages.official.shift();
+    io.emit('board_new', { type: 'official', msg: { name: '系统', text, ts: Date.now() } });
+  }
+  sess.phase = 'idle';
+  sess.roundQs = [];
+  sess.answers = {};
+}
+// 玩家离开默契页（主动 sync_leave / socket 断开共用；自动取消其"准备"）
+function syncLeaveKey(name, pk) {
+  if (!pk) return;
+  const sess = syncSessions.get(pk);
+  if (sess) {
+    sess.members.delete(name);
+    sess.readyVotes = (sess.readyVotes || []).filter(n => n !== name);
+    if (!sess.readyVotes.length) sess.readyGame = null;
+    if (sess.phase === 'playing') { sess.phase = 'idle'; sess.roundQs = []; sess.answers = {}; sess.answered = 0; sess.readyGame = null; sess.readyVotes = []; }
+    if (!sess.members.size) syncSessions.delete(pk);
+  }
+  socketSyncKey.delete(pk);
+  syncEmitState(pk);
+}
+
+// 启动时读回默契空间数据：PERSIST_SYNC=true（正式部署）读 data/sync.json；否则内存模式
+if (PERSIST_SYNC) {
+  try { syncData = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8')) || { pairs: {}, wall: {} }; }
+  catch (e) { syncData = { pairs: {}, wall: {} }; }
+  console.log(`✅ 默契空间【正式落盘模式】：已启用环境变量 PERSIST_SYNC=true，已加载 ${Object.keys(syncData.pairs).length} 组组合`);
+} else {
+  syncData = { pairs: {}, wall: {} };
+  console.log('🧪 默契空间处于【内存模式】：开发/测试默认，重启即清空、不写入 data/（正式部署设 PERSIST_SYNC=true 即落盘）');
+}
 
 server.listen(3000, () => {
   console.log('🏰 服务器启动：端口 3000');
