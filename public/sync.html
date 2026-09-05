@@ -13,10 +13,12 @@
     .back:hover { text-decoration: underline; }
     .wrap { max-width: 620px; margin: 0 auto; padding: 14px 4px 60px; }
     .lab { font-size: .76rem; color: #9aa5b1; letter-spacing: 1px; margin: 18px 0 4px; border-bottom: 1px solid #e8ecf1; padding: 0 2px 6px; }
-    .sc-row { display: flex; align-items: baseline; gap: 8px; padding: 10px 4px; border-bottom: 1px dashed #eef0f4; cursor: pointer; user-select: none; }
+    .sc-row { display: block; padding: 10px 4px; border-bottom: 1px dashed #eef0f4; cursor: pointer; user-select: none; }
     .sc-row:last-of-type { border-bottom: none; }
+    .sc-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
     .sc-row:hover .who { color: #4a90d9; }
     .sc-row .who { font-weight: 700; color: #4a90d9; }
+    .asub { font-size: .76rem; color: #9aa5b1; margin-top: 2px; }
     .sc-row .me-tag { font-size: .7rem; color: #9aa5b1; }
     .sc-row .sc { margin-left: auto; color: #6b7a90; font-size: .84rem; white-space: nowrap; }
     .sc-row .tl { color: #e08a2d; font-size: .74rem; white-space: nowrap; }
@@ -97,14 +99,18 @@
       window.location.href = '/pair.html?pair=' + encodeURIComponent(key);
     }
     function rowHtml(c, isMe) {
-      const tag = isMe ? '<span class="me-tag">我</span>' : '';
+      const inRow = c.a === myName || c.b === myName;
+      const title = c.alias || (dn(c.a) + ' × ' + dn(c.b));
+      const sub = c.alias ? (dn(c.a) + ' × ' + dn(c.b)) : '';
       const tls = (c.titles && c.titles.length) ? '　<span class="tl">' + c.titles.map(esc).join(' / ') + '</span>' : '';
+      const tag = isMe || inRow ? '<span class="me-tag">我</span>' : '';
       return `<div class="sc-row" ondblclick="openPair('${c.key}')">
-        <span class="who">${esc(dn(c.a))}${tag}</span>
-        <span>×</span>
-        <span class="who">${esc(dn(c.b))}${c.b === myName ? '<span class="me-tag">我</span>' : ''}</span>
-        ${tls}
-        <span class="sc">默契 ${c.score} 分</span>
+        <div class="sc-top">
+          <span class="who">${esc(title)}${tag}</span>
+          ${tls}
+          <span class="sc">默契 ${c.score} 分</span>
+        </div>
+        ${sub ? `<div class="asub">${esc(sub)}</div>` : ''}
       </div>`;
     }
     function render(res) {

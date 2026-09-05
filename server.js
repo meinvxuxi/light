@@ -1585,7 +1585,7 @@ io.on('connection', (socket) => {
     const combo = (a, b) => {
       const key = syncPairKey(a, b);
       const p = syncGetPair(key);
-      return { a, b, key, score: p.score, titles: p.titles };
+      return { a, b, key, score: p.score, titles: p.titles, alias: p.alias || '', pendingName: (p.pending && p.pending.name) || '', pendingBy: (p.pending && p.pending.by) || '' };
     };
     const first = others.map(o => combo(name, o));
     const second = [];
@@ -1610,18 +1610,29 @@ io.on('connection', (socket) => {
     if (!isMember) {
       // 访客：只读查看，不进会话、不参与小游戏
       const p = syncGetPair(key);
-      if (cb) cb({ success: true, role: 'viewer', key, score: p.score, titles: p.titles });
+      if (cb) cb({ success: true, role: 'viewer', key, score: p.score, titles: p.titles, alias: p.alias || '', pendingName: (p.pending && p.pending.name) || '', pendingBy: (p.pending && p.pending.by) || '' });
       return;
     }
     socket.join('sync:' + key);
     socketSyncKey.set(socket.id, key);
     if (!syncSessions.has(key)) {
-      syncSessions.set(key, { players: [a, b], members: new Set(), phase: 'idle', roundQs: [], qi: 0, answers: {}, gains: 0, answered: 0, readyGame: null, readyVotes: [] });
+      syncSessions.set(key, { players: [a, b], members: new Set(), memberSockets: {}, phase: 'idle', game: null, roundQs: [], qi: 0, answers: {}, gains: 0, answered: 0, readyGame: null, readyVotes: [], paint: null, paintTimer: null });
     }
     const sess = syncSessions.get(key);
     sess.members.add(name);
+    sess.memberSockets = sess.memberSockets || {};
+    sess.memberSockets[name] = socket.id;
     syncEmitState(key);
-    if (cb) cb({ success: true, role: 'member', members: [...sess.members], phase: sess.phase, score: syncGetPair(key).score, titles: syncGetPair(key).titles });
+    // 你画我猜进行中刷新/重进：按角色补发当前对局快照（词只发给画者）
+    if (sess.game === 'paint' && sess.paint && sess.paint.stage === 'draw') {
+      const pt = sess.paint;
+      if (name === pt.painter) {
+        paintSendTo(sess, name, 'paint_restore', { role: 'drawer', word: pt.word, wordLen: paintWordLen(pt.word), strokes: pt.strokes, deadline: pt.deadline });
+      } else if (name === pt.guesser) {
+        paintSendTo(sess, name, 'paint_restore', { role: 'guesser', wordLen: paintWordLen(pt.word), strokes: pt.strokes, deadline: pt.deadline, attemptsTotal: (pt.attempts || []).length });
+      }
+    }
+    if (cb) cb({ success: true, role: 'member', members: [...sess.members], phase: sess.phase, game: sess.game, score: syncGetPair(key).score, titles: syncGetPair(key).titles, alias: syncGetPair(key).alias || '', pendingName: (syncGetPair(key).pending && syncGetPair(key).pending.name) || '', pendingBy: (syncGetPair(key).pending && syncGetPair(key).pending.by) || '' });
   });
 
   // 画作墙：拉取某组合保存的画作（成员与访客都可查看）
@@ -1635,14 +1646,52 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, wall: (syncData.wall && syncData.wall[key]) || [] });
   });
 
+  // ========== 默契组合名：一方申请改名，另一方同意后生效 ==========
+  function aliasMemberGuard(name, key) {
+    const [a, b] = syncNamesOf(key);
+    return name === a || name === b;
+  }
+  socket.on('sync_alias_propose', ({ pair, name: alias }, cb) => {
+    const me = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    if (!me || me.startsWith('游客') || !aliasMemberGuard(me, key)) {
+      if (cb) cb({ success: false, msg: '仅组合成员可申请改名' });
+      return;
+    }
+    const nm = String(alias || '').trim();
+    const len = [...nm].length;
+    if (len < 1 || len > 10) { if (cb) cb({ success: false, msg: '组合名需为 1~10 字' }); return; }
+    const p = syncGetPair(key);
+    p.pending = { name: nm, by: me, ts: Date.now() };
+    syncSavePair(key);
+    syncEmitState(key);
+    if (cb) cb({ success: true });
+  });
+  socket.on('sync_alias_reply', ({ pair, agree }, cb) => {
+    const me = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const [a, b] = syncNamesOf(key);
+    if (!me || !aliasMemberGuard(me, key)) { if (cb) cb({ success: false, msg: '仅组合成员可处理' }); return; }
+    const p = syncGetPair(key);
+    if (!p.pending) { if (cb) cb({ success: false, msg: '没有待处理的改名申请' }); return; }
+    if (me === p.pending.by) { if (cb) cb({ success: false, msg: '请等待对方同意' }); return; }
+    if (agree) {
+      p.alias = p.pending.name;
+    }
+    delete p.pending;
+    syncSavePair(key);
+    syncEmitState(key);
+    if (cb) cb({ success: true });
+  });
+
   // 小游戏"准备"：两人各自准备/取消，同一时间只能准备一个，双方都就绪才自动开始
-  // game 目前为 'qa'（后续小游戏扩展同机制）
+  // game：'qa'=默契问答；'paint'=你画我猜
   socket.on('sync_ready', ({ pair, game, ready }, cb) => {
     const name = socketToUser.get(socket.id);
     const key = String(pair || '');
     const g = String(game || '');
     const sess = syncSessions.get(key);
-    if (!sess || !sess.members.has(name) || g !== 'qa') {
+    if (!sess || !sess.members.has(name) || (g !== 'qa' && g !== 'paint')) {
       if (cb) cb({ success: false, msg: '无法准备该小游戏' });
       return;
     }
@@ -1659,17 +1708,118 @@ io.on('connection', (socket) => {
     }
     if (!sess.readyVotes.includes(name)) sess.readyVotes.push(name);
     if (sess.members.size >= 2 && sess.readyVotes.length >= 2) {
-      // 双方都已准备 → 开始默契问答
-      syncStartRound(sess);
+      // 双方都已准备 → 开局（先广播状态让前端进入对应视图，再发题目/回合）
       sess.readyGame = null;
       sess.readyVotes = [];
+      if (g === 'paint') {
+        startPaintRound(key);
+      } else {
+        syncStartRound(sess);
+      }
       syncEmitState(key);
-      syncBroadcastQuestion(key);
+      if (g === 'qa') syncBroadcastQuestion(key);
       if (cb) cb({ success: true, started: true });
       return;
     }
     syncEmitState(key);
     if (cb) cb({ success: true, started: false });
+  });
+
+  // ========== 你画我猜：出词 / 笔画 / 猜测 / 下一轮 / 中止 ==========
+  // 画者"随机出词"：先抽一个词预览，可再随机或确认后进入绘制
+  socket.on('paint_random', ({ pair }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const sess = syncSessions.get(key);
+    if (!sess || sess.game !== 'paint' || !sess.paint || sess.paint.stage !== 'word') {
+      if (cb) cb({ success: false, msg: '当前不能抽词' });
+      return;
+    }
+    if (sess.paint.painter !== name) { if (cb) cb({ success: false, msg: '只有画者可以出词' }); return; }
+    const w = PAINT_WORDS[Math.floor(Math.random() * PAINT_WORDS.length)];
+    if (cb) cb({ success: true, word: w });
+  });
+
+  // 画者确认出词（自定义输入 1~12 字，或来自随机预览的词），确认后进入倒计时绘制
+  socket.on('paint_word', ({ pair, word }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const sess = syncSessions.get(key);
+    if (!sess || sess.game !== 'paint' || !sess.paint || sess.paint.stage !== 'word') {
+      if (cb) cb({ success: false, msg: '当前不能出词' });
+      return;
+    }
+    if (sess.paint.painter !== name) { if (cb) cb({ success: false, msg: '只有画者可以出词' }); return; }
+    const w = String(word || '').trim();
+    if (paintWordLen(w) < 1 || paintWordLen(w) > 12) { if (cb) cb({ success: false, msg: '词需为 1~12 字' }); return; }
+    const pt = sess.paint;
+    pt.word = w;
+    pt.wordLen = paintWordLen(w);
+    pt.strokes = [];
+    pt.attempts = [];
+    pt.stage = 'draw';
+    pt.deadline = Date.now() + DRAW_TIME;
+    paintClearTimer(sess);
+    sess.paintTimer = setTimeout(() => finishPaintRound(key, false), DRAW_TIME);
+    paintSendTo(sess, pt.painter, 'paint_draw_start', { role: 'drawer', word: pt.word, wordLen: pt.wordLen, deadline: pt.deadline });
+    paintSendTo(sess, pt.guesser, 'paint_draw_start', { role: 'guesser', wordLen: pt.wordLen, deadline: pt.deadline });
+    if (cb) cb({ success: true, word: pt.word });
+  });
+
+  // 画者同步笔画（整份 strokes；橡皮用 destination-out 由前端重放处理）
+  socket.on('paint_stroke', ({ pair, strokes }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const sess = syncSessions.get(key);
+    if (!sess || sess.game !== 'paint' || !sess.paint || sess.paint.painter !== name || sess.paint.stage !== 'draw') return;
+    if (!Array.isArray(strokes)) return;
+    sess.paint.strokes = strokes.map(s => ({ t: s.t, c: s.c, w: s.w, p: (s.p || []).slice(0, 2000) })).slice(0, 500);
+    paintSendTo(sess, sess.paint.guesser, 'paint_strokes', { strokes: sess.paint.strokes });
+    if (cb) cb({ success: true });
+  });
+
+  // 猜者猜测（不限次数，答对即结束本轮 +5）
+  socket.on('paint_guess', ({ pair, text }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const sess = syncSessions.get(key);
+    if (!sess || sess.game !== 'paint' || !sess.paint || sess.paint.guesser !== name || sess.paint.stage !== 'draw') {
+      if (cb) cb({ success: false, msg: '当前不能猜测' });
+      return;
+    }
+    const g = String(text || '').trim().replace(/\s+/g, '');
+    if (!g) { if (cb) cb({ success: false }); return; }
+    const pt = sess.paint;
+    pt.attempts.push({ t: g, ts: Date.now() });
+    const target = String(pt.word || '').trim().replace(/\s+/g, '');
+    if (g === target) {
+      finishPaintRound(key, true);
+      if (cb) cb({ success: true, correct: true });
+    } else {
+      paintSendTo(sess, name, 'paint_guess_miss', { n: pt.attempts.length });
+      if (cb) cb({ success: true, correct: false });
+    }
+  });
+
+  // 结束画面 → 下一轮（自动交换画者/猜者）
+  socket.on('paint_next', ({ pair }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const sess = syncSessions.get(key);
+    if (!sess || !sess.members.has(name) || sess.game !== 'paint' || sess.paint.stage !== 'end') return;
+    startPaintRound(key);
+    if (cb) cb({ success: true });
+  });
+
+  // 中止你画我猜（回到小游戏菜单）
+  socket.on('paint_abort', ({ pair }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const sess = syncSessions.get(key);
+    if (!sess || !sess.members.has(name) || sess.game !== 'paint') return;
+    paintResetPlaying(sess, key);
+    syncEmitState(key);
+    if (cb) cb({ success: true });
   });
 
   // 回答当前默契问答题
@@ -1795,6 +1945,20 @@ const SYNC_TITLES = [
   { name: '灵魂搭档', min: 200 },
   { name: '天作之合', min: 500 }
 ];
+// ========== 你画我猜 ==========
+const DRAW_TIME = 60 * 1000; // 每轮限时 60 秒
+const PAINT_WORDS = [
+  '猫', '狗', '兔子', '大象', '熊猫', '企鹅', '鸭子', '蝴蝶', '鱼', '鲸鱼',
+  '苹果', '香蕉', '西瓜', '草莓', '葡萄', '橙子', '桃子', '辣椒', '萝卜', '玉米',
+  '汽车', '火车', '飞机', '轮船', '自行车', '公交车', '火箭', '热气球', '地铁', '滑板',
+  '太阳', '月亮', '星星', '彩虹', '云朵', '雪花', '闪电', '山', '河流', '火山',
+  '房子', '城堡', '灯塔', '桥', '树', '花', '蘑菇', '草地', '沙滩', '森林',
+  '电视', '手机', '电脑', '吉他', '钢琴', '帽子', '鞋子', '眼镜', '雨伞', '钟表',
+  '牙刷', '剪刀', '铅笔', '书本', '信封', '气球', '风筝', '秋千', '滑梯', '烟花',
+  '汉堡', '披萨', '蛋糕', '冰淇淋', '棒棒糖', '寿司', '面条', '饺子', '煎蛋', '火锅',
+  '圣诞树', '礼物盒', '皇冠', '钻石', '奖杯', '金牌', '爱心', '笑脸', '哭脸', '疑问',
+  '兔子戴帽子', '恐龙', '小丑', '宇航员', '美人鱼', '机器人', '龙', '独角兽', '僵尸', '海盗船'
+];
 const SYNC_ROUND_QS = 5;          // 每轮默契问答题数
 const SYNC_QUESTION_POOL = [
   { q: '更喜欢白天还是黑夜？', opts: ['白天', '黑夜'] },
@@ -1841,6 +2005,7 @@ function syncStartRound(sess) {
   const pool = SYNC_QUESTION_POOL.slice();
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   sess.phase = 'playing';
+  sess.game = 'qa';
   sess.roundQs = pool.slice(0, Math.min(SYNC_ROUND_QS, pool.length));
   sess.qi = 0;
   sess.answers = {};
@@ -1850,14 +2015,19 @@ function syncStartRound(sess) {
 function syncEmitState(pairKey) {
   const sess = syncSessions.get(pairKey);
   if (!sess) return;
+  const p = syncGetPair(pairKey);
   io.to('sync:' + pairKey).emit('sync_state', {
     key: pairKey,
     members: [...sess.members],
     phase: sess.phase,
+    game: sess.game || null,
     readyGame: sess.readyGame || null,
     readyVotes: sess.readyVotes || [],
-    score: syncGetPair(pairKey).score,
-    titles: syncGetPair(pairKey).titles
+    score: p.score,
+    titles: p.titles,
+    alias: p.alias || '',
+    pendingName: (p.pending && p.pending.name) || '',
+    pendingBy: (p.pending && p.pending.by) || ''
   });
 }
 function syncBroadcastQuestion(pairKey) {
@@ -1867,40 +2037,119 @@ function syncBroadcastQuestion(pairKey) {
   if (!item) return;
   io.to('sync:' + pairKey).emit('sync_question', { index: sess.qi, q: item.q, opts: item.opts, total: sess.roundQs.length });
 }
-function syncFinishRound(pairKey) {
-  const sess = syncSessions.get(pairKey);
-  if (!sess) return;
+// 通用：给某组合加默契分，并处理称号解锁与系统祝贺留言
+function syncAddScore(pairKey, gain) {
   const pair = syncGetPair(pairKey);
-  const [a, b] = syncNamesOf(pairKey);
-  const beforeTitles = pair.titles.slice();
-  if (sess.gains > 0) {
-    pair.score += sess.gains;
-    pair.updatedAt = Date.now();
-    pair.titles = syncTitlesFor(pair.score);
-  }
-  const newTitle = pair.titles.filter(t => !beforeTitles.includes(t));
+  const before = pair.titles.slice();
+  pair.score += gain;
+  pair.updatedAt = Date.now();
+  pair.titles = syncTitlesFor(pair.score);
   syncSavePair(pairKey);
-  io.to('sync:' + pairKey).emit('sync_finish', { gain: sess.gains, newScore: pair.score, titles: pair.titles, newTitle: newTitle[0] || '' });
-  // 官方组合解锁新称号 → 系统自动在玩家留言板发祝贺
-  if (newTitle.length && syncIsOfficialPair(a, b)) {
-    const text = `💐 祝贺 ${getDisplayName(a)} 与 ${getDisplayName(b)} 解锁默契称号「${newTitle[0]}」！`;
+  const newTitle = pair.titles.find(t => !before.includes(t)) || '';
+  if (newTitle && syncIsOfficialPair(...syncNamesOf(pairKey))) {
+    const [a, b] = syncNamesOf(pairKey);
+    const text = `💐 祝贺 ${getDisplayName(a)} 与 ${getDisplayName(b)} 解锁默契称号「${newTitle}」！`;
     boardMessages.official.push({ name: '系统', text, ts: Date.now() });
     if (boardMessages.official.length > BOARD_MAX) boardMessages.official.shift();
     io.emit('board_new', { type: 'official', msg: { name: '系统', text, ts: Date.now() } });
   }
+  return { score: pair.score, titles: pair.titles, newTitle };
+}
+// 画作墙：按组合追加（每组合最多保留 100 张）
+function syncWallAdd(pairKey, entry) {
+  if (!syncData.wall) syncData.wall = {};
+  if (!syncData.wall[pairKey]) syncData.wall[pairKey] = [];
+  syncData.wall[pairKey].push(entry);
+  if (syncData.wall[pairKey].length > 100) syncData.wall[pairKey].splice(0, syncData.wall[pairKey].length - 100);
+  syncSavePair(pairKey);
+}
+function syncFinishRound(pairKey) {
+  const sess = syncSessions.get(pairKey);
+  if (!sess || sess.game !== 'qa') return;
+  const gains = sess.gains;
+  const res = gains > 0
+    ? syncAddScore(pairKey, gains)
+    : { score: syncGetPair(pairKey).score, titles: syncGetPair(pairKey).titles, newTitle: '' };
+  io.to('sync:' + pairKey).emit('sync_finish', { gain: gains, newScore: res.score, titles: res.titles, newTitle: res.newTitle });
   sess.phase = 'idle';
+  sess.game = null;
   sess.roundQs = [];
   sess.answers = {};
+  sess.answered = 0;
+  sess.gains = 0;
 }
-// 玩家离开默契页（主动 sync_leave / socket 断开共用；自动取消其"准备"）
+// ========== 你画我猜：辅助 ==========
+function paintWordLen(w) { return [...String(w)].length; }
+function paintSendTo(sess, name, evt, data) {
+  const sid = sess.memberSockets && sess.memberSockets[name];
+  if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit(evt, data);
+}
+function paintClearTimer(sess) {
+  if (sess.paintTimer) { clearTimeout(sess.paintTimer); sess.paintTimer = null; }
+}
+// 结束对局（小游戏进行中玩家离开 / 中止时统一复位）
+function paintResetPlaying(sess, pairKey) {
+  paintClearTimer(sess);
+  sess.phase = 'idle';
+  sess.game = null;
+  sess.roundQs = [];
+  sess.answers = {};
+  sess.answered = 0;
+  sess.gains = 0;
+  sess.paint = null;
+  sess.readyGame = null;
+  sess.readyVotes = [];
+}
+// 开始一轮你画我猜（自动轮流当画者）
+function startPaintRound(pairKey) {
+  const sess = syncSessions.get(pairKey);
+  if (!sess || sess.members.size < 2) return;
+  const [a, b] = sess.players;
+  const prev = sess.paint && sess.paint.painter;
+  const painter = prev ? (prev === a ? b : a) : (Math.random() < 0.5 ? a : b);
+  const guesser = painter === a ? b : a;
+  sess.phase = 'playing';
+  sess.game = 'paint';
+  sess.paint = { painter, guesser, stage: 'word', word: null, strokes: [], attempts: [], deadline: 0, idx: 0 };
+  paintSendTo(sess, painter, 'paint_round', { role: 'drawer', stage: 'word' });
+  paintSendTo(sess, guesser, 'paint_round', { role: 'guesser', stage: 'word' });
+}
+function finishPaintRound(pairKey, win) {
+  const sess = syncSessions.get(pairKey);
+  if (!sess || sess.game !== 'paint' || !sess.paint) return;
+  paintClearTimer(sess);
+  const pt = sess.paint;
+  if (pt.stage === 'end') return;
+  pt.stage = 'end';
+  const gain = win ? 5 : 0;
+  const res = gain > 0
+    ? syncAddScore(pairKey, gain)
+    : { score: syncGetPair(pairKey).score, titles: syncGetPair(pairKey).titles, newTitle: '' };
+  syncWallAdd(pairKey, {
+    ts: Date.now(),
+    drawer: pt.painter,
+    guesser: pt.guesser,
+    word: pt.word || '',
+    win,
+    attempts: (pt.attempts || []).slice(),
+    strokes: (pt.strokes || []).slice(),
+    wordLen: paintWordLen(pt.word || '')
+  });
+  io.to('sync:' + pairKey).emit('paint_end', {
+    win, word: pt.word || '', gain, newScore: res.score, newTitle: res.newTitle,
+    attempts: (pt.attempts || []).slice(), painter: pt.painter, guesser: pt.guesser
+  });
+}
+// 玩家离开默契页（主动 sync_leave / socket 断开共用；自动取消其"准备"，结束进行中的对局）
 function syncLeaveKey(name, pk) {
   if (!pk) return;
   const sess = syncSessions.get(pk);
   if (sess) {
+    if (sess.memberSockets) delete sess.memberSockets[name];
     sess.members.delete(name);
     sess.readyVotes = (sess.readyVotes || []).filter(n => n !== name);
     if (!sess.readyVotes.length) sess.readyGame = null;
-    if (sess.phase === 'playing') { sess.phase = 'idle'; sess.roundQs = []; sess.answers = {}; sess.answered = 0; sess.readyGame = null; sess.readyVotes = []; }
+    if (sess.phase === 'playing') paintResetPlaying(sess, pk);
     if (!sess.members.size) syncSessions.delete(pk);
   }
   socketSyncKey.delete(pk);
