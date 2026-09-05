@@ -163,6 +163,127 @@
       initDrawCanvas();
     }
 
+    // ===== 画猜接龙 v2 前端（四链并行/判定/投票）=====
+    let dV = null;
+    function dDash(n) {
+      const c = Math.max(1, Number(n) || 0);
+      return `<span style="letter-spacing:5px;font-weight:800;">${'＿'.repeat(c)}</span> <span style="color:#9aa5b1;font-size:.78rem;">${c} 个字</span>`;
+    }
+    function dSend(type, value) {
+      socket.emit('dg_act', { type, value }, (res) => {
+        if (res && res.msg && !res.success) dToast(res.msg);
+      });
+    }
+    function dToast(t) {
+      const el = document.createElement('div');
+      el.className = 'msg-line';
+      el.textContent = t;
+      document.getElementById('wrap').appendChild(el);
+      setTimeout(() => el.remove(), 2500);
+    }
+    function dProgHtml(v) {
+      const dots = (v.order || []).map((n, i) => {
+        const done = (v.done || [])[i];
+        const me = n === v.you;
+        return `<span style="margin-right:10px;${done ? 'color:#27ae60;font-weight:700;' : 'color:#adb5bd;'}">${esc(dn(n))}${me ? '（你）' : ''} ${done ? '✓' : '…'}</span>`;
+      }).join('');
+      return `<div class="who">${dots}</div>`;
+    }
+    function dgRender() {
+      if (!dV) return;
+      const v = dV;
+      const w = document.getElementById('wrap');
+      const head = `<div class="stage-line">第 ${v.round} 轮 · ${esc(v.stageText)}</div>${dProgHtml(v)}
+        <div class="score-line">积分：${(v.order || []).map(n => `${esc(dn(n))} ${v.points[n] || 0}`).join('　')}</div>`;
+      if (v.stage === 'word') {
+        w.innerHTML = head + `<input class="line-input" id="dWord" maxlength="12" placeholder="写一个 1~12 字的词（只有你能看到）" autocomplete="off">
+          <button class="btn-ok" onclick="dWordGo()">写好了</button>`;
+        return;
+      }
+      if (v.stage === 'picW') {
+        w.innerHTML = head + `<div class="role-hint">你要画：${esc(v.myWord || '')}</div>
+          <div id="drawBox">${drawBoxHtml()}</div>
+          <button class="btn-ok" onclick="dPicGo()">画好了，提交</button>`;
+        initDrawCanvas();
+        return;
+      }
+      if (v.stage === 'guessA' || v.stage === 'guessF') {
+        const kind = v.stage === 'guessA' ? '猜他写的词' : '做最后猜词';
+        w.innerHTML = head + `<div class="role-hint">看这张画，${kind}：${dDash(v.hintLen)}</div>
+          <canvas class="mini-canvas" id="dGCanvas" width="900" height="540"></canvas>
+          <div class="guess-box"><input id="dGuess" maxlength="12" placeholder="输入你的答案" autocomplete="off" onkeydown="if(event.key==='Enter')dGuessGo()"><button onclick="dGuessGo()">猜</button></div>`;
+        drawReplay(document.getElementById('dGCanvas'), v.myPic || []);
+        return;
+      }
+      if (v.stage === 'picG') {
+        w.innerHTML = head + `<div class="role-hint">画出第 2 棒猜到的词：${esc(v.myGuessText || '')}</div>
+          <div id="drawBox">${drawBoxHtml()}</div>
+          <button class="btn-ok" onclick="dPicGo()">画好了，提交</button>`;
+        initDrawCanvas();
+        return;
+      }
+      if (v.stage === 'review') {
+        const c = v.chainData || {};
+        w.innerHTML = head + `<div class="role-hint">展示第 ${(v.chainIndex || 0) + 1} 条链（起始：${esc(dn(v.chainOwner))}）</div>
+          <div class="rv-step"><div class="rv-label">写的词</div><b>${esc(c.word || '')}</b></div>
+          <div class="rv-step"><div class="rv-label">第 1 棒画的画</div><canvas class="mini-canvas" id="dR1" width="900" height="540"></canvas></div>
+          <div class="rv-step"><div class="rv-label">第 2 棒猜的词</div>${esc(c.guessA || '')}</div>
+          <div class="rv-step"><div class="rv-label">第 3 棒画的画</div><canvas class="mini-canvas" id="dR2" width="900" height="540"></canvas></div>
+          <div class="rv-step"><div class="rv-label">第 4 棒最终猜词</div><b>${esc(c.guessF || '')}</b></div>
+          ${v.youReady ? '<div class="who">已看完，等大家…</div>' : '<button class="btn-ok" onclick="dSend(\'next\',1)">我看完了，进入判定</button>'}`;
+        drawReplay(document.getElementById('dR1'), c.picW || []);
+        drawReplay(document.getElementById('dR2'), c.picG || []);
+        return;
+      }
+      if (v.stage === 'matchVote') {
+        const c = v.chainData || {};
+        w.innerHTML = head + `<div class="role-hint">判定：最终猜词「${esc(c.guessF || '')}」与原词「${esc(c.word || '')}」算匹配吗？（≥3 票匹配即成功）</div>
+          ${v.youReady ? '<div class="who">已投票，等大家…</div>' : `
+          <button class="btn-ok" onclick="dSend('match',true)">匹配</button>
+          <button class="btn-ok gray" onclick="dSend('match',false)" style="margin-left:10px;">不匹配</button>`}`;
+        return;
+      }
+      if (v.stage === 'reward') {
+        const ok = v.matched === true;
+        const label = ok ? '这条链匹配成功：投一名 MVP（该玩家 +1）' : '这条链未匹配：投一名罪魁祸首（该玩家 -1）';
+        const btns = (v.others || []).map(n => `<button class="btn-ok" style="margin:4px 8px 4px 0;" onclick="dSend('pick','${n}')">${esc(dn(n))}</button>`).join('');
+        w.innerHTML = head + `<div class="role-hint">${label}</div>
+          <div class="who">${v.youReady ? '已投票，等大家…' : '投给除自己以外的一位玩家：'}</div>
+          ${v.youReady ? '' : `<div>${btns}</div>`}`;
+        return;
+      }
+      if (v.stage === 'result') {
+        const list = (v.finalOrder || []).map((n, i) => `<div class="rv-step"><b>第 ${i + 1} 名</b>　${esc(dn(n))}　<span style="color:#4a90d9;">${v.points[n] || 0} 分</span></div>`).join('');
+        const chainRes = (v.chainVotes || []).map((cv, i) => `<span style="margin-right:12px;">链${i + 1}：${cv && cv.match ? '匹配✓' : '未匹配'}</span>`).join('');
+        w.innerHTML = head + `<div class="role-hint">本轮结算</div>${list}
+          <div class="who">${chainRes}</div>
+          ${v.isHost ? '<button class="btn-ok" onclick="dRestart()">房主：再来一轮</button>' : ''}
+          <div style="margin-top:10px;"><a class="back" href="/room.html?game=drawing">返回房间</a></div>`;
+        return;
+      }
+      w.innerHTML = head + '<div class="empty">等待服务器…</div>';
+    }
+    function dWordGo() {
+      const inp = document.getElementById('dWord');
+      const val = (inp && inp.value) ? inp.value.trim() : '';
+      if (!val || [...val].length > 12) { dToast('词需为 1~12 字'); return; }
+      dSend('word', val);
+    }
+    function dPicGo() {
+      if (!dStrokes.length) { dToast('先画点内容再提交'); return; }
+      dSend('pic', dStrokes.slice());
+    }
+    function dGuessGo() {
+      const inp = document.getElementById('dGuess');
+      const val = (inp && inp.value) ? inp.value.trim() : '';
+      if (!val || [...val].length > 12) { dToast('请输入 1~12 字的词'); return; }
+      dSend('guess', val);
+    }
+    function dRestart() {
+      socket.emit('dg_restart', (res) => { if (res && res.msg && !res.success) dToast(res.msg); });
+    }
+    socket.on('dg_state', (v) => { dV = v; dgRender(); });
+    socket.on('dg_cancel', () => { window.location.href = '/room.html?game=drawing'; });
     // ===== 状态渲染 =====
     let V = null;
     function roleHead() {
