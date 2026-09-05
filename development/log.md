@@ -5,7 +5,112 @@
 
 ---
 
-## 版本 3.6（2026-09-05）
+## 版本 4.4（2026-09-05）
+- 新增 p2/p3/p4 专属主题；统一主题引擎（粉/绿强调+各素材背景）；主题名：p1我永远都是我o、p2神秘粉毛、p3摸鱼ing、p4人生喵喵又咪咪。
+
+
+
+### 修改文件
+- server.js
+- public/achievements.html
+- public/settings.html
+- public/lobby.html
+
+### 修改原因
+1. 修复荣誉墙"一直加载中"：主题脚本此前插在 socket 定义之前导致 JS 报错中断；已移到 socket 之后；
+2. 测试账号可体验 p1 主题：get_profile 的 allowedThemes 对测试者追加 p1；update_profile 权限拆分（昵称仅正式玩家、测试者只能改主题体验）；settings 相应显示主题区并提示；
+3. 大厅 p1 粉色补充：竞技锦标赛/娱乐赛链接、玩家"在线"文字改为粉色。
+
+### 当前版本
+- 4.3（上个版本 4.2，+0.1）
+
+
+
+### 修改文件
+- public/room.html / timeline.html / achievements.html / messages.html / yahtzee.html / lobby.html / settings.html
+
+### 修改原因
+1. p1（玩家1素材）主题铺到全站页面：
+   - 房间、时光墙、荣誉墙、留言板、快艇骰子、设置：body.theme-p1 素材背景 + 粉色点缀（房间深灰"开始游戏"按钮→粉、占座/就绪/你 标签粉色系；留言板/荣誉墙切换标签蓝→粉；大厅快艇下划线→浅粉；游戏返回大厅/掷骰按钮粉；toast 粉深色）；
+   - 各页面新增 applyTheme：按个人主题给 body 加 theme 类（未选 p1 保持原配色）；
+2. 其它玩家主题素材到位后按同一套规则单独配色。
+
+### 当前版本
+- 4.2（上个版本 4.1，+0.1）
+
+
+
+### 修改文件
+- public/lobby.html
+- public/assets/avatars/p1/（用户更新为 sticker1~4.png 透明 PNG；移除复制用 avif）
+
+### 修改原因
+1. 表情贴纸改用透明 PNG 版（用户提供）：引用改为 .png、移除 mix-blend-mode（透明后无需混合弱化），保留点击轮换与左下角展示；清理旧 sticker*.avif 副本。
+
+### 当前版本
+- 4.1（上个版本 4.0，+0.1）
+
+
+
+### 修改文件
+- public/lobby.html
+
+### 修改原因
+1. 手机端从其它页面返回大厅丢主题/贴纸：大厅监听 pageshow 与 visibilitychange，返回/切回标签页时自动重新应用主题与显示名（无需手动刷新）；
+2. 表情贴纸改为：左下角只放一枚，点击可轮换 4 个表情（stickerNext）；用 mix-blend-mode:multiply 弱化白色背景（真正透明需用工具抠成透明 PNG，前端无法凭空去白底）。
+
+### 当前版本
+- 4.0（上个版本 3.9，+0.1）
+
+
+
+### 修改文件
+- server.js
+- public/settings.html
+- public/lobby.html
+
+### 修改原因
+1. 专属主题归属限制：OWNER_THEME（玩家1→p1）；get_profile 返回 allowedThemes；update_profile 拒绝他人使用专属主题；设置页只渲染当前账号可用的主题；
+2. 大厅主题/显示名应用加固：body 主题 class 改为通用 theme-*，启动/连接后重试拉取 profile 与显示名（600ms 保险），降低"切了没效果"的时序问题。
+
+### 当前版本
+- 3.9（上个版本 3.8，+0.1）
+
+
+
+### 修改文件
+- server.js
+- public/settings.html
+- public/lobby.html
+- public/assets/avatars/（新建素材库：p1~p4 + README；p1 已放背景 beijing.png.jpg 与 4 个小表情，已复制为 sticker1~4.avif 便于引用）
+
+### 修改原因
+1. 专属 UI 第一版（玩家1素材主题 p1）：
+   - server THEMES 增加 'p1'；
+   - 设置页主题区改为可切换列表「初始配色 / 玩家1专属主题」，选择即实时预览背景；
+   - 大厅应用 p1 主题：背景 beijing 半透明白叠层 + 右下 4 个缩小表情贴纸（54px）；按 profile.theme 切换/恢复；
+   - p2~p4 素材加入后按同机制扩展。
+
+### 当前版本
+- 3.8（上个版本 3.7，+0.1）
+
+
+
+### 修改文件
+- server.js
+- public/timeline.html（新建）
+- public/lobby.html
+
+### 修改原因
+1. 📜 时光墙上线：
+   - server：时光墙时间线（内存 + PERSIST_TIMELINE 正式落盘开关，最多保留 300 条）；整局真实结算时记录正式玩家的比赛（含分数/排名），正式玩家成就"新解锁/再次达成"时记录成就时刻；get_timeline 查询（最新在前）；
+   - 新建 timeline.html：轻量列表——比赛条目显示"时间 + 谁游玩了【游戏】"+ ▸ 展开名次与分数；成就条目显示"时间 + 谁获得成就「名」"（按品质着色）；游客自动拦截；
+   - 大厅"功能"区时光墙入口跳转真实页面。
+
+### 当前版本
+- 3.7（上个版本 3.6，+0.1）
+
+
 
 ### 修改文件
 - server.js

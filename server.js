@@ -68,10 +68,32 @@ const DATA_DIR = path.join(__dirname, 'data');
 const ACH_FILE = path.join(DATA_DIR, 'achievements.json');        // 正式玩家成就
 const ACH_TEST_FILE = path.join(DATA_DIR, 'test-achievements.json'); // 测试账号成就（不影响正式数据）
 const USERS_FILE = path.join(DATA_DIR, 'users.json');              // 正式玩家档案（昵称/主题）
+const TIMELINE_FILE = path.join(DATA_DIR, 'timeline.json');        // 时光墙记录（正式玩家比赛+成就时刻）
+
+// ========== 时光墙 ==========
+// 开发/测试期默认内存（重启即清空）；正式版把 PERSIST_TIMELINE 置 true 落盘保留
+const PERSIST_TIMELINE = false;
+const TIMELINE_MAX = 300;
+let timelineEntries = [];
+
+function addTimeline(entry) {
+  timelineEntries.push(entry);
+  if (timelineEntries.length > TIMELINE_MAX) timelineEntries.shift();
+  if (PERSIST_TIMELINE) {
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(TIMELINE_FILE, JSON.stringify(timelineEntries, null, 2));
+    } catch (e) { console.error('❌ 时光墙写入失败：', e.message); }
+  }
+}
+// 玩家是否为"可入时光墙"的正式账号
+function isOfficialPlayer(name) { return OFFICIAL_ACCOUNT_NAMES.includes(name); }
 
 // 正式玩家档案（内存态 + users.json 落盘）：开发期也落盘，便于测试改昵称/主题
 let usersData = {};
-const THEMES = ['initial']; // 主题：当前仅"初始"灰色；专属主题素材到位后再扩充可选配色
+const THEMES = ['initial', 'p1', 'p2', 'p3', 'p4']; // 已知主题集合
+// 专属主题归属：正式玩家各有自己的素材主题；测试账号可体验 p1
+const OWNER_THEME = { '玩家1': 'p1', '玩家2': 'p2', '玩家3': 'p3', '玩家4': 'p4' };
 
 // ⚙️ 持久化开关：开发/测试期=false（成就只存内存，重启即刷新、不写 data/）；
 // 正式版上线时改为 true，即自动恢复"读入 + 写入 data/ 文件"。
@@ -98,7 +120,7 @@ const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
 let achRecords = [];
 let achTestRecords = [];
 
-function isTestAccount(name) { return name.startsWith('测试者'); }
+function isTestAccount(name) { return !!name && name.startsWith('测试者'); }
 
 function loadAchRecords(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) || []; }
@@ -154,7 +176,13 @@ function announceAchievement(game, roomId, playerName, achievementId, repeatable
 
   if (already && !repeatable) return;          // 一次性成就：本局已拿过就不重复记录
   recordAchievement(playerName, achievementId); // 每次事件都累积次数
-  if (!already) byPlayer.push(achievementId);
+  if (!already) {
+    byPlayer.push(achievementId);
+    // 时光墙：正式玩家每次"新解锁/再次达成"记录一条成就时刻
+    if (isOfficialPlayer(playerName)) {
+      addTimeline({ ts: Date.now(), type: 'achievement', player: playerName, achievementId, achievementName: meta.name, quality: meta.quality });
+    }
+  }
   if (already && repeatable) return;           // 已播报过，仅累积次数
 
   if (meta.quality === 'hidden') return;        // 隐藏成就只进结算汇总，不实时播报
@@ -397,6 +425,24 @@ function evaluateSettlementAchievements(game, roomId) {
   Object.values(byTotal).forEach(names => {
     if (names.length >= 2) names.forEach(n => announceAchievement(game, roomId, n, 'same_score'));
   });
+
+  // ===== 时光墙：记录"正式玩家"的比赛（对局结束真实局） =====
+  const officials = game.playerOrder.filter(isOfficialPlayer);
+  if (officials.length) {
+    const orderAll = game.playerOrder.slice().sort((a, b) => totals[b].total - totals[a].total);
+    addTimeline({
+      ts: Date.now(),
+      type: 'game',
+      game: roomId.indexOf('yahtzee') >= 0 ? 'yahtzee' : 'other',
+      totalPlayers: game.playerOrder.length,
+      players: officials, // 参与时光墙的正式玩家（内部名）
+      results: officials.map(n => ({
+        name: n,
+        score: totals[n].total,
+        rank: orderAll.indexOf(n) + 1
+      }))
+    });
+  }
 }
 
 function initYahtzeeGame(roomId, playerNames, isMock) {
@@ -1058,28 +1104,41 @@ io.on('connection', (socket) => {
       displayName: getDisplayName(name),
       nickname: (u.nickname || ''),
       theme: (u.theme || 'initial'),
-      canEdit: OFFICIAL_ACCOUNT_NAMES.includes(name)
+      canEdit: OFFICIAL_ACCOUNT_NAMES.includes(name),
+      allowedThemes: ['initial']
+        .concat(OWNER_THEME[name] ? [OWNER_THEME[name]] : [])
+        .concat(isTestAccount(name) ? ['p1'] : [])
     });
   });
 
   // 更新档案（昵称 / 主题）
   socket.on('update_profile', ({ nickname, theme }, cb) => {
     const name = socketToUser.get(socket.id);
-    if (!name || !OFFICIAL_ACCOUNT_NAMES.includes(name)) {
-      if (cb) cb({ success: false, msg: '只有正式玩家可以设置昵称' });
+    const canNick = OFFICIAL_ACCOUNT_NAMES.includes(name); // 正式玩家才能改昵称
+    const isTestEdit = isTestAccount(name);               // 测试账号可体验主题（不能改昵称）
+    if (!name || (!canNick && !isTestEdit)) {
+      if (cb) cb({ success: false, msg: '无权限修改档案' });
       return;
     }
     const n = normalizeNickname(nickname);
     if (n === null) { if (cb) cb({ success: false, msg: '昵称限 12 字以内（中英文/数字/下划线）' }); return; }
-    // 昵称唯一性：不能与其它玩家当前的昵称重复
-    for (const other of OFFICIAL_ACCOUNT_NAMES) {
-      if (other === name) continue;
-      if (getDisplayName(other) === n) {
-        if (cb) cb({ success: false, msg: '这个昵称已经被使用了，换一个吧' });
-        return;
+    if (!canNick && n) { if (cb) cb({ success: false, msg: '昵称仅正式玩家可设置' }); return; }
+    // 昵称唯一性（仅正式玩家改名时校验）
+    if (canNick && n) {
+      for (const other of OFFICIAL_ACCOUNT_NAMES) {
+        if (other === name) continue;
+        if (getDisplayName(other) === n) {
+          if (cb) cb({ success: false, msg: '这个昵称已经被使用了，换一个吧' });
+          return;
+        }
       }
     }
-    const t = THEMES.includes(theme) ? theme : 'initial';
+    let t = THEMES.includes(theme) ? theme : 'initial';
+    // 专属主题归属：正式玩家只能用自己素材的主题；测试账号可体验 p1
+    if (t !== 'initial' && OWNER_THEME[name] !== t && !(isTestEdit && t === 'p1')) {
+      if (cb) cb({ success: false, msg: '这是其他玩家的专属主题，不能使用' });
+      return;
+    }
     usersData[name] = Object.assign({}, usersData[name], { nickname: n || undefined, theme: t });
     if (!usersData[name].nickname) delete usersData[name].nickname;
     saveUsers();
@@ -1091,6 +1150,14 @@ io.on('connection', (socket) => {
     const map = {};
     OFFICIAL_ACCOUNT_NAMES.forEach(k => { map[k] = getDisplayName(k); });
     if (typeof cb === 'function') cb({ success: true, map });
+  });
+
+  // 时光墙：返回时间线（最新在前）
+  socket.on('get_timeline', (cb) => {
+    if (typeof cb === 'function') cb({
+      success: true,
+      list: timelineEntries.slice().reverse()
+    });
   });
 
   socket.on('start_game', () => {
@@ -1282,6 +1349,16 @@ achTestRecords = []; // 测试者成就始终内存态
 // 加载正式玩家档案（昵称/主题 落盘 data/users.json）
 usersData = loadUsers();
 console.log(`✅ 用户档案已加载：${Object.keys(usersData).length} 位玩家配置了档案`);
+
+// 时光墙：正式版落盘读取 / 开发期内存
+if (PERSIST_TIMELINE) {
+  try { timelineEntries = JSON.parse(fs.readFileSync(TIMELINE_FILE, 'utf8')) || []; }
+  catch (e) { timelineEntries = []; }
+  console.log(`✅ 时光墙已加载：${timelineEntries.length} 条`);
+} else {
+  timelineEntries = [];
+  console.log('🧪 时光墙处于【内存模式】：重启即清空（正式版将 PERSIST_TIMELINE 置 true 即落盘）');
+}
 
 // ========== 留言板（开发期内存，重启即清空；正式版可仿照 PERSIST_ACHIEVEMENTS 加落盘） ==========
 const BOARD_MAX = 120; // 每块最多保留条数
