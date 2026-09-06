@@ -24,7 +24,11 @@ app.use(express.static('public', {
 }));
 
 // 健康检查（供 Nginx/pm2/监控轮询；上线后 curl http://<host>:<port>/healthz 应返回 ok）
-app.get('/healthz', (req, res) => res.json({ ok: true, up: Math.round(process.uptime()) }));
+// 允许跨域：让"休赛期占位页"在别的域名也能探测到服务器在线
+app.get('/healthz', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.json({ ok: true, up: Math.round(process.uptime()) });
+});
 
 const HEARTBEAT_TIMEOUT = 30000;
 
