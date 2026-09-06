@@ -398,15 +398,17 @@ function dgAdvance(g, room) {
     g.stage = DG_STAGES[idx + 1];
     dgResetTurn(g);
   } else if (g.stage === 'guessF') {
-    g.stage = 'judge'; g.reviewIdx = 0; g.voted = [];
+    // 全部第 4 棒猜完 → 进入第 1 条链的展示与判定（复位每人状态以便投票）
+    g.stage = 'judge'; g.reviewIdx = 0;
+    dgResetTurn(g);
   } else if (g.stage === 'judge') {
-    // 判定票已收齐（dgVoteFinishMatch 已算好 match）→ 投 MVP/罪魁
-    g.stage = 'reward'; g.voted = [];
+    // 判定票收齐（match 已算好）→ 该链投 MVP/罪魁
+    g.stage = 'reward';
+    dgResetTurn(g);
   } else if (g.stage === 'reward') {
-    // 该链完成 → 下一条链（或结算）
     g.reviewIdx++;
     if (g.reviewIdx >= g.order.length) { g.stage = 'result'; }
-    else { g.stage = 'judge'; g.voted = []; }
+    else { g.stage = 'judge'; dgResetTurn(g); }
   }
   dgBroadcast(room);
 }
@@ -449,6 +451,11 @@ function dgBroadcast(room) {
     if (g.stage === 'judge' || g.stage === 'reward' || g.stage === 'result') {
       view.chainOwner = chainOwner;
       view.chainData = chain ? { word: chain.word, picW: chain.picW || [], guessA: chain.guessA, picG: chain.picG || [], guessF: chain.guessF, match: chain.match, matchVotes: chain.matchVotes } : null;
+      // 链角色：第1棒=写词+画，第2棒=猜，第3棒=画，第4棒=最终猜
+      const ownerIdx = chainOwner ? g.order.indexOf(chainOwner) : -1;
+      view.chainRoles = chainOwner && ownerIdx >= 0
+        ? { writer: chainOwner, guessA: dgOwnerAt(g.order, ownerIdx, 1), drawer: dgOwnerAt(g.order, ownerIdx, 2), guessB: dgOwnerAt(g.order, ownerIdx, 3) }
+        : { writer: chainOwner, guessA: '', drawer: '', guessB: '' };
     }
     if (g.stage === 'judge' && !g.done[name]) {
       view.needAction = true;
