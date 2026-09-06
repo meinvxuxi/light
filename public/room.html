@@ -330,7 +330,7 @@
         b.classList.add((id === 'agly') ? 'dyn-gold' : ((id === 'lyff') ? 'dyn-red' : ((id === 'p3' || id === 'pomelo') ? 'dyn-green' : 'dyn-pink')));
         const img = (IS_MOBILE && THEME_MOBILE[id]) ? THEME_MOBILE[id] : THEME_IMG[id];
         const a = THEME_ALPHA[id] || 0.82;
-        if (img) { b.style.backgroundImage = "linear-gradient(rgba(255,255,255," + a + "), rgba(255,255,255," + a + ")), url('" + img + "')"; b.style.backgroundSize = 'cover'; b.style.backgroundAttachment = 'fixed'; b.style.backgroundPosition = 'center'; }
+        if (img) { b.style.backgroundImage = "linear-gradient(rgba(255,255,255," + a + "), rgba(255,255,255," + a + ")), url('" + img + "')"; b.style.backgroundSize = 'cover'; b.style.backgroundAttachment = IS_MOBILE ? 'scroll' : 'fixed'; b.style.backgroundPosition = 'center'; }
       } else {
         b.style.backgroundImage = ''; b.style.backgroundSize = ''; b.style.backgroundAttachment = ''; b.style.backgroundPosition = '';
       }
