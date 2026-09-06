@@ -14,7 +14,14 @@ const io = new Server(server, {
   pingInterval: 10000,
 });
 
-app.use(express.static('public'));
+// 开发期禁用缓存：保证页面/脚本改动后刷新即为最新（避免“已修复但仍看到旧效果”）
+app.use(express.static('public', {
+  etag: false,
+  lastModified: false,
+  setHeaders(res) {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  }
+}));
 
 const HEARTBEAT_TIMEOUT = 30000;
 
