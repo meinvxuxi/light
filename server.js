@@ -461,6 +461,7 @@ function dgBroadcast(room) {
     const view = {
       gameType: 'drawing', stage: g.stage, stageText, round: g.round,
       points: g.points, order: g.order.slice(), you: name, youReady: !!g.done[name],
+      done: g.order.map(n => !!g.done[n]),
       chainIndex: g.reviewIdx, isHost: room.hostName === name,
       online, cancelVotes: (g.cancelVotes || []).slice(), cancelOnline
     };
@@ -1043,6 +1044,8 @@ io.on('connection', (socket) => {
             clearTimeout(room.leaveTimers[playerName]);
             delete room.leaveTimers[playerName];
           }
+          // 画猜对局中：任何人（重新）进入即推一版全状态——对方看得到你在线/离线，重进页不再卡在“加载中”
+          if (room.gameType === 'drawing' && drawingGames[room.roomId]) dgBroadcast(room);
           break;
         }
       }
