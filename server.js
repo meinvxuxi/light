@@ -301,7 +301,7 @@ const OWNER_THEMES = { '玩家1': ['p1', 'agly'], '玩家2': ['p2'], '玩家3': 
 function defaultThemeFor(name) {
   if (isTestAccount(name)) return 'p1';
   const own = OWNER_THEMES[name];
-  if (own && own.length) return own[own.length - 1];
+  if (own && own.length) return own[0]; // 默认 = 玩家基础专属主题（玩家1=p1、玩家2=p2、玩家3=p3、玩家4=p4）
   return 'initial';
 }
 function resolveUserTheme(name) {
