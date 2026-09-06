@@ -421,6 +421,7 @@ function dgAdvance(g, room) {
   dgBroadcast(room);
 }
 function dgVoteFinishMatch(g) {
+  if (!dgAllDone(g)) return; // 匹配与否在 4 票收齐后一次性判定
   const owner = g.order[g.reviewIdx];
   const chain = g.chains[owner];
   const matched = (g.voted || []).filter(v => v.choice === true).length;
@@ -429,8 +430,8 @@ function dgVoteFinishMatch(g) {
   g.chainVotes[g.reviewIdx] = { match: chain.match, matchedVotes: matched };
 }
 function dgApplyReward(g) {
-  // 每条链只结算一次（4 票收齐后）
-  if (g.settled[g.reviewIdx]) return;
+  // 本链 4 票收齐后才结算一次（MVP/罪魁投票须全员提交后统一计票）
+  if (g.settled[g.reviewIdx] || !dgAllDone(g)) return;
   g.settled[g.reviewIdx] = true;
   // 本链 4 人投票收齐后只结算一次：按被投票数累计（1 票=1，2 票=3，3 票=6）
   const tally = {};

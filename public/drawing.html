@@ -51,6 +51,10 @@
     .empty { text-align: center; color: #adb5bd; padding: 40px 0; font-size: .88rem; }
     .err { text-align: center; color: #e74c3c; padding: 30px 0; font-size: .9rem; }
     .msg-line { color: #e67e22; font-size: .85rem; min-height: 18px; margin-top: 6px; }
+    /* “已提交”状态徽章：主题色半透明（默认蓝 / dyn-pink / dyn-green） */
+    .chip.done { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 11px; color: #1f6fae; background: rgba(74,144,217,.16); border: 1px solid rgba(74,144,217,.45); font-size: .82rem; }
+    body.dyn-pink .chip.done { color: #c73e79; background: rgba(240,98,146,.16); border-color: rgba(240,98,146,.5); }
+    body.dyn-green .chip.done { color: #4f8a45; background: rgba(111,158,99,.17); border-color: rgba(111,158,99,.5); }
   </style>
 </head>
 <body>
@@ -210,7 +214,10 @@
         const on = (v.online && v.online[n]) !== false;
         const me = n === v.you;
         const label = done ? '已提交' : (on ? '未提交' : '离线');
-        const style = done ? 'color:#fff;background:#27ae60;' : (on ? 'color:#6b7a90;background:#e9edf2;' : 'color:#e67e22;background:#fdeede;');
+        if (done) {
+          return `<span class="chip done">${esc(dn(n))}${me ? '（你）' : ''} 已提交</span>`;
+        }
+        const style = on ? 'color:#6b7a90;background:#e9edf2;' : 'color:#e67e22;background:#fdeede;';
         return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:11px;${style}">${esc(dn(n))}${me ? '（你）' : ''} ${label}</span>`;
       }).join('');
       return `<div style="margin:2px 0 8px;display:flex;flex-wrap:wrap;gap:6px;">${chips}</div>`;
