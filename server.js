@@ -367,7 +367,7 @@ function dgOwnerAt(order, idx, off) {
 function dgInit(roomId, names) {
   const chains = {};
   names.forEach(n => { chains[n] = { word: null, picW: [], guessA: null, picG: [], guessF: null, match: null, matchVotes: 0 }; });
-  const game = { gameType: 'drawing', roomId, order: names.slice(), round: 1, chains, points: {}, done: {}, stage: 'writeDraw', reviewIdx: 0, voted: [], chainVotes: [] };
+  const game = { gameType: 'drawing', roomId, order: names.slice(), playerOrder: names.slice(), round: 1, chains, points: {}, done: {}, stage: 'writeDraw', reviewIdx: 0, voted: [], chainVotes: [] };
   names.forEach(n => { game.points[n] = 0; game.done[n] = false; });
   drawingGames[roomId] = game;
   return game;
@@ -641,7 +641,7 @@ function syncRoomState(room, selfName) {
     seats: room.seats, spectators: room.spectators, mySeat,
     myReady: mySeat ? room.seats[mySeat].ready : false,
     gameStarted: !!nowGame,
-    gamePlayers: nowGame ? nowGame.playerOrder : []
+    gamePlayers: nowGame ? (nowGame.playerOrder || []) : []
   };
   const sid = room.playerMap.get(selfName);
   if (sid && io.sockets.sockets.has(sid)) {
@@ -653,7 +653,7 @@ function broadcastRoom(room) {
   transferHost(room);
   const nowGame = activeGameOf(room);
   const gameStarted = !!nowGame;
-  const gamePlayers = nowGame ? nowGame.playerOrder : [];
+  const gamePlayers = nowGame ? (nowGame.playerOrder || []) : [];
   io.to(room.roomId).emit('room_update', {
     roomId: room.roomId,
     hostName: room.hostName,
@@ -1148,7 +1148,7 @@ io.on('connection', (socket) => {
     const gameInProgress = activeGameOf(room);
     const seatedCount = Object.values(room.seats).filter(Boolean).length;
     const isAlreadySeated = Object.values(room.seats).some(s => s?.name === playerName);
-    const isGamePlayer = !!(gameInProgress && gameInProgress.playerOrder.includes(playerName));
+    const isGamePlayer = !!(gameInProgress && (gameInProgress.playerOrder || []).includes(playerName));
 
     // 修复：先把"是否已在座"放在最前面判断。
     // 已在座（如从结算页返回）→ 保留座位并清观战；
