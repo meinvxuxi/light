@@ -36,6 +36,9 @@
     .p-tri { margin-left: auto; cursor: pointer; color: #9aa5b1; user-select: none; padding: 0 4px; font-size: .8rem; }
     .p-tri:hover { color: #4a90d9; }
     .p-detail { display: none; background: #fafbfd; border-radius: 8px; padding: 6px 12px; font-size: .8rem; color: #6c7a8c; margin: 2px 0 8px; line-height: 1.7; }
+    .p-detail .p-date { color: #2f6fb2; font-weight: 600; }
+    body.dyn-pink .p-detail .p-date { color: #d8567f; }
+    body.dyn-green .p-detail .p-date { color: #4f8a45; }
     .p-detail.open { display: block; }
     /* ===== p1 专属主题：素材背景 + 粉色点缀 ===== */
     body.theme-p1 { background-image: linear-gradient(rgba(255,255,255,.82), rgba(255,255,255,.82)), url('/assets/avatars/p1/beijing.png.jpg'); background-size: cover; background-attachment: fixed; background-position: center; }
@@ -134,9 +137,10 @@
         ids.forEach(id => {
           const recs = byId[id].slice().sort((a, b) => a.firstTime - b.firstTime);
           const rows = recs.map(r => {
+            const themed = t => '<span class="p-date">' + fmtTime(t) + '</span>';
             const detail = (r.events && r.events.length)
-              ? r.events.map(t => '· ' + fmtTime(t)).join('<br>')
-              : '· 首次：' + fmtTime(r.firstTime) + '<br>· 最近：' + fmtTime(r.lastTime);
+              ? r.events.map(t => '· ' + themed(t)).join('<br>')
+              : '· 首次：' + themed(r.firstTime) + '<br>· 最近：' + themed(r.lastTime);
             const dId = 'detail-' + id + '-' + r.playerName;
             const tId = 'tri-' + id + '-' + r.playerName;
             const nameHtml = dn(r.playerName) + (r.isTest ? ' <em class="t-tag">测试</em>' : '');
