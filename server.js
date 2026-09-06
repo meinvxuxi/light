@@ -51,7 +51,7 @@ const VALID_KEYS = {
   'youyoukuu2632': '玩家1',
   '326ixnay': '玩家2',
   'ownnn12345': '玩家3',
-  'Karida1118': '玩家4',
+  'karida1118': '玩家4',
   'test1': '测试者1',
   'test2': '测试者2',
   'test3': '测试者3',
@@ -295,6 +295,19 @@ let usersData = {};
 const THEMES = ['initial', 'p1', 'p2', 'p3', 'p4', 'pomelo', 'agly', 'lyff']; // 已知主题集合
 // 专属主题归属：每位正式玩家可拥有 1~N 个素材主题（玩家3：p3/pomelo；玩家1：p1/agly；玩家4：p4/姥爷纷飞=lyff）
 const OWNER_THEMES = { '玩家1': ['p1', 'agly'], '玩家2': ['p2'], '玩家3': ['p3', 'pomelo'], '玩家4': ['p4', 'lyff'] };
+
+// 默认主题：正式玩家 = 自己最新的专属主题（无需在服务器存记录也生效，避免“闪回初始”）；
+// 测试账号默认体验 p1；主动在设置里选了“初始配色”才真正显示纯初始。
+function defaultThemeFor(name) {
+  if (isTestAccount(name)) return 'p1';
+  const own = OWNER_THEMES[name];
+  if (own && own.length) return own[own.length - 1];
+  return 'initial';
+}
+function resolveUserTheme(name) {
+  const u = usersData[name];
+  return (u && u.theme) ? u.theme : defaultThemeFor(name);
+}
 
 // ⚙️ 持久化开关（环境变量控制）：默认开发/测试期=false（成就只存内存，重启即刷新、不写 data/）；
 // 正式部署时设置环境变量 PERSIST_ACHIEVEMENTS=true，即自动恢复"读入 + 写入 data/ 文件"。
@@ -1755,7 +1768,7 @@ io.on('connection', (socket) => {
       name,
       displayName: getDisplayName(name),
       nickname: (u.nickname || ''),
-      theme: (u.theme || 'initial'),
+      theme: resolveUserTheme(name),
       title: playerTitle(name),
       unlockedTitles: playerUnlockedTitles(name),
       titleChoice: (u.title || ''),
@@ -1870,7 +1883,7 @@ io.on('connection', (socket) => {
       name: target,
       displayName: getDisplayName(target),
       title: playerTitle(target),
-      theme: (usersData[target] && usersData[target].theme) || 'initial',
+      theme: resolveUserTheme(target),
       online,
       lastSeen: online ? (onlineRec && onlineRec.lastSeen) : (userLastOnline.get(target) || null),
       stats,
