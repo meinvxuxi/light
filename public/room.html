@@ -264,9 +264,9 @@
 
     // ===== p1 主题应用 =====
     // ===== 主题引擎（粉/绿两种强调色 + 各素材背景）=====
-    const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg', pomelo: '/assets/avatars/p3/nene.jpg' };
-    const THEME_MOBILE = { p4: '/assets/avatars/p4/zuixin4.jpg', pomelo: '/assets/avatars/p3/nene2.jpg' };
-    const THEME_ALPHA = { p1: 0.82, p2: 0.75, p3: 0.75, p4: 0.82, pomelo: 0.6 };
+    const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg', pomelo: '/assets/avatars/p3/nene.jpg', agly: '/assets/avatars/p1/agly/aglybj.jpg' };
+    const THEME_MOBILE = { p4: '/assets/avatars/p4/zuixin4.jpg', pomelo: '/assets/avatars/p3/nene2.jpg', agly: '/assets/avatars/p1/agly/aglybj.jpg' };
+    const THEME_ALPHA = { p1: 0.82, p2: 0.75, p3: 0.75, p4: 0.82, pomelo: 0.6, agly: 0.82 };
     const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches;
     function ensureThemeStyle() {
       if (document.getElementById('dynThemeStyle')) return;
@@ -297,15 +297,24 @@
         'body.dyn-green .seat.ready{border-color:#b9d6af!important;background:#f2f8f0!important}' +
         'body.dyn-green .me-tag{background:#e6f1e2!important;color:#5b8a50!important}' +
         'body.dyn-green .toast,body.dyn-green .home-toast{background:rgba(111,158,99,.18)!important;color:#4f8a45!important;border-color:rgba(111,158,99,.55)!important}';
-      s.textContent = pink + '\n' + green;
+          const gold = pink
+      .replace(/dyn-pink/g, 'dyn-gold')
+      .replace(/#f06292/g, '#d6a843')
+      .replace(/#e0507f/g, '#b98a2e')
+      .replace(/#a0345c/g, '#b98a2e')
+      .replace(/#ffb3c6/g, '#eeddb3')
+      .replace(/#f9b7ca/g, '#f0e3bd')
+      .replace(/#fff4f7/g, '#fff8ea')
+      .replace(/#ffe3ec/g, '#fdf3dd');
+    s.textContent = pink + '\n' + green + '\n' + gold;
       document.head.appendChild(s);
     }
     function paintTheme(id) {
       ensureThemeStyle();
       const b = document.body;
-      b.classList.remove('dyn-pink', 'dyn-green');
+      b.classList.remove('dyn-pink', 'dyn-green', 'dyn-gold');
       if (id && id !== 'initial') {
-        b.classList.add((id === 'p3' || id === 'pomelo') ? 'dyn-green' : 'dyn-pink');
+        b.classList.add((id === 'agly') ? 'dyn-gold' : ((id === 'p3' || id === 'pomelo') ? 'dyn-green' : 'dyn-pink'));
         const img = (IS_MOBILE && THEME_MOBILE[id]) ? THEME_MOBILE[id] : THEME_IMG[id];
         const a = THEME_ALPHA[id] || 0.82;
         if (img) { b.style.backgroundImage = "linear-gradient(rgba(255,255,255," + a + "), rgba(255,255,255," + a + ")), url('" + img + "')"; b.style.backgroundSize = 'cover'; b.style.backgroundAttachment = 'fixed'; b.style.backgroundPosition = 'center'; }

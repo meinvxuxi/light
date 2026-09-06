@@ -38,11 +38,11 @@
 <body>
   <div class="card" id="card">
     <div class="badge">休赛期</div>
-    <h1 id="title">训练师们休赛啦</h1>
-    <p>「休赛期训练师」暂未开放，<br>请等本机/服务器开机后再来。</p>
-    <p class="sub">通常几个小时后就有"训练师"上线营业，刷新或稍等会自动跳转。</p>
+    <h1 id="title">现在是休赛期</h1>
+    <p>「训练室」暂未开放。</p>
+    <p class="sub">通常几个小时后就有能约到赛训，刷新或稍等会自动跳转。</p>
     <a class="btn" href="#" id="retryBtn" onclick="check()">我再看看</a>
-    <div class="status" id="status">正在探测服务器…</div>
+    <div class="status" id="status">正在约赛训...</div>
   </div>
 <script>
   // 用法：把本页托管到任意外部静态站点，链接后追加 ?srv=你的公网服务地址
@@ -55,15 +55,15 @@
     const status = document.getElementById('status');
     const card = document.getElementById('card');
     const b = base();
-    if (!b) { status.textContent = '未配置 srv 参数（提示页需要在链接后带 ?srv=…）'; return; }
-    status.textContent = '正在探测服务器…';
+    if (!b) { status.textContent = '...'; return; }
+    status.textContent = '正在约赛训...';
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 3500);
     try {
       const r = await fetch(b + '/healthz', { mode: 'cors', signal: ctrl.signal });
       clearTimeout(t);
       if (r.ok) {
-        status.textContent = '训练师在线！正在进入游戏…';
+        status.textContent = '已约到赛训！正在等待训练...';
         card.style.transition = 'opacity .3s'; card.style.opacity = '.4';
         setTimeout(() => { location.replace(b); }, 600);
         return;
@@ -71,7 +71,7 @@
       throw new Error('bad');
     } catch (e) {
       clearTimeout(t);
-      status.textContent = '服务器暂未开放，稍后自动重试…';
+      status.textContent = '训练室暂未开放，稍后自动重试…';
       setTimeout(check, 8000);
     }
   }
