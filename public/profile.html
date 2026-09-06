@@ -290,6 +290,21 @@
       socket.emit('get_profile_page', target, render);
     });
   </script>
-  <script>try { const _t = localStorage.getItem('myTheme'); if (_t && _t !== 'initial' && typeof paintTheme === 'function') { paintTheme(_t); if (typeof applySticker === 'function') applySticker(_t); } } catch (e) {}</script>
+  <script>try {
+    const _t = localStorage.getItem('myTheme');
+    if (_t && _t !== 'initial' && typeof paintTheme === 'function') { paintTheme(_t); if (typeof applySticker === 'function') applySticker(_t); }
+    // 身份注册完成后再校正主题：避免“过早读到 initial 把已存主题抹掉”
+    let _a = 0;
+    const _sync = () => socket.emit('get_profile', r => {
+      if (r && r.success && r.theme && r.theme !== 'initial') {
+        if (localStorage.getItem('myTheme') !== r.theme) {
+          localStorage.setItem('myTheme', r.theme);
+          paintTheme(r.theme);
+          if (typeof applySticker === 'function') applySticker(r.theme);
+        }
+      } else if (_a < 3) { _a++; setTimeout(_sync, 500); }
+    });
+    setTimeout(_sync, 400);
+  } catch (e) {}</script>
 </body>
 </html>
