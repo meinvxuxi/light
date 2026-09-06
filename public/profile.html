@@ -141,7 +141,7 @@
     window.addEventListener('pageshow', () => { paintSaved(); if (socket.connected) applyTheme(); });
     setInterval(sendHeartbeat, 10000);
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙' };
     function gameLabel(k) { return GAME_LABEL[k] || k; }
     function statCell(lab, val) {
       return `<div class="st-cell">${lab}<b>${val}</b></div>`;
@@ -149,7 +149,15 @@
     let stTotals = { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0 };
     let stByGame = [];
     let stAch = [];
+    let stCareer = null;
     let curGame = 'all';
+    function setAchVisible() {
+      const lab = document.getElementById('achLab');
+      const list = document.getElementById('achList');
+      const on = curGame === 'all';
+      if (lab) lab.style.display = on ? 'block' : 'none';
+      if (list) list.style.display = on ? 'block' : 'none';
+    }
     function sumByGame(g) {
       const s = { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0 };
       (g.modes || []).forEach(m => {
@@ -172,19 +180,38 @@
           ${statCell('游玩场次', stTotals.games)}
           ${statCell('冠军次数', stTotals.wins)}
         </div>`;
+        setAchVisible();
         return;
       }
       const g = stByGame.find(x => x.game === curGame);
       if (!g || !(g.modes || []).length) {
         box.innerHTML = '<div class="empty">该游戏还没有对局记录</div>';
+        setAchVisible();
         return;
       }
       const s = sumByGame(g);
-      let html = `
+      let html;
+      if (curGame === 'drawing' && stCareer) {
+        const c = stCareer;
+        html = `
+        <div class="st-grid two">
+          ${statCell('游玩场次', c.games)}
+          ${statCell('冠军次数', c.wins)}
+          ${statCell('胜率', c.games ? c.winRate + '%' : '—')}
+          ${statCell('累计总分', c.totalScore)}
+          ${statCell('单局最高', c.best)}
+          ${statCell('被投 MVP 次数', c.mvp)}
+          ${statCell('被投罪魁次数', c.culprit)}
+        </div>
+        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">花菜专属战绩</div>
+        ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStr(m)}</div>`).join('')}`;
+      } else {
+        html = `
         <div class="st-grid">
           ${statCell('游玩场次', s.games)}${statCell('冠军次数', s.wins)}${statCell('胜率', s.winRate + '%')}${statCell('累计总分', s.totalScore)}${statCell('单局最高', s.best)}
         </div>
         ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStr(m)}</div>`).join('')}`;
+      }
       const gAch = stAch.filter(a => a.game === curGame);
       if (gAch.length) {
         html += `<div class="lab2">成就</div>` + gAch.map(a => `
@@ -194,6 +221,7 @@
           </div>`).join('');
       }
       box.innerHTML = html;
+      setAchVisible();
     }
     function switchGame(k) {
       curGame = k;
@@ -209,6 +237,7 @@
       const st = res.stats || {};
       stTotals = st.totals || stTotals;
       stByGame = st.byGame || [];
+      stCareer = res.drawingCareer || null;
       const status = res.online
         ? '在线'
         : (res.lastSeen ? `离线 · 上次在线 ${fmtShort(res.lastSeen)}` : '离线');
@@ -231,7 +260,7 @@
         </div>
         <div id="stBox"></div>
 
-        <div class="lab">成就（已解锁 ${ach.length} / ${res.totalAch || 12}）</div>
+        <div class="lab" id="achLab">成就（已解锁 ${ach.length} / ${res.totalAch || 12}）</div>
         <div id="achList">${achHtml}</div>`;
       renderStatsBox();
     }

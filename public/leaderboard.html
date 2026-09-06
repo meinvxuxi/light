@@ -36,6 +36,7 @@
   <div class="wrap">
     <div class="tabs">
       <span class="lb-tab active" id="tabBoard" onclick="switchTab('board')">快艇榜</span>
+      <span class="lb-tab" id="tabDrawing" onclick="switchTab('drawing')">花菜榜</span>
       <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
     </div>
     <div class="lb-list" id="lbList"><div class="empty">加载中…</div></div>
@@ -45,7 +46,7 @@
   <script>
     const myName = sessionStorage.getItem('playerName');
     if (!myName) { window.location.href = '/index.html'; }
-    let board = [], achBoard = [], curTab = 'board';
+    let board = [], achBoard = [], drawingBoard = [], curTab = 'board';
 
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -107,19 +108,23 @@
     function switchTab(tab) {
       curTab = tab;
       document.getElementById('tabBoard').classList.toggle('active', tab === 'board');
+      document.getElementById('tabDrawing').classList.toggle('active', tab === 'drawing');
       document.getElementById('tabAch').classList.toggle('active', tab === 'ach');
       render();
     }
     function render() {
       const el = document.getElementById('lbList');
-      const rows = curTab === 'board' ? board : achBoard;
+      const isScoreBoard = curTab === 'board' || curTab === 'drawing';
+      const rows = curTab === 'board' ? board : (curTab === 'drawing' ? drawingBoard : achBoard);
       if (!rows.length) {
-        el.innerHTML = '<div class="empty">' + (curTab === 'board' ? '还没有对局记录，去打一局吧～' : '还没有成就记录') + '</div>';
+        const emptyTxt = curTab === 'board' ? '还没有快艇对局记录，去打一局吧～'
+          : (curTab === 'drawing' ? '还没有花菜对局记录，去打一局画猜接龙吧～' : '还没有成就记录');
+        el.innerHTML = '<div class="empty">' + emptyTxt + '</div>';
         return;
       }
       el.innerHTML = rows.map((r, i) => {
         const rankCls = i < 3 ? 'lb-rank top' : 'lb-rank';
-        const stat = curTab === 'board'
+        const stat = isScoreBoard
           ? `单局最高 ${r.best} 分`
           : `${r.count} 个成就`;
         return `<div class="lb-row">
@@ -135,6 +140,7 @@
         if (res && res.success) {
           board = res.board || [];
           achBoard = res.achBoard || [];
+          drawingBoard = res.drawingBoard || [];
           render();
         } else {
           document.getElementById('lbList').innerHTML = '<div class="err">加载失败，请刷新重试</div>';

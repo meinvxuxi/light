@@ -196,6 +196,56 @@ function recordHighScores(totals) {
   }
 }
 
+// ===== 画猜接龙（花菜）榜与战绩 =====
+let drawingHighBoard = new Map(); // 玩家名 -> 单局最高分
+function recordDrawingHighScores(g) {
+  if (!g) return;
+  for (const n of g.order) {
+    const p = g.points[n] || 0;
+    const cur = drawingHighBoard.get(n) || 0;
+    if (p > cur) drawingHighBoard.set(n, p);
+  }
+}
+// 画猜一局（进入 result）→ 写时光墙（只记正式玩家，带 MVP/罪魁票数）+ 花菜榜（所有参与者）
+function recordDrawingGame(g) {
+  const officials = g.order.filter(isOfficialPlayer);
+  if (officials.length) {
+    const orderAll = g.order.slice().sort((a, b) => (g.points[b] || 0) - (g.points[a] || 0));
+    addTimeline({
+      ts: Date.now(),
+      type: 'game',
+      game: 'drawing',
+      totalPlayers: g.order.length,
+      players: officials,
+      results: officials.map(n => ({
+        name: n,
+        score: g.points[n] || 0,
+        rank: orderAll.indexOf(n) + 1,
+        mvpVotes: (g.mvpVotes && g.mvpVotes[n]) || 0,
+        culpritVotes: (g.culpritVotes && g.culpritVotes[n]) || 0
+      }))
+    });
+  }
+  recordDrawingHighScores(g);
+}
+// 花菜专属战绩（正式玩家，来自时光墙对局记录）
+function buildDrawingCareer(name) {
+  const c = { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0, mvp: 0, culprit: 0 };
+  for (const e of timelineEntries) {
+    if (e.type !== 'game' || e.game !== 'drawing') continue;
+    const my = (e.results || []).find(r => r.name === name);
+    if (!my) continue;
+    c.games++;
+    c.totalScore += my.score || 0;
+    if ((my.score || 0) > c.best) c.best = my.score || 0;
+    if (my.rank === 1) c.wins++;
+    c.mvp += my.mvpVotes || 0;
+    c.culprit += my.culpritVotes || 0;
+  }
+  c.winRate = c.games ? Math.round(c.wins / c.games * 100) : 0;
+  return c;
+}
+
 // ===== 测试个人空间：仅测试者自己可见的模拟战绩（内存种子，方便预览页面，无需真实打局） =====
 const testProfileSeeds = new Map();
 function seedTestProfile(name) {
@@ -206,10 +256,16 @@ function seedTestProfile(name) {
       { mode: '3人', games: 3, wins: 2, winRate: 67, totalScore: 980, best: 336 },
       { mode: '4人', games: 1, wins: 0, winRate: 0, totalScore: 278, best: 278 }
     ]
+  }, {
+    game: 'drawing',
+    modes: [
+      { mode: '4人', games: 4, wins: 1, winRate: 25, totalScore: 30, best: 13 }
+    ]
   }];
-  const totals = { games: 6, wins: 3, winRate: 50, totalScore: 1744, best: 336 };
-  testProfileSeeds.set(name, { totals, byGame });
-  return { totals, byGame };
+  const totals = { games: 10, wins: 4, winRate: 40, totalScore: 1774, best: 336 };
+  const drawingCareer = { games: 4, wins: 1, winRate: 25, totalScore: 30, best: 13, mvp: 6, culprit: 4 };
+  testProfileSeeds.set(name, { totals, byGame, drawingCareer });
+  return { totals, byGame, drawingCareer };
 }
 
 // 正式玩家档案（内存态 + users.json 落盘）：开发期也落盘，便于测试改昵称/主题
@@ -389,7 +445,7 @@ function dgOwnerAt(order, idx, off) {
 function dgInit(roomId, names) {
   const chains = {};
   names.forEach(n => { chains[n] = { word: null, picW: [], guessA: null, picG: [], guessF: null, match: null, matchVotes: 0 }; });
-  const game = { gameType: 'drawing', roomId, order: names.slice(), playerOrder: names.slice(), round: 1, chains, points: {}, done: {}, stage: 'writeDraw', reviewIdx: 0, voted: [], chainVotes: [], cancelVotes: [], settled: [] };
+  const game = { gameType: 'drawing', roomId, order: names.slice(), playerOrder: names.slice(), round: 1, chains, points: {}, done: {}, stage: 'writeDraw', reviewIdx: 0, voted: [], chainVotes: [], cancelVotes: [], settled: [], mvpVotes: {}, culpritVotes: {} };
   names.forEach(n => { game.points[n] = 0; game.done[n] = false; });
   drawingGames[roomId] = game;
   return game;
@@ -432,13 +488,14 @@ function dgAdvance(g, room) {
     if (g.reviewIdx >= g.order.length) { g.stage = 'result'; }
     else { g.stage = 'judge'; dgResetTurn(g); }
   }
-  // 全链结算完成进入 result：按一局最终积分触发花菜成就
+  // 全链结算完成进入 result：按一局最终积分触发花菜成就 + 写时光墙/花菜榜
   if (g.stage === 'result') {
     for (const n of g.order) {
       const p = g.points[n] || 0;
       if (p >= 18) announceAchievement(g, room.roomId, n, 'dg_cabbage_grand');
       if (p <= -18) announceAchievement(g, room.roomId, n, 'dg_cabbage_killer');
     }
+    recordDrawingGame(g);
   }
   dgBroadcast(room);
 }
@@ -462,10 +519,14 @@ function dgApplyReward(g, room) {
   const sign = chain.match === true ? 1 : -1;
   for (const [target, n] of Object.entries(tally)) {
     g.points[target] = (g.points[target] || 0) + sign * (n * (n + 1) / 2);
-    // 成就：同一链条 3 票投同一人 → MVP / 罪魁
-    if (n >= 3) {
-      const achId = chain.match === true ? 'dg_fmvp' : 'dg_spirit';
-      announceAchievement(g, room.roomId, target, achId);
+    if (chain.match === true) {
+      g.mvpVotes[target] = (g.mvpVotes[target] || 0) + n;
+      // 成就：同一链条 3 票投同一人 → MVP
+      if (n >= 3) announceAchievement(g, room.roomId, target, 'dg_fmvp');
+    } else {
+      g.culpritVotes[target] = (g.culpritVotes[target] || 0) + n;
+      // 成就：同一链条 3 票投同一人 → 罪魁
+      if (n >= 3) announceAchievement(g, room.roomId, target, 'dg_spirit');
     }
   }
 }
@@ -1717,11 +1778,14 @@ io.on('connection', (socket) => {
         count: r.count, firstTime: r.firstTime, lastTime: r.lastTime
       };
     }).sort((a, b) => (ACH_QUALITY_NO[b.quality] || 0) - (ACH_QUALITY_NO[a.quality] || 0));
-    let stats;
+    let stats, drawingCareer;
     if (isTestAccount(target)) {
-      stats = testProfileSeeds.get(target) || { totals: { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0 }, byGame: [] };
+      const seed = testProfileSeeds.get(target);
+      stats = seed ? { totals: seed.totals, byGame: seed.byGame } : { totals: { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0 }, byGame: [] };
+      drawingCareer = seed ? seed.drawingCareer : { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0, mvp: 0, culprit: 0 };
     } else {
       stats = { totals: summarizeProfileStats(target), byGame: buildProfileByGame(target) };
+      drawingCareer = buildDrawingCareer(target);
     }
     const online = onlineUsers.has(target);
     const onlineRec = onlineUsers.get(target);
@@ -1734,6 +1798,7 @@ io.on('connection', (socket) => {
       online,
       lastSeen: online ? (onlineRec && onlineRec.lastSeen) : (userLastOnline.get(target) || null),
       stats,
+      drawingCareer,
       achievements,
       totalAch: Object.keys(ACHIEVEMENTS).length
     });
@@ -1753,6 +1818,17 @@ io.on('connection', (socket) => {
       });
     }
     gamesArr.sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
+    // 花菜榜（画猜接龙）：单局最高分
+    const drawingArr = [];
+    for (const [name, best] of drawingHighBoard) {
+      drawingArr.push({
+        name,
+        displayName: OFFICIAL_ACCOUNT_NAMES.includes(name) ? getDisplayName(name) : name,
+        title: playerTitle(name),
+        best
+      });
+    }
+    drawingArr.sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
     // 成就榜：仍只统计正式玩家
     const achRow = new Map();
     for (const r of achRecords) {
@@ -1765,7 +1841,7 @@ io.on('connection', (socket) => {
       .map(n => ({ name: n, displayName: getDisplayName(n), title: playerTitle(n), count: (achRow.get(n) || { count: 0 }).count }))
       .filter(x => x.count > 0)
       .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : 1));
-    if (cb) cb({ success: true, game: '快艇骰子', board: gamesArr, achBoard: achArr });
+    if (cb) cb({ success: true, game: '快艇骰子', board: gamesArr, achBoard: achArr, drawingBoard: drawingArr });
   });
 
   socket.on('start_game', () => {
