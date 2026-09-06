@@ -93,12 +93,21 @@
         <option value="first_roll">一发入魂</option>
         <option value="low_score">认真的吗？</option>
       </optgroup>
+      <optgroup label="画猜接龙">
+        <option value="dg_fmvp">FMVP</option>
+        <option value="dg_spirit">灵魂画手</option>
+        <option value="dg_cabbage_grand">花菜大满贯</option>
+        <option value="dg_cabbage_killer">花菜杀手</option>
+      </optgroup>
       <optgroup label="更多游戏">
         <option value="" disabled>暂无成就</option>
       </optgroup>
     </select>
     <button class="btn-trigger" onclick="triggerAchievement()">触发</button>
     <button class="btn-info" onclick="window.location.href='/achievements.html'">查看荣誉墙</button>
+    <br>
+    <button class="btn-trigger" onclick="triggerDrawing('me')">🎨 一键触发全部画猜成就（当前账号）</button>
+    <button class="btn-trigger" onclick="triggerDrawing('all')">🎨 给四个测试号各触发全部画猜成就</button>
     <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
       用 test1~test4 登录后一键触发成就，再到荣誉墙查看效果；测试数据只存内存，重启即清空。
     </p>
@@ -159,6 +168,18 @@
       socket.emit('test_trigger_achievement', id, (res) => {
         if (res && res.success) {
           log('✅ 已触发：' + ((res && res.achievementName) || id) + '（内存记录，重启即清空）');
+        } else {
+          log('❌ ' + ((res && res.msg) || '触发失败'));
+        }
+      });
+    }
+
+    function triggerDrawing(scope) {
+      const ids = ['dg_fmvp', 'dg_spirit', 'dg_cabbage_grand', 'dg_cabbage_killer'];
+      const targets = scope === 'all' ? ['测试者1', '测试者2', '测试者3', '测试者4'] : undefined;
+      socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
+        if (res && res.success) {
+          log(`✅ 已批量触发 ${res.count} 条画猜成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
         } else {
           log('❌ ' + ((res && res.msg) || '触发失败'));
         }

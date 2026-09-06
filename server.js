@@ -106,24 +106,33 @@ function addTimeline(entry) {
 // 玩家是否为"可入时光墙"的正式账号
 function isOfficialPlayer(name) { return OFFICIAL_ACCOUNT_NAMES.includes(name); }
 
-// ===== 成就头衔 =====
-// 头衔按品质逐步解锁：解锁含 common 即得「快艇新秀」，再含 rare 得「快艇好手」……（可累积多个）；
-// 仅 hidden 成就时兜底得「快艇怪人」。
+// ===== 成就头衔（按游戏各自一套）=====
+// 头衔按品质逐步解锁：解锁该游戏内含 common 即得该游戏的最低头衔，含 rare 再得次阶……
+// 例：快艇解锁 common/rare/epic 得「快艇新秀/快艇好手/快艇高手」；画猜得「妙笔新秀/灵魂画师/接龙宗师」。
+// 仅 hidden 成就时兜底得该游戏的 hidden 头衔。
 // 展示：玩家可在"已解锁头衔"里自由选择（档案 usersData.title 存档）；未选择 = 自动显示最高已解锁。
-const ACH_TITLES = { common: '快艇新秀', rare: '快艇好手', epic: '快艇高手', legend: '快艇大师', hidden: '快艇怪人' };
+const ACH_TITLES_BY_GAME = {
+  yahtzee: { common: '快艇新秀', rare: '快艇好手', epic: '快艇高手', legend: '快艇大师', hidden: '快艇怪人' },
+  // 画猜接龙系列（方案待你最终确认；改这里即可全局生效）
+  drawing: { common: '妙笔新秀', rare: '灵魂画师', epic: '接龙宗师', legend: '画中之神', hidden: '花菜怪人' }
+};
 const ACH_TITLE_ORDER = ['common', 'rare', 'epic', 'legend'];
 // 该玩家当前已解锁的可选头衔（低→高；测试账号按自己内存中的测试成就算）
 function playerUnlockedTitles(name) {
   if (!OFFICIAL_ACCOUNT_NAMES.includes(name) && !TEST_NAMES.includes(name)) return [];
   const records = isTestAccount(name) ? achTestRecords : achRecords;
-  const qs = records
-    .filter(r => r.playerName === name)
-    .map(r => ACHIEVEMENTS[r.achievementId] && ACHIEVEMENTS[r.achievementId].quality)
+  const mine = records.filter(r => r.playerName === name);
+  const metas = mine
+    .map(r => ACHIEVEMENTS[r.achievementId])
     .filter(Boolean);
-  if (!qs.length) return [];
+  if (!metas.length) return [];
   const out = [];
-  for (const q of ACH_TITLE_ORDER) if (qs.includes(q)) out.push(ACH_TITLES[q]);
-  if (qs.includes('hidden')) out.push(ACH_TITLES.hidden); // 触发隐藏成就也解锁「快艇怪人」
+  for (const game of Object.keys(ACH_TITLES_BY_GAME)) {
+    const map = ACH_TITLES_BY_GAME[game];
+    const qs = metas.filter(m => m.game === game).map(m => m.quality);
+    for (const q of ACH_TITLE_ORDER) if (qs.includes(q)) out.push(map[q]);
+    if (qs.includes('hidden')) out.push(map.hidden);
+  }
   return out;
 }
 // 当前实际展示的头衔：玩家手动选择了某个已解锁头衔才展示；默认不佩戴
@@ -1546,6 +1555,20 @@ io.on('connection', (socket) => {
     }
     recordAchievement(name, achievementId); // 测试者：内存记录，重启即刷新
     if (cb) cb({ success: true, name, achievementId, achievementName: ACHIEVEMENTS[achievementId].name });
+  });
+
+  // 测试助手：一键给若干测试账号批量触发一组成就（画猜场景预览用）
+  socket.on('test_trigger_achievements', ({ ids = [], targets } = {}, cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    const list = (Array.isArray(targets) && targets.length ? targets : [me]).filter(n => TEST_NAMES.includes(n));
+    const validIds = ids.filter(id => ACHIEVEMENTS[id]);
+    const rows = [];
+    list.forEach(n => validIds.forEach(id => { recordAchievement(n, id); rows.push(`${n} → ${ACHIEVEMENTS[id].name}`); }));
+    if (cb) cb({ success: true, count: rows.length, rows });
   });
 
   // ========== 测试个人空间：一键生成模拟战绩（仅测试账号，内存） ==========
