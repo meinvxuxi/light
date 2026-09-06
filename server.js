@@ -300,8 +300,9 @@ const OWNER_THEMES = { '玩家1': ['p1', 'agly'], '玩家2': ['p2'], '玩家3': 
 // 测试账号默认体验 p1；主动在设置里选了“初始配色”才真正显示纯初始。
 function defaultThemeFor(name) {
   if (isTestAccount(name)) return 'p1';
+  if (name === '玩家3') return 'pomelo'; // 玩家3 默认 = pomelo
   const own = OWNER_THEMES[name];
-  if (own && own.length) return own[0]; // 默认 = 玩家基础专属主题（玩家1=p1、玩家2=p2、玩家3=p3、玩家4=p4）
+  if (own && own.length) return own[0]; // 默认 = 玩家基础专属主题（玩家1=p1、玩家2=p2、玩家4=p4）
   return 'initial';
 }
 function resolveUserTheme(name) {
