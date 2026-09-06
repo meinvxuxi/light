@@ -367,7 +367,7 @@ function dgOwnerAt(order, idx, off) {
 function dgInit(roomId, names) {
   const chains = {};
   names.forEach(n => { chains[n] = { word: null, picW: [], guessA: null, picG: [], guessF: null, match: null, matchVotes: 0 }; });
-  const game = { gameType: 'drawing', roomId, order: names.slice(), playerOrder: names.slice(), round: 1, chains, points: {}, done: {}, stage: 'writeDraw', reviewIdx: 0, voted: [], chainVotes: [] };
+  const game = { gameType: 'drawing', roomId, order: names.slice(), playerOrder: names.slice(), round: 1, chains, points: {}, done: {}, stage: 'writeDraw', reviewIdx: 0, voted: [], chainVotes: [], cancelVotes: [], settled: [] };
   names.forEach(n => { game.points[n] = 0; game.done[n] = false; });
   drawingGames[roomId] = game;
   return game;
@@ -421,6 +421,9 @@ function dgVoteFinishMatch(g) {
   g.chainVotes[g.reviewIdx] = { match: chain.match, matchedVotes: matched };
 }
 function dgApplyReward(g) {
+  // 每条链只结算一次（4 票收齐后）
+  if (g.settled[g.reviewIdx]) return;
+  g.settled[g.reviewIdx] = true;
   // 本链 4 人投票收齐后只结算一次：按被投票数累计（1 票=1，2 票=3，3 票=6）
   const tally = {};
   (g.voted || []).forEach(v => { tally[v.target] = (tally[v.target] || 0) + 1; });
@@ -440,11 +443,19 @@ function dgBroadcast(room) {
     const sid = room.playerMap.get(name);
     if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('dg_state', view);
   };
+  const online = {};
+  for (const n of g.order) {
+    const hb = userLastHeartbeat.get(n);
+    const sid = room.playerMap.get(n);
+    online[n] = !!(hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && io.sockets.sockets.has(sid));
+  }
+  const cancelOnline = g.order.filter(n => online[n]).length;
   for (const name of g.order) {
     const view = {
       gameType: 'drawing', stage: g.stage, stageText, round: g.round,
       points: g.points, order: g.order.slice(), you: name, youReady: !!g.done[name],
-      chainIndex: g.reviewIdx, isHost: room.hostName === name
+      chainIndex: g.reviewIdx, isHost: room.hostName === name,
+      online, cancelVotes: (g.cancelVotes || []).slice(), cancelOnline
     };
     if (DG_STAGES.includes(g.stage)) {
       view.target = dgTarget(g, name, g.stage);
@@ -2033,6 +2044,32 @@ io.on('connection', (socket) => {
     }
     if (cb) cb({ success: false, msg: '当前阶段无法执行该操作' });
   });
+  // 画猜接龙：取消本局（全员同意 → 终止并回房；离线玩家不计入票数）
+  socket.on('dg_cancel_vote', (cb) => {
+    const me = socketToUser.get(socket.id);
+    const room = me ? dgRoomOf(me) : null;
+    if (!room || !me) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const g = drawingGames[room.roomId];
+    if (!g) { if (cb) cb({ success: false, msg: '当前没有进行中的对局' }); return; }
+    if (!g.cancelVotes) g.cancelVotes = [];
+    if (!g.cancelVotes.includes(me)) g.cancelVotes.push(me);
+    const onlineNames = g.order.filter(n => {
+      const hb = userLastHeartbeat.get(n);
+      const sid = room.playerMap.get(n);
+      return hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && io.sockets.sockets.has(sid);
+    });
+    if (onlineNames.length && g.cancelVotes.length >= onlineNames.length) {
+      delete drawingGames[room.roomId];
+      io.to(room.roomId).emit('dg_cancel', { reason: 'cancelled' });
+      Object.keys(room.seats).forEach(seatId => { if (room.seats[seatId]) room.seats[seatId].ready = false; });
+      broadcastRoom(room);
+      if (cb) cb({ success: true, cancelled: true });
+      return;
+    }
+    dgBroadcast(room);
+    if (cb) cb({ success: true, cancelled: false, votes: g.cancelVotes.slice() });
+  });
+
   // 房主：新一轮（保留累计积分）
   socket.on('dg_restart', (cb) => {
     const name = socketToUser.get(socket.id);
@@ -2042,7 +2079,7 @@ io.on('connection', (socket) => {
     if (!g || g.stage !== 'result') { if (cb) cb({ success: false, msg: '当前不可开始新一轮' }); return; }
     const chains = {};
     g.order.forEach(n => { chains[n] = { word: null, picW: [], guessA: null, picG: [], guessF: null, match: null, matchVotes: 0 }; });
-    g.round++; g.chains = chains; g.stage = 'writeDraw'; g.reviewIdx = 0; g.voted = []; g.chainVotes = [];
+    g.round++; g.chains = chains; g.stage = 'writeDraw'; g.reviewIdx = 0; g.voted = []; g.chainVotes = []; g.settled = []; g.cancelVotes = [];
     g.done = {}; g.order.forEach(n => { g.done[n] = false; });
     dgBroadcast(room);
     if (cb) cb({ success: true });
