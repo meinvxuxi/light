@@ -123,6 +123,17 @@
     </p>
   </div>
 
+  <!-- 时光墙测试 -->
+  <div class="panel">
+    <h3>📜 时光墙（仅测试账号；内存记录，重启即清空）</h3>
+    <button class="btn-trigger" onclick="seedTimeline()">📜 生成测试时光墙记录（快艇+花菜+成就各 1）</button>
+    <button class="btn-info" onclick="window.location.href='/timeline.html'">查看时光墙</button>
+    <button class="btn-reset" onclick="resetTimeline()">🗑️ 清除测试时光墙记录</button>
+    <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
+      生成后可去时光墙展开明细预览"半透明主题色"配色；记录带测试标记，可随时清除，不影响正式记录。
+    </p>
+  </div>
+
   <!-- 数据管理 -->
   <div class="panel">
     <h3>💾 数据管理</h3>
@@ -194,6 +205,21 @@
           log('❌ ' + ((res && res.msg) || '生成失败'));
         }
       });
+    }
+
+    function seedTimeline() {
+      socket.emit('test_seed_timeline', (res) => {
+        if (res && res.success) log('✅ ' + ((res && res.msg) || '已生成测试时光墙记录'));
+        else log('❌ ' + ((res && res.msg) || '生成失败'));
+      });
+    }
+
+    function resetTimeline() {
+      if (confirm('确定要清除测试生成的时光墙记录吗？（正式记录保留）')) {
+        socket.emit('test_reset_timeline', (res) => {
+          log((res && res.success) ? '🗑️ 测试时光墙记录已清除' : '❌ ' + ((res && res.msg) || '清除失败'));
+        });
+      }
     }
 
     function resetAchievements() {

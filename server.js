@@ -1632,6 +1632,62 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, count: rows.length, rows });
   });
 
+  // 测试助手：重置当前测试账号的成就与模拟个人空间（内存，重启也会清空）
+  socket.on('test_reset_achievements', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    achTestRecords = [];
+    testProfileSeeds.clear();
+    if (cb) cb({ success: true, msg: '测试成就 / 模拟战绩已重置' });
+  });
+
+  // 测试助手：生成几条测试时光墙记录（标记 _test，可一键重置；开发期不落盘）
+  socket.on('test_seed_timeline', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    const now = Date.now();
+    const peers = TEST_NAMES.filter(n => n !== me).slice(0, 3);
+    const all = [me].concat(peers);
+    const seeds = [
+      { ts: now - 61000, type: 'achievement', player: me, achievementId: 'dg_fmvp', achievementName: 'FMVP', quality: 'common', _test: true },
+      {
+        ts: now - 45000, type: 'game', game: 'drawing', totalPlayers: 4, players: all.slice(0, 2), _test: true,
+        results: [
+          { name: me, score: 12, rank: 1, mvpVotes: 6, culpritVotes: 1 },
+          { name: peers[0], score: 6, rank: 2, mvpVotes: 2, culpritVotes: 0 },
+          { name: peers[1], score: -3, rank: 3, mvpVotes: 0, culpritVotes: 5 },
+          { name: peers[2], score: -15, rank: 4, mvpVotes: 0, culpritVotes: 2 }
+        ]
+      },
+      {
+        ts: now - 12000, type: 'game', game: 'yahtzee', totalPlayers: 2, players: all.slice(0, 2), _test: true,
+        results: [
+          { name: peers[0], score: 262, rank: 1 },
+          { name: me, score: 238, rank: 2 }
+        ]
+      }
+    ];
+    seeds.forEach(e => addTimeline(e));
+    if (cb) cb({ success: true, count: seeds.length, msg: '已生成 2 条对局 + 1 条成就的测试时光墙' });
+  });
+
+  // 测试助手：清掉测试生成的时光墙记录（保留正式记录）
+  socket.on('test_reset_timeline', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    timelineEntries = timelineEntries.filter(e => !e._test);
+    if (cb) cb({ success: true, msg: '测试时光墙记录已清除' });
+  });
+
   // ========== 测试个人空间：一键生成模拟战绩（仅测试账号，内存） ==========
   socket.on('dev_seed_profile', (cb) => {
     const name = socketToUser.get(socket.id);
