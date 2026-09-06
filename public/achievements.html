@@ -19,7 +19,9 @@
     .wrap { max-width: 680px; margin: 0 auto; padding: 12px 6px 60px; }
     .empty { text-align: center; color: #9aa5b1; padding: 40px 0; font-size: .9rem; }
     .qhead { font-size: .78rem; color: #9aa5b1; letter-spacing: 2px; margin: 20px 0 8px; }
-    .ach-card { background: #fff; border: 1px solid #edf0f4; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+    .ach-card { background: rgba(255,255,255,.74); border: 1px solid rgba(237,240,244,.9); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    body.dyn-pink .ach-card { background: rgba(255,255,255,.66); border-color: rgba(240,98,146,.18); }
+    body.dyn-green .ach-card { background: rgba(255,255,255,.66); border-color: rgba(111,158,99,.2); }
     .ach-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
     .ach-name { font-weight: 700; }
     .q-tag { font-size: .68rem; border-radius: 5px; padding: 1px 7px; font-weight: 600; }
