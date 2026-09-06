@@ -13,7 +13,8 @@ module.exports = {
       HOST: '0.0.0.0',
       PERSIST_ACHIEVEMENTS: 'true',
       PERSIST_TIMELINE: 'true',
-      PERSIST_SYNC: 'true'
+      PERSIST_SYNC: 'true',
+      PERSIST_BOARD: 'true'
     }
   }]
 };

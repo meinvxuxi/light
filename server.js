@@ -34,10 +34,10 @@ const HEARTBEAT_TIMEOUT = 30000;
 
 
 const VALID_KEYS = {
-  'aaaa': '玩家1',
-  'bbbb': '玩家2',
-  'cccc': '玩家3',
-  'dddd': '玩家4',
+  'youyoukuu2632': '玩家1',
+  '326ixnay': '玩家2',
+  'ownnn12345': '玩家3',
+  'Karida1118': '玩家4',
   'test1': '测试者1',
   'test2': '测试者2',
   'test3': '测试者3',
@@ -45,7 +45,7 @@ const VALID_KEYS = {
 };
 const TEST_NAMES = ['测试者1', '测试者2', '测试者3', '测试者4']; // 测试账号（开发者工具/数据跳过落盘用）
 const OFFICIAL_PLAYERS = Object.values(VALID_KEYS);
-const GUEST_KEY = '12345'; // 🎒 游客通道口令（暂定，之后可改；防外人随意进入游客区）
+const GUEST_KEY = 'youke888'; // 🎒 游客通道口令（正式部署后请自行再更换）
 
 const onlineUsers = new Map();
 const socketToUser = new Map();
@@ -1727,9 +1727,7 @@ io.on('connection', (socket) => {
     const isGuestUser = name.startsWith('游客');
     const type = isGuestUser ? 'guest' : 'official';
     const msg = { name, text: clean, ts: Date.now() };
-    boardMessages[type].push(msg);
-    if (boardMessages[type].length > BOARD_MAX) boardMessages[type].shift();
-    io.emit('board_new', { type, msg });
+    pushBoard(type, msg);
     if (cb) cb({ success: true, type });
   });
 
@@ -2658,9 +2656,25 @@ if (PERSIST_TIMELINE) {
   console.log('🧪 时光墙处于【内存模式】：默认开发/测试用，重启即清空（正式部署时设置环境变量 PERSIST_TIMELINE=true 即落盘）');
 }
 
-// ========== 留言板（开发期内存，重启即清空；正式版可仿照 PERSIST_ACHIEVEMENTS 加落盘） ==========
+// ========== 留言板（可落盘：PERSIST_BOARD=true 时写入 data/board.json） ==========
 const BOARD_MAX = 120; // 每块最多保留条数
-let boardMessages = { official: [], guest: [] }; // { name, text, ts }
+const BOARD_FILE = path.join(DATA_DIR, 'board.json');
+const PERSIST_BOARD = process.env.PERSIST_BOARD === 'true';
+function loadBoard() {
+  try { const d = JSON.parse(fs.readFileSync(BOARD_FILE, 'utf8')) || {}; return { official: Array.isArray(d.official) ? d.official : [], guest: Array.isArray(d.guest) ? d.guest : [] }; }
+  catch (e) { return { official: [], guest: [] }; }
+}
+let boardMessages = PERSIST_BOARD ? loadBoard() : { official: [], guest: [] }; // { name, text, ts }
+function saveBoard() {
+  if (!PERSIST_BOARD) return;
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(BOARD_FILE, JSON.stringify(boardMessages, null, 2)); } catch (e) { console.error('❌ 留言板写入失败：', e.message); }
+}
+function pushBoard(type, msg) {
+  boardMessages[type].push(msg);
+  if (boardMessages[type].length > BOARD_MAX) boardMessages[type].shift();
+  saveBoard();
+  io.emit('board_new', { type, msg });
+}
 
 // ========== 默契空间（双人默契分 / 称号 / 小游戏；画作墙预留 data/sync.json） ==========
 const SYNC_FILE = path.join(DATA_DIR, 'sync.json');
@@ -2778,9 +2792,7 @@ function syncAddScore(pairKey, gain) {
   if (newTitle && syncIsOfficialPair(...syncNamesOf(pairKey))) {
     const [a, b] = syncNamesOf(pairKey);
     const text = `💐 祝贺 ${getDisplayName(a)} 与 ${getDisplayName(b)} 解锁默契称号「${newTitle}」！`;
-    boardMessages.official.push({ name: '系统', text, ts: Date.now() });
-    if (boardMessages.official.length > BOARD_MAX) boardMessages.official.shift();
-    io.emit('board_new', { type: 'official', msg: { name: '系统', text, ts: Date.now() } });
+    pushBoard('official', { name: '系统', text, ts: Date.now() });
   }
   return { score: pair.score, titles: pair.titles, newTitle };
 }
