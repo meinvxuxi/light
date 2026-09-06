@@ -27,12 +27,13 @@ app.use('/assets', express.static(path.join(PUBLIC_DIR, 'assets'), {
       : 'no-cache, no-store, must-revalidate');
   }
 }));
-// 页面文件（内含主题逻辑/内联 CSS）始终不强缓存：保证线上更新代码后刷新即最新
+// 页面文件：允许"条件缓存"（Etag + max-age=0）——未改动的页面导航时返回 304，秒开；
+// 内容变更时 Etag 变化自动重新下载，保证线上更新仍即时生效。
 app.use(express.static(PUBLIC_DIR, {
-  etag: false,
-  lastModified: false,
+  etag: true,
+  lastModified: true,
   setHeaders(res) {
-    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Cache-Control', 'public, max-age=0, must-revalidate');
   }
 }));
 
