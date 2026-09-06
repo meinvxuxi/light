@@ -309,6 +309,16 @@ function resolveUserTheme(name) {
   const u = usersData[name];
   return (u && u.theme) ? u.theme : defaultThemeFor(name);
 }
+// 正式玩家的“上次离线时间”写入 users.json（重启后仍记得）
+function persistLastOffline(name) {
+  if (!OFFICIAL_ACCOUNT_NAMES.includes(name)) return;
+  const now = Date.now();
+  usersData[name] = usersData[name] || {};
+  if (now > (usersData[name].lastOffline || 0)) {
+    usersData[name].lastOffline = now;
+    saveUsers();
+  }
+}
 
 // ⚙️ 持久化开关（环境变量控制）：默认开发/测试期=false（成就只存内存，重启即刷新、不写 data/）；
 // 正式部署时设置环境变量 PERSIST_ACHIEVEMENTS=true，即自动恢复"读入 + 写入 data/ 文件"。
@@ -1135,6 +1145,7 @@ io.on('connection', (socket) => {
     removeOfflinePlayer(room, name, true); // 主动退出房间：强制移除（不走"在线就跳过"的保险）
     onlineUsers.delete(name);
     userLastOnline.set(name, Date.now());
+    persistLastOffline(name);
     userLastHeartbeat.delete(name);
     broadcast();
     if (cb) cb({ success: true, msg: '已退出房间' });
@@ -2640,6 +2651,7 @@ io.on('connection', (socket) => {
 
     onlineUsers.delete(name);
     userLastOnline.set(name, Date.now());
+    persistLastOffline(name);
 
     for (let room of Object.values(GAME_ROOMS)) {
       if (room.playerMap.has(name)) {
@@ -2672,6 +2684,11 @@ achTestRecords = []; // 测试者成就始终内存态
 
 // 加载正式玩家档案（昵称/主题 落盘 data/users.json）
 usersData = loadUsers();
+// 正式玩家“上次离线时间”持久化：重启后回填，列表/个人空间仍显示上次离线时间
+for (const off of OFFICIAL_ACCOUNT_NAMES) {
+  const saved = usersData[off] && usersData[off].lastOffline;
+  if (saved && !userLastOnline.has(off)) userLastOnline.set(off, saved);
+}
 console.log(`✅ 用户档案已加载：${Object.keys(usersData).length} 位玩家配置了档案`);
 
 // 时光墙：正式版落盘读取 / 开发期内存
