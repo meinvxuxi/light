@@ -359,7 +359,7 @@ function activeGameOf(room) {
 // 每轮四条链并行：第1棒写词并画自己词；随后全员同步做第2~4棒；
 // 猜词/作画按"上一棒起始链"轮流承接；逐链展示后全员判定(≥3匹配)再 MVP/罪魁投票，按积分排名。
 // ============================================================
-const DG_STAGES = ['word', 'picW', 'guessA', 'picG', 'guessF'];
+const DG_STAGES = ['writeDraw', 'guessA', 'picG', 'guessF'];
 function dgOwnerAt(order, idx, off) {
   const n = order.length;
   return order[((idx + off) % n + n) % n];
@@ -367,24 +367,24 @@ function dgOwnerAt(order, idx, off) {
 function dgInit(roomId, names) {
   const chains = {};
   names.forEach(n => { chains[n] = { word: null, picW: [], guessA: null, picG: [], guessF: null, match: null, matchVotes: 0 }; });
-  const game = { gameType: 'drawing', roomId, order: names.slice(), round: 1, chains, points: {}, done: {}, stage: 'word', reviewIdx: 0, voted: [], chainVotes: [] };
+  const game = { gameType: 'drawing', roomId, order: names.slice(), round: 1, chains, points: {}, done: {}, stage: 'writeDraw', reviewIdx: 0, voted: [], chainVotes: [] };
   names.forEach(n => { game.points[n] = 0; game.done[n] = false; });
   drawingGames[roomId] = game;
   return game;
 }
 function dgTarget(g, name, stage) {
   const idx = g.order.indexOf(name);
-  if (stage === 'word' || stage === 'picW') return name;               // 自己的链
+  if (stage === 'writeDraw') return name;                              // 自己的链（写词+画，一步完成）
   if (stage === 'guessA') return dgOwnerAt(g.order, idx, -1);          // 上一位起始的链
   if (stage === 'picG') return dgOwnerAt(g.order, idx, -2);            // 上上位起始的链
   return dgOwnerAt(g.order, idx, -3);
 }
 function dgStageText(stage) {
   return {
-    word: '第 1 棒：每人写一个词（1~12 字）', picW: '第 1 棒：画出你写的词',
+    writeDraw: '第 1 棒：写一个词并画出来（一步完成）',
     guessA: '第 2 棒：看上一棒（上一位玩家）的画，猜他写的词', picG: '第 3 棒：画出第 2 棒猜到的词',
     guessF: '第 4 棒：看第 3 棒的画，做最后猜词',
-    review: '逐链展示', matchVote: '判定：最终猜词与原词是否匹配', reward: '投票', result: '本轮结算'
+    judge: '逐链展示并判定：原词与最终猜词是否匹配', reward: 'MVP / 罪魁投票', result: '本轮结算'
   }[stage] || '';
 }
 function dgAllDone(g) { return g.order.every(n => !!g.done[n]); }
@@ -398,15 +398,15 @@ function dgAdvance(g, room) {
     g.stage = DG_STAGES[idx + 1];
     dgResetTurn(g);
   } else if (g.stage === 'guessF') {
-    g.stage = 'review'; g.reviewIdx = 0; g.voted = [];
-  } else if (g.stage === 'review') {
-    g.stage = 'matchVote'; g.voted = [];
-  } else if (g.stage === 'matchVote') {
+    g.stage = 'judge'; g.reviewIdx = 0; g.voted = [];
+  } else if (g.stage === 'judge') {
+    // 判定票已收齐（dgVoteFinishMatch 已算好 match）→ 投 MVP/罪魁
     g.stage = 'reward'; g.voted = [];
   } else if (g.stage === 'reward') {
+    // 该链完成 → 下一条链（或结算）
     g.reviewIdx++;
     if (g.reviewIdx >= g.order.length) { g.stage = 'result'; }
-    else { g.stage = 'review'; g.voted = []; }
+    else { g.stage = 'judge'; g.voted = []; }
   }
   dgBroadcast(room);
 }
@@ -442,23 +442,25 @@ function dgBroadcast(room) {
     if (DG_STAGES.includes(g.stage)) {
       view.target = dgTarget(g, name, g.stage);
       const targetChain = g.chains[view.target] || {};
-      if (g.stage === 'word') view.myStage = 'word';
-      if (g.stage === 'picW') view.myWord = targetChain.word;                       // 画自己写的词
       if (g.stage === 'guessA') { view.myPic = targetChain.picW || []; view.hintLen = targetChain.word ? [...targetChain.word].length : 0; }
       if (g.stage === 'picG') view.myGuessText = targetChain.guessA;                 // 画第2棒猜的词
       if (g.stage === 'guessF') { view.myPic = targetChain.picG || []; view.hintLen = targetChain.guessA ? [...targetChain.guessA].length : 0; }
     }
-    if (g.stage === 'review' || g.stage === 'matchVote' || g.stage === 'reward' || g.stage === 'result') {
+    if (g.stage === 'judge' || g.stage === 'reward' || g.stage === 'result') {
       view.chainOwner = chainOwner;
       view.chainData = chain ? { word: chain.word, picW: chain.picW || [], guessA: chain.guessA, picG: chain.picG || [], guessF: chain.guessF, match: chain.match, matchVotes: chain.matchVotes } : null;
     }
-    if ((g.stage === 'matchVote' || g.stage === 'reward') && !g.done[name]) {
+    if (g.stage === 'judge' && !g.done[name]) {
       view.needAction = true;
-      view.matched = !!(chain && chain.match === true);
       view.others = g.order.filter(o => o !== name);
       view.chainOwner = chainOwner;
     }
-    if (g.stage === 'reward') view.needReward = !g.done[name];
+    if (g.stage === 'reward') {
+      view.matched = !!(chain && chain.match === true);
+      view.needReward = !g.done[name];
+      view.others = g.order.filter(o => o !== name);
+      view.chainOwner = chainOwner;
+    }
     if (g.stage === 'result') {
       view.finalOrder = g.order.slice().sort((a, b) => (g.points[b] || 0) - (g.points[a] || 0));
       view.chainVotes = g.chainVotes || [];
@@ -1934,7 +1936,7 @@ io.on('connection', (socket) => {
     return Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'drawing' && drawingGames[r.roomId]) || null;
   }
   function dgSubmitDone(g, room, needPre) {
-    if (needPre === 'match') dgVoteFinishMatch(g);
+    if (needPre === 'judge') dgVoteFinishMatch(g);
     if (needPre === 'reward') dgApplyReward(g);
     if (dgAllDone(g)) dgAdvance(g, room);
     else dgBroadcast(room);
@@ -1947,17 +1949,16 @@ io.on('connection', (socket) => {
     if (!g || g.done[name]) { if (cb) cb({ success: false, msg: '当前不能重复提交' }); return; }
     const ok = () => { if (cb) cb({ success: true }); };
 
-    if (g.stage === 'word' && type === 'word') {
-      const w = String(value || '').trim();
-      if (!w || [...w].length > 12) { if (cb) cb({ success: false, msg: '词需为 1~12 字' }); return; }
+    if (g.stage === 'writeDraw' && type === 'both') {
+      const val = value || {};
+      const w = String(val.word || '').trim();
+      const pic = val.pic;
+      if (!w || [...w].length > 12 || !Array.isArray(pic)) {
+        if (cb) cb({ success: false, msg: '请填写 1~12 字的词并画好作品再提交' });
+        return;
+      }
       g.chains[name].word = w;
-      g.done[name] = true;
-      dgSubmitDone(g, room);
-      ok(); return;
-    }
-    if (g.stage === 'picW' && type === 'pic') {
-      if (!Array.isArray(value)) { if (cb) cb({ success: false, msg: '请先画画' }); return; }
-      g.chains[name].picW = value.map(s => ({ t: s.t, c: s.c, w: s.w, p: (s.p || []).slice(0, 2000) })).slice(0, 500);
+      g.chains[name].picW = pic.map(s => ({ t: s.t, c: s.c, w: s.w, p: (s.p || []).slice(0, 2000) })).slice(0, 500);
       g.done[name] = true;
       dgSubmitDone(g, room);
       ok(); return;
@@ -1988,10 +1989,10 @@ io.on('connection', (socket) => {
       dgSubmitDone(g, room);
       ok(); return;
     }
-    if (g.stage === 'matchVote' && type === 'match') {
+    if (g.stage === 'judge' && type === 'match') {
       g.voted.push({ name, choice: value === true });
       g.done[name] = true;
-      dgSubmitDone(g, room, 'match');
+      dgSubmitDone(g, room, 'judge');
       ok(); return;
     }
     if (g.stage === 'reward' && type === 'pick') {
@@ -2002,12 +2003,6 @@ io.on('connection', (socket) => {
       g.voted.push({ name, target, delta: matched ? 1 : -1 });
       g.done[name] = true;
       dgSubmitDone(g, room, 'reward');
-      ok(); return;
-    }
-    if (g.stage === 'review' && type === 'next') {
-      // 该玩家已看完当前链展示，全员看完后进入判定
-      g.done[name] = true;
-      dgSubmitDone(g, room);
       ok(); return;
     }
     if (cb) cb({ success: false, msg: '当前阶段无法执行该操作' });
@@ -2021,7 +2016,7 @@ io.on('connection', (socket) => {
     if (!g || g.stage !== 'result') { if (cb) cb({ success: false, msg: '当前不可开始新一轮' }); return; }
     const chains = {};
     g.order.forEach(n => { chains[n] = { word: null, picW: [], guessA: null, picG: [], guessF: null, match: null, matchVotes: 0 }; });
-    g.round++; g.chains = chains; g.stage = 'word'; g.reviewIdx = 0; g.voted = []; g.chainVotes = [];
+    g.round++; g.chains = chains; g.stage = 'writeDraw'; g.reviewIdx = 0; g.voted = []; g.chainVotes = [];
     g.done = {}; g.order.forEach(n => { g.done[n] = false; });
     dgBroadcast(room);
     if (cb) cb({ success: true });

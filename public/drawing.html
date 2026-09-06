@@ -195,15 +195,13 @@
       const w = document.getElementById('wrap');
       const head = `<div class="stage-line">第 ${v.round} 轮 · ${esc(v.stageText)}</div>${dProgHtml(v)}
         <div class="score-line">积分：${(v.order || []).map(n => `${esc(dn(n))} ${v.points[n] || 0}`).join('　')}</div>`;
-      if (v.stage === 'word') {
-        w.innerHTML = head + `<input class="line-input" id="dWord" maxlength="12" placeholder="写一个 1~12 字的词（只有你能看到）" autocomplete="off">
-          <button class="btn-ok" onclick="dWordGo()">写好了</button>`;
-        return;
-      }
-      if (v.stage === 'picW') {
-        w.innerHTML = head + `<div class="role-hint">你要画：${esc(v.myWord || '')}</div>
+      if (v.stage === 'writeDraw') {
+        if (v.youReady) { w.innerHTML = head + '<div class="empty">已提交 ✓，等待其他人完成…</div>'; return; }
+        w.innerHTML = head + `<div class="role-hint">第 1 棒：填一个词（1~12 字），把它画出来，一次性提交</div>
+          <input class="line-input" id="dWord" maxlength="12" placeholder="写一个 1~12 字的词（只有你能看到）" autocomplete="off" style="margin-bottom:8px;">
           <div id="drawBox">${drawBoxHtml()}</div>
-          <button class="btn-ok" onclick="dPicGo()">画好了，提交</button>`;
+          <button class="btn-ok" onclick="dBothGo()">写词并画好，提交</button>`;
+        dStrokes = [];
         initDrawCanvas();
         return;
       }
@@ -211,36 +209,36 @@
         const kind = v.stage === 'guessA' ? '猜他写的词' : '做最后猜词';
         w.innerHTML = head + `<div class="role-hint">看这张画，${kind}：${dDash(v.hintLen)}</div>
           <canvas class="mini-canvas" id="dGCanvas" width="900" height="540"></canvas>
-          <div class="guess-box"><input id="dGuess" maxlength="12" placeholder="输入你的答案" autocomplete="off" onkeydown="if(event.key==='Enter')dGuessGo()"><button onclick="dGuessGo()">猜</button></div>`;
+          ${v.youReady ? '<div class="who">已提交 ✓，等待其他人完成…</div>' : `<div class="guess-box"><input id="dGuess" maxlength="12" placeholder="输入你的答案" autocomplete="off" onkeydown="if(event.key==='Enter')dGuessGo()"><button onclick="dGuessGo()">猜</button></div>`}`;
         drawReplay(document.getElementById('dGCanvas'), v.myPic || []);
         return;
       }
       if (v.stage === 'picG') {
+        if (v.youReady) { w.innerHTML = head + '<div class="empty">已提交 ✓，等待其他人完成…</div>'; return; }
         w.innerHTML = head + `<div class="role-hint">画出第 2 棒猜到的词：${esc(v.myGuessText || '')}</div>
           <div id="drawBox">${drawBoxHtml()}</div>
           <button class="btn-ok" onclick="dPicGo()">画好了，提交</button>`;
+        dStrokes = [];
         initDrawCanvas();
         return;
       }
-      if (v.stage === 'review') {
+      if (v.stage === 'judge') {
         const c = v.chainData || {};
-        w.innerHTML = head + `<div class="role-hint">展示第 ${(v.chainIndex || 0) + 1} 条链（起始：${esc(dn(v.chainOwner))}）</div>
+        w.innerHTML = head + `<div class="role-hint">第 ${(v.chainIndex || 0) + 1} 条链（起始：${esc(dn(v.chainOwner))}）</div>
           <div class="rv-step"><div class="rv-label">写的词</div><b>${esc(c.word || '')}</b></div>
           <div class="rv-step"><div class="rv-label">第 1 棒画的画</div><canvas class="mini-canvas" id="dR1" width="900" height="540"></canvas></div>
           <div class="rv-step"><div class="rv-label">第 2 棒猜的词</div>${esc(c.guessA || '')}</div>
           <div class="rv-step"><div class="rv-label">第 3 棒画的画</div><canvas class="mini-canvas" id="dR2" width="900" height="540"></canvas></div>
           <div class="rv-step"><div class="rv-label">第 4 棒最终猜词</div><b>${esc(c.guessF || '')}</b></div>
-          ${v.youReady ? '<div class="who">已看完，等大家…</div>' : '<button class="btn-ok" onclick="dSend(\'next\',1)">我看完了，进入判定</button>'}`;
+          <div class="rv-step" style="background:#fff8f0;"><div class="rv-label">判定：原词 vs 最终猜词</div>
+            <b>${esc(c.word || '')}</b>　＝？＝　<b>${esc(c.guessF || '')}</b></div>
+          ${v.youReady ? '<div class="who">已投票 ✓，等待其他人…</div>' : `
+          <div style="margin-top:8px;">
+            <button class="btn-ok" onclick="dSend('match',true)">匹配</button>
+            <button class="btn-ok gray" onclick="dSend('match',false)" style="margin-left:10px;">不匹配</button>
+          </div>`}`;
         drawReplay(document.getElementById('dR1'), c.picW || []);
         drawReplay(document.getElementById('dR2'), c.picG || []);
-        return;
-      }
-      if (v.stage === 'matchVote') {
-        const c = v.chainData || {};
-        w.innerHTML = head + `<div class="role-hint">判定：最终猜词「${esc(c.guessF || '')}」与原词「${esc(c.word || '')}」算匹配吗？（≥3 票匹配即成功）</div>
-          ${v.youReady ? '<div class="who">已投票，等大家…</div>' : `
-          <button class="btn-ok" onclick="dSend('match',true)">匹配</button>
-          <button class="btn-ok gray" onclick="dSend('match',false)" style="margin-left:10px;">不匹配</button>`}`;
         return;
       }
       if (v.stage === 'reward') {
@@ -263,21 +261,31 @@
       }
       w.innerHTML = head + '<div class="empty">等待服务器…</div>';
     }
-    function dWordGo() {
+    function dBothGo() {
       const inp = document.getElementById('dWord');
       const val = (inp && inp.value) ? inp.value.trim() : '';
       if (!val || [...val].length > 12) { dToast('词需为 1~12 字'); return; }
-      dSend('word', val);
+      if (!dStrokes.length) { dToast('画一点内容再提交'); return; }
+      socket.emit('dg_act', { type: 'both', value: { word: val, pic: dStrokes.slice() } }, (res) => {
+        if (res && res.success) dToast('已提交 ✓');
+        else if (res && res.msg) dToast(res.msg);
+      });
     }
     function dPicGo() {
       if (!dStrokes.length) { dToast('先画点内容再提交'); return; }
-      dSend('pic', dStrokes.slice());
+      socket.emit('dg_act', { type: 'pic', value: dStrokes.slice() }, (res) => {
+        if (res && res.success) dToast('已提交 ✓');
+        else if (res && res.msg) dToast(res.msg);
+      });
     }
     function dGuessGo() {
       const inp = document.getElementById('dGuess');
       const val = (inp && inp.value) ? inp.value.trim() : '';
       if (!val || [...val].length > 12) { dToast('请输入 1~12 字的词'); return; }
-      dSend('guess', val);
+      socket.emit('dg_act', { type: 'guess', value: val }, (res) => {
+        if (res && res.success) dToast('已提交 ✓');
+        else if (res && res.msg) dToast(res.msg);
+      });
     }
     function dRestart() {
       socket.emit('dg_restart', (res) => { if (res && res.msg && !res.success) dToast(res.msg); });
