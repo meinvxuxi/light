@@ -113,8 +113,8 @@ function isOfficialPlayer(name) { return OFFICIAL_ACCOUNT_NAMES.includes(name); 
 // 展示：玩家可在"已解锁头衔"里自由选择（档案 usersData.title 存档）；未选择 = 自动显示最高已解锁。
 const ACH_TITLES_BY_GAME = {
   yahtzee: { common: '快艇新秀', rare: '快艇好手', epic: '快艇高手', legend: '快艇大师', hidden: '快艇怪人' },
-  // 画猜接龙系列（方案待你最终确认；改这里即可全局生效）
-  drawing: { common: '妙笔新秀', rare: '灵魂画师', epic: '接龙宗师', legend: '画中之神', hidden: '花菜怪人' }
+  // 画猜接龙系列（方案 D 双极风雅，2026-09-06 确认）
+  drawing: { common: '妙笔生花', rare: '妙手偶得', epic: '神笔马良', legend: '执笔乾坤', hidden: '灵魂画手' }
 };
 const ACH_TITLE_ORDER = ['common', 'rare', 'epic', 'legend'];
 // 该玩家当前已解锁的可选头衔（低→高；测试账号按自己内存中的测试成就算）
