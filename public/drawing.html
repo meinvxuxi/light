@@ -19,6 +19,14 @@
     .line-input { width: 100%; padding: 10px 12px; border: 1px solid #d7dde3; border-radius: 10px; font-size: .95rem; outline: none; background: #fff; color: #2c3e50; }
     .btn-ok { padding: 9px 26px; border: none; border-radius: 8px; background: #4a90d9; color: #fff; font-size: .9rem; font-weight: 600; cursor: pointer; margin-top: 10px; }
     .btn-ok.gray { background: #6b7a90; }
+    .vbtn { border-radius: 10px; padding: 10px 26px; font-size: .92rem; font-weight: 700; cursor: pointer; border: 1px solid transparent; margin: 4px 8px 4px 0; }
+    .vbtn.ok { color: #2f6fb2; background: rgba(74,144,217,.13); border-color: rgba(74,144,217,.55); }
+    .vbtn.no { color: #c62828; background: rgba(231,76,60,.1); border-color: rgba(231,76,60,.4); }
+    .vbtn.pick { color: #2f6fb2; background: rgba(74,144,217,.12); border-color: rgba(74,144,217,.45); }
+    body.dyn-pink .vbtn.ok, body.dyn-pink .vbtn.pick { color: #d8567f; background: rgba(240,98,146,.13); border-color: rgba(240,98,146,.5); }
+    body.dyn-green .vbtn.ok, body.dyn-green .vbtn.pick { color: #4f8a45; background: rgba(111,158,99,.15); border-color: rgba(111,158,99,.5); }
+    body.dyn-pink .vbtn.no { color: #d8567f; background: rgba(240,98,146,.1); border-color: rgba(240,98,146,.35); }
+    body.dyn-green .vbtn.no { color: #c0392b; background: rgba(231,76,60,.1); border-color: rgba(231,76,60,.35); }
     .paint-canvas-box { border: 1px solid #e2e6eb; border-radius: 12px; background: #fff; padding: 6px; margin: 8px 0; }
     .paint-canvas { width: 100%; height: auto; display: block; touch-action: none; background: #fff; border-radius: 8px; cursor: crosshair; }
     .ptools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 6px 0; }
@@ -183,12 +191,12 @@
       setTimeout(() => el.remove(), 2500);
     }
     function dProgHtml(v) {
-      const dots = (v.order || []).map((n, i) => {
-        const done = (v.done || [])[i];
+      const chips = (v.order || []).map((n, i) => {
+        const done = !!(v.done || [])[i];
         const me = n === v.you;
-        return `<span style="margin-right:10px;${done ? 'color:#27ae60;font-weight:700;' : 'color:#adb5bd;'}">${esc(dn(n))}${me ? '（你）' : ''} ${done ? '✓' : '…'}</span>`;
+        return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:11px;${done ? 'color:#fff;background:#27ae60;' : 'color:#6b7a90;background:#e9edf2;'}">${esc(dn(n))}${me ? '（你）' : ''} ${done ? '✓' : '…'}</span>`;
       }).join('');
-      return `<div class="who"><b>提交情况</b>　${dots}</div>`;
+      return `<div style="margin:2px 0 8px;display:flex;flex-wrap:wrap;gap:6px;">${chips}</div>`;
     }
     function dgChainHtml(v) {
       const c = v.chainData || {};
@@ -257,8 +265,8 @@
             <b>${esc(c.word || '')}</b>　＝？＝　<b>${esc(c.guessF || '')}</b></div>
           ${v.youReady ? '<div class="who">已投票 ✓，等待其他人…</div>' : `
           <div style="margin-top:8px;">
-            <button class="btn-ok" onclick="dSend('match',true)">匹配</button>
-            <button class="btn-ok gray" onclick="dSend('match',false)" style="margin-left:10px;">不匹配</button>
+            <button class="vbtn ok" onclick="dSend('match',true)">匹配</button>
+            <button class="vbtn no" onclick="dSend('match',false)">不匹配</button>
           </div>`}`;
         dgChainReplay();
         return;
@@ -266,7 +274,7 @@
       if (v.stage === 'reward') {
         const ok = v.matched === true;
         const label = ok ? '这条链匹配成功：投一名 MVP（该玩家 +1）' : '这条链未匹配：投一名罪魁祸首（该玩家 -1）';
-        const btns = (v.others || []).map(n => `<button class="btn-ok" style="margin:4px 8px 4px 0;" onclick="dSend('pick','${n}')">${esc(dn(n))}</button>`).join('');
+        const btns = (v.others || []).map(n => `<button class="vbtn pick" onclick="dSend('pick','${n}')">${esc(dn(n))}</button>`).join('');
         w.innerHTML = topHtml + `<div class="role-hint">第 ${(v.chainIndex || 0) + 1} 条链 ${ok ? '匹配成功' : '未匹配'}</div>${dgChainHtml(v)}
           <div class="role-hint" style="margin-top:8px;">${label}</div>
           <div class="who">${v.youReady ? '已投票 ✓，等待其他人…' : '投给除自己以外的一位玩家：'}</div>
@@ -279,7 +287,6 @@
         const chainRes = (v.chainVotes || []).map((cv, i) => `<span style="margin-right:12px;">链${i + 1}：${cv && cv.match ? '匹配✓' : '未匹配'}</span>`).join('');
         w.innerHTML = topHtml + `<div class="role-hint">本轮结算</div>${list}
           <div class="who">${chainRes}</div>
-          ${v.isHost ? '<button class="btn-ok" onclick="dRestart()">房主：再来一轮</button>' : ''}
           <div style="margin-top:10px;"><a class="back" href="/room.html?game=drawing">返回房间</a></div>`;
         return;
       }
@@ -312,7 +319,7 @@
       });
     }
     function dRestart() {
-      socket.emit('dg_restart', (res) => { if (res && res.msg && !res.success) dToast(res.msg); });
+      socket.emit('dg_restart', () => {});
     }
     socket.on('dg_state', (v) => { dV = v; dgRender(); });
     socket.on('dg_cancel', () => { window.location.href = '/room.html?game=drawing'; });

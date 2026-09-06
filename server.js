@@ -421,8 +421,13 @@ function dgVoteFinishMatch(g) {
   g.chainVotes[g.reviewIdx] = { match: chain.match, matchedVotes: matched };
 }
 function dgApplyReward(g) {
-  for (const v of g.voted) {
-    g.points[v.target] = (g.points[v.target] || 0) + v.delta;
+  // 本链 4 人投票收齐后只结算一次：按被投票数累计（1 票=1，2 票=3，3 票=6）
+  const tally = {};
+  (g.voted || []).forEach(v => { tally[v.target] = (tally[v.target] || 0) + 1; });
+  const chain = g.chains[g.order[g.reviewIdx]] || {};
+  const sign = chain.match === true ? 1 : -1;
+  for (const [target, n] of Object.entries(tally)) {
+    g.points[target] = (g.points[target] || 0) + sign * (n * (n + 1) / 2);
   }
 }
 function dgBroadcast(room) {
@@ -716,6 +721,20 @@ function resetRoom(room) {
 // （例如页面刷新 / 从房间页跳转到游戏页 / 后台标签心跳被浏览器节流），
 // 说明只是"误判离线"，此时不真移除，只清掉移除计时器。
 function removeOfflinePlayer(room, playerName, force) {
+  // 画猜接龙：离线只标记不除名——座位/对局保留、可随时重进；仅当房间内所有人均无心跳才重置房间
+  if (room.gameType === 'drawing' && drawingGames[room.roomId]) {
+    if (room.leaveTimers[playerName]) {
+      clearTimeout(room.leaveTimers[playerName]);
+      delete room.leaveTimers[playerName];
+    }
+    const allOff = [...room.playerMap.keys()].every(n => {
+      const hb = userLastHeartbeat.get(n);
+      return !hb || (Date.now() - hb) > HEARTBEAT_TIMEOUT;
+    });
+    if (allOff) resetRoom(room);
+    else broadcastRoom(room);
+    return;
+  }
   if (!force) {
     const curSid = room.playerMap.get(playerName);
     if (curSid && io.sockets.sockets.has(curSid)) {
