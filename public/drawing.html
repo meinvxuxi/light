@@ -188,14 +188,31 @@
         const me = n === v.you;
         return `<span style="margin-right:10px;${done ? 'color:#27ae60;font-weight:700;' : 'color:#adb5bd;'}">${esc(dn(n))}${me ? '（你）' : ''} ${done ? '✓' : '…'}</span>`;
       }).join('');
-      return `<div class="who">${dots}</div>`;
+      return `<div class="who"><b>提交情况</b>　${dots}</div>`;
+    }
+    function dgChainHtml(v) {
+      const c = v.chainData || {};
+      const r = v.chainRoles || {};
+      return `<div class="rv-step"><div class="rv-label">第 1 棒（${esc(dn(r.writer))}）写的词</div><b>${esc(c.word || '')}</b></div>
+        <div class="rv-step"><div class="rv-label">第 1 棒（${esc(dn(r.writer))}）画的画</div><canvas class="mini-canvas" id="dR1" width="900" height="540"></canvas></div>
+        <div class="rv-step"><div class="rv-label">第 2 棒（${esc(dn(r.guessA))}）猜的词</div>${esc(c.guessA || '')}</div>
+        <div class="rv-step"><div class="rv-label">第 3 棒（${esc(dn(r.drawer))}）画的画</div><canvas class="mini-canvas" id="dR2" width="900" height="540"></canvas></div>
+        <div class="rv-step"><div class="rv-label">第 4 棒（${esc(dn(r.guessB))}）最终猜的词</div><b>${esc(c.guessF || '')}</b></div>`;
+    }
+    function dgChainReplay() {
+      const v = dV;
+      if (!v) return;
+      const c = (v && v.chainData) || {};
+      drawReplay(document.getElementById('dR1'), c.picW || []);
+      drawReplay(document.getElementById('dR2'), c.picG || []);
     }
     function dgRender() {
       if (!dV) return;
       const v = dV;
       const w = document.getElementById('wrap');
-      const head = `<div class="stage-line">第 ${v.round} 轮 · ${esc(v.stageText)}</div>${dProgHtml(v)}
-        <div class="score-line">积分：${(v.order || []).map(n => `${esc(dn(n))} ${v.points[n] || 0}`).join('　')}</div>`;
+      const drawGuess = ['writeDraw', 'guessA', 'picG', 'guessF'].includes(v.stage);
+      const scoreLine = drawGuess ? '' : `<div class="score-line">积分：${(v.order || []).map(n => `${esc(dn(n))} ${v.points[n] || 0}`).join('　')}</div>`;
+      const head = `<div class="stage-line">第 ${v.round} 轮 · ${esc(v.stageText)}</div>${dProgHtml(v)}${scoreLine}`;
       const topHtml = `<div class="dyn-top">${head}</div>`;
       // 仍在同一行动阶段且自己还没提交时，别人提交导致的刷新只更新顶部进度，不清空画布/输入
       if (v.stage === dLastStage && !v.youReady) {
@@ -235,12 +252,7 @@
       }
       if (v.stage === 'judge') {
         const c = v.chainData || {};
-        w.innerHTML = topHtml + `<div class="role-hint">第 ${(v.chainIndex || 0) + 1} 条链（起始：${esc(dn(v.chainOwner))}）</div>
-          <div class="rv-step"><div class="rv-label">写的词</div><b>${esc(c.word || '')}</b></div>
-          <div class="rv-step"><div class="rv-label">第 1 棒画的画</div><canvas class="mini-canvas" id="dR1" width="900" height="540"></canvas></div>
-          <div class="rv-step"><div class="rv-label">第 2 棒猜的词</div>${esc(c.guessA || '')}</div>
-          <div class="rv-step"><div class="rv-label">第 3 棒画的画</div><canvas class="mini-canvas" id="dR2" width="900" height="540"></canvas></div>
-          <div class="rv-step"><div class="rv-label">第 4 棒最终猜词</div><b>${esc(c.guessF || '')}</b></div>
+        w.innerHTML = topHtml + `<div class="role-hint">第 ${(v.chainIndex || 0) + 1} 条链判定</div>${dgChainHtml(v)}
           <div class="rv-step" style="background:#fff8f0;"><div class="rv-label">判定：原词 vs 最终猜词</div>
             <b>${esc(c.word || '')}</b>　＝？＝　<b>${esc(c.guessF || '')}</b></div>
           ${v.youReady ? '<div class="who">已投票 ✓，等待其他人…</div>' : `
@@ -248,17 +260,18 @@
             <button class="btn-ok" onclick="dSend('match',true)">匹配</button>
             <button class="btn-ok gray" onclick="dSend('match',false)" style="margin-left:10px;">不匹配</button>
           </div>`}`;
-        drawReplay(document.getElementById('dR1'), c.picW || []);
-        drawReplay(document.getElementById('dR2'), c.picG || []);
+        dgChainReplay();
         return;
       }
       if (v.stage === 'reward') {
         const ok = v.matched === true;
         const label = ok ? '这条链匹配成功：投一名 MVP（该玩家 +1）' : '这条链未匹配：投一名罪魁祸首（该玩家 -1）';
         const btns = (v.others || []).map(n => `<button class="btn-ok" style="margin:4px 8px 4px 0;" onclick="dSend('pick','${n}')">${esc(dn(n))}</button>`).join('');
-        w.innerHTML = topHtml + `<div class="role-hint">${label}</div>
-          <div class="who">${v.youReady ? '已投票，等大家…' : '投给除自己以外的一位玩家：'}</div>
+        w.innerHTML = topHtml + `<div class="role-hint">第 ${(v.chainIndex || 0) + 1} 条链 ${ok ? '匹配成功' : '未匹配'}</div>${dgChainHtml(v)}
+          <div class="role-hint" style="margin-top:8px;">${label}</div>
+          <div class="who">${v.youReady ? '已投票 ✓，等待其他人…' : '投给除自己以外的一位玩家：'}</div>
           ${v.youReady ? '' : `<div>${btns}</div>`}`;
+        dgChainReplay();
         return;
       }
       if (v.stage === 'result') {
