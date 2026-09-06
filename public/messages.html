@@ -16,8 +16,10 @@
     .g-tab:hover { color: #4a90d9; background: none; }
     .g-tab.active { color: #4a90d9; font-weight: 700; border-bottom: 2px solid #4a90d9; border-radius: 0; }
     .wrap { max-width: 680px; margin: 0 auto; padding: 4px 6px 40px; }
-    .list { background: #fff; border: 1px solid #edf0f4; border-radius: 12px; padding: 10px 14px; min-height: 220px; max-height: 52vh; overflow-y: auto; }
-    .msg { padding: 8px 2px; border-bottom: 1px solid #f2f4f7; }
+    .list { background: rgba(74,144,217,.06); border: 1px solid rgba(237,240,244,.9); border-radius: 12px; padding: 10px 14px; min-height: 220px; max-height: 52vh; overflow-y: auto; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    body.dyn-pink .list { background: rgba(240,98,146,.06); border-color: rgba(240,98,146,.16); }
+    body.dyn-green .list { background: rgba(111,158,99,.08); border-color: rgba(111,158,99,.18); }
+    .msg { padding: 8px 2px; border-bottom: 1px solid rgba(233,238,244,.8); }
     .msg:last-child { border-bottom: none; }
     .msg .mhead { font-size: .76rem; color: #9aa5b1; margin-bottom: 2px; }
     .msg .mhead.sys { color: #4a90d9; font-weight: 600; }
@@ -26,9 +28,18 @@
     body.dyn-pink .msg .mhead.sys { color: #f06292; }
     body.dyn-green .msg .mhead.sys { color: #6f9e63; }
     .compose { display: flex; gap: 8px; margin-top: 12px; }
-    .compose input { flex: 1; padding: 10px 12px; border: 1px solid #d7dde3; border-radius: 10px; font-size: .9rem; outline: none; }
-    .compose button { padding: 0 18px; border: none; border-radius: 10px; background: #2c3e50; color: #fff; font-size: .88rem; cursor: pointer; }
-    .compose button:disabled { background: #dfe3e8; color: #98a2ad; cursor: not-allowed; }
+    .compose input { flex: 1; padding: 10px 12px; border: 1px solid rgba(74,144,217,.38); border-radius: 10px; font-size: .9rem; outline: none; color: #2c3e50; background: rgba(255,255,255,.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    body.dyn-pink .compose input { border-color: rgba(240,98,146,.45); background: rgba(255,255,255,.7); }
+    body.dyn-green .compose input { border-color: rgba(111,158,99,.5); background: rgba(255,255,255,.7); }
+    .compose button { padding: 0 18px; border: 1px solid rgba(74,144,217,.55); border-radius: 10px; background: rgba(74,144,217,.16); color: #2f6fb2; font-size: .88rem; font-weight: 600; cursor: pointer; }
+    .compose button:hover { background: rgba(74,144,217,.26); }
+    .compose button:disabled { background: rgba(155,170,180,.16); color: #98a2ad; border-color: rgba(155,170,180,.4); cursor: not-allowed; }
+    body.dyn-pink .compose button { background: rgba(240,98,146,.16); color: #c73e79; border-color: rgba(240,98,146,.5); }
+    body.dyn-pink .compose button:hover { background: rgba(240,98,146,.28); }
+    body.dyn-pink .compose button:disabled { background: rgba(155,170,180,.16); color: #c0a2ae; border-color: rgba(155,170,180,.4); }
+    body.dyn-green .compose button { background: rgba(111,158,99,.17); color: #4f8a45; border-color: rgba(111,158,99,.55); }
+    body.dyn-green .compose button:hover { background: rgba(111,158,99,.28); }
+    body.dyn-green .compose button:disabled { background: rgba(155,170,180,.16); color: #7f9a76; border-color: rgba(155,170,180,.4); }
     .guest-hint { text-align: center; margin-top: 10px; font-size: .8rem; color: #adb5bd; }
     .empty { text-align: center; color: #adb5bd; font-size: .85rem; padding: 40px 0; }
     .err { max-width: 680px; margin: 6px auto 0; font-size: .8rem; color: #e74c3c; min-height: 16px; text-align: center; }
