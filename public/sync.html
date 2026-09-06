@@ -44,9 +44,9 @@
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
     // ===== 主题引擎（五套：初始/粉/绿 + 各角色背景） =====
-    const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg', pomelo: '/assets/avatars/p3/nene.jpg', agly: '/assets/avatars/p1/agly/aglybj.jpg' };
-    const THEME_MOBILE = { p4: '/assets/avatars/p4/zuixin4.jpg', pomelo: '/assets/avatars/p3/nene2.jpg', agly: '/assets/avatars/p1/agly/aglybj.jpg' };
-    const THEME_ALPHA = { p1: 0.82, p2: 0.75, p3: 0.75, p4: 0.82, pomelo: 0.6, agly: 0.82 };
+    const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg', pomelo: '/assets/avatars/p3/nene.jpg', agly: '/assets/avatars/p1/agly/aglybj.jpg', lyff: '/assets/avatars/p4/lyff/lyffbj.jpg' };
+    const THEME_MOBILE = { p4: '/assets/avatars/p4/zuixin4.jpg', pomelo: '/assets/avatars/p3/nene2.jpg', agly: '/assets/avatars/p1/agly/aglybj.jpg', lyff: '/assets/avatars/p4/lyff/lyffbj.jpg' };
+    const THEME_ALPHA = { p1: 0.82, p2: 0.75, p3: 0.75, p4: 0.82, pomelo: 0.6, agly: 0.82, lyff: 0.8 };
     const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches;
     function ensureThemeStyle() {
       if (document.getElementById('dynThemeStyle')) return;
@@ -61,19 +61,32 @@
       .replace(/#f06292/g, '#d6a843')
       .replace(/#e0507f/g, '#b98a2e')
       .replace(/#a0345c/g, '#b98a2e')
+      .replace(/#c73e79/g, '#a8791b')
+      .replace(/rgba\(240\s*,\s*98\s*,\s*146\s*,/g, 'rgba(214, 168, 67,')
       .replace(/#ffb3c6/g, '#eeddb3')
       .replace(/#f9b7ca/g, '#f0e3bd')
       .replace(/#fff4f7/g, '#fff8ea')
       .replace(/#ffe3ec/g, '#fdf3dd');
-    s.textContent = pink + '\n' + green + '\n' + gold;
+    const red = pink
+      .replace(/dyn-pink/g, 'dyn-red')
+      .replace(/#f06292/g, '#a6403a')
+      .replace(/#e0507f/g, '#8c332d')
+      .replace(/#a0345c/g, '#8c332d')
+      .replace(/#c73e79/g, '#8c332d')
+      .replace(/rgba\(240\s*,\s*98\s*,\s*146\s*,/g, 'rgba(166, 64, 58,')
+      .replace(/#ffb3c6/g, '#ddb5b2')
+      .replace(/#f9b7ca/g, '#ddb5b2')
+      .replace(/#fff4f7/g, '#fcf1f0')
+      .replace(/#ffe3ec/g, '#faeae8');
+    s.textContent = pink + '\n' + green + '\n' + gold + '\n' + red;
       document.head.appendChild(s);
     }
     function paintTheme(id) {
       ensureThemeStyle();
       const b = document.body;
-      b.classList.remove('dyn-pink', 'dyn-green', 'dyn-gold');
+      b.classList.remove('dyn-pink', 'dyn-green', 'dyn-gold', 'dyn-red');
       if (id && id !== 'initial') {
-        b.classList.add((id === 'agly') ? 'dyn-gold' : ((id === 'p3' || id === 'pomelo') ? 'dyn-green' : 'dyn-pink'));
+        b.classList.add((id === 'agly') ? 'dyn-gold' : ((id === 'lyff') ? 'dyn-red' : ((id === 'p3' || id === 'pomelo') ? 'dyn-green' : 'dyn-pink')));
         const img = (IS_MOBILE && THEME_MOBILE[id]) ? THEME_MOBILE[id] : THEME_IMG[id];
         const a = THEME_ALPHA[id] || 0.82;
         if (img) { b.style.backgroundImage = "linear-gradient(rgba(255,255,255," + a + "), rgba(255,255,255," + a + ")), url('" + img + "')"; b.style.backgroundSize = 'cover'; b.style.backgroundAttachment = 'fixed'; b.style.backgroundPosition = 'center'; }

@@ -278,9 +278,9 @@ function seedTestProfile(name) {
 
 // 正式玩家档案（内存态 + users.json 落盘）：开发期也落盘，便于测试改昵称/主题
 let usersData = {};
-const THEMES = ['initial', 'p1', 'p2', 'p3', 'p4', 'pomelo', 'agly']; // 已知主题集合（玩家1 拥有 p1 与 金线织就盛夏=agly）
-// 专属主题归属：每位正式玩家可拥有 1~N 个素材主题（玩家3 现拥有 摸鱼ing=p3 与 pomelo 两套；玩家1 拥有 p1 与 agly）；测试账号可体验 p1
-const OWNER_THEMES = { '玩家1': ['p1', 'agly'], '玩家2': ['p2'], '玩家3': ['p3', 'pomelo'], '玩家4': ['p4'] };
+const THEMES = ['initial', 'p1', 'p2', 'p3', 'p4', 'pomelo', 'agly', 'lyff']; // 已知主题集合
+// 专属主题归属：每位正式玩家可拥有 1~N 个素材主题（玩家3：p3/pomelo；玩家1：p1/agly；玩家4：p4/姥爷纷飞=lyff）
+const OWNER_THEMES = { '玩家1': ['p1', 'agly'], '玩家2': ['p2'], '玩家3': ['p3', 'pomelo'], '玩家4': ['p4', 'lyff'] };
 
 // ⚙️ 持久化开关（环境变量控制）：默认开发/测试期=false（成就只存内存，重启即刷新、不写 data/）；
 // 正式部署时设置环境变量 PERSIST_ACHIEVEMENTS=true，即自动恢复"读入 + 写入 data/ 文件"。
