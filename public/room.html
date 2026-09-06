@@ -123,8 +123,9 @@
       left: 50%;
       bottom: 46px;
       transform: translate(-50%, 20px);
-      background: rgba(26, 26, 46, 0.92);
-      color: #fff;
+      background: rgba(255, 255, 255, 0.82);
+      color: #2c3e50;
+      border: 1px solid rgba(74, 144, 217, 0.5);
       padding: 10px 20px;
       border-radius: 24px;
       font-size: .9rem;
@@ -134,7 +135,9 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity .25s, transform .25s;
-      box-shadow: 0 4px 16px rgba(0,0,0,.25);
+      box-shadow: 0 4px 18px rgba(31,45,61,.18);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
     }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
@@ -180,7 +183,7 @@
     body.theme-p1 .seat.occupied { border-color: #ffb3c6; }
     body.theme-p1 .seat.ready { border-color: #f9b7ca; background: #fff4f7; }
     body.theme-p1 .me-tag { background: #ffe3ec; color: #e0507f; }
-    body.theme-p1 .toast { background: #a0345c; }
+    body.theme-p1 .toast { background: rgba(240,98,146,.16); color: #c73e79; border-color: rgba(240,98,146,.55); }
   </style>
 </head>
 <body>
@@ -282,7 +285,7 @@
         'body.dyn-pink .seat.occupied{border-color:#ffb3c6!important}' +
         'body.dyn-pink .seat.ready{border-color:#f9b7ca!important;background:#fff4f7!important}' +
         'body.dyn-pink .me-tag{background:#ffe3ec!important;color:#e0507f!important}' +
-        'body.dyn-pink .toast,body.dyn-pink .home-toast{background:#a0345c!important}';
+        'body.dyn-pink .toast,body.dyn-pink .home-toast{background:rgba(240,98,146,.16)!important;color:#c73e79!important;border-color:rgba(240,98,146,.55)!important}';
       const green =
         scoped('body.dyn-green', col) + '{color:#6f9e63!important}' +
         scoped('body.dyn-green', '.g-tab.active') + '{color:#6f9e63!important;border-bottom-color:#a9c79e!important}' +
@@ -293,7 +296,7 @@
         'body.dyn-green .seat.occupied{border-color:#a9c79e!important}' +
         'body.dyn-green .seat.ready{border-color:#b9d6af!important;background:#f2f8f0!important}' +
         'body.dyn-green .me-tag{background:#e6f1e2!important;color:#5b8a50!important}' +
-        'body.dyn-green .toast,body.dyn-green .home-toast{background:#48673f!important}';
+        'body.dyn-green .toast,body.dyn-green .home-toast{background:rgba(111,158,99,.18)!important;color:#4f8a45!important;border-color:rgba(111,158,99,.55)!important}';
       s.textContent = pink + '\n' + green;
       document.head.appendChild(s);
     }

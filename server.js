@@ -226,7 +226,12 @@ const ACHIEVEMENTS = {
   seat_full:        { name: '座无虚席',          quality: 'epic', game: 'yahtzee' },
   yahtzee_twice:    { name: '？！艇艇！？',       quality: 'epic', game: 'yahtzee' },
   first_roll:       { name: '一发入魂',          quality: 'legend', game: 'yahtzee' },
-  low_score:        { name: '认真的吗？',        quality: 'hidden', game: 'yahtzee' }
+  low_score:        { name: '认真的吗？',        quality: 'hidden', game: 'yahtzee' },
+  // ===== 画猜接龙（drawing）成就 =====
+  dg_fmvp:          { name: 'FMVP',              quality: 'common', game: 'drawing' },
+  dg_spirit:        { name: '灵魂画手',          quality: 'common', game: 'drawing' },
+  dg_cabbage_grand: { name: '花菜大满贯',        quality: 'rare', game: 'drawing' },
+  dg_cabbage_killer:{ name: '花菜杀手',          quality: 'rare', game: 'drawing' }
 };
 const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
 
@@ -418,6 +423,14 @@ function dgAdvance(g, room) {
     if (g.reviewIdx >= g.order.length) { g.stage = 'result'; }
     else { g.stage = 'judge'; dgResetTurn(g); }
   }
+  // 全链结算完成进入 result：按一局最终积分触发花菜成就
+  if (g.stage === 'result') {
+    for (const n of g.order) {
+      const p = g.points[n] || 0;
+      if (p >= 18) announceAchievement(g, room.roomId, n, 'dg_cabbage_grand');
+      if (p <= -18) announceAchievement(g, room.roomId, n, 'dg_cabbage_killer');
+    }
+  }
   dgBroadcast(room);
 }
 function dgVoteFinishMatch(g) {
@@ -429,7 +442,7 @@ function dgVoteFinishMatch(g) {
   chain.matchVotes = matched;
   g.chainVotes[g.reviewIdx] = { match: chain.match, matchedVotes: matched };
 }
-function dgApplyReward(g) {
+function dgApplyReward(g, room) {
   // 本链 4 票收齐后才结算一次（MVP/罪魁投票须全员提交后统一计票）
   if (g.settled[g.reviewIdx] || !dgAllDone(g)) return;
   g.settled[g.reviewIdx] = true;
@@ -440,6 +453,11 @@ function dgApplyReward(g) {
   const sign = chain.match === true ? 1 : -1;
   for (const [target, n] of Object.entries(tally)) {
     g.points[target] = (g.points[target] || 0) + sign * (n * (n + 1) / 2);
+    // 成就：同一链条 3 票投同一人 → MVP / 罪魁
+    if (n >= 3) {
+      const achId = chain.match === true ? 'dg_fmvp' : 'dg_spirit';
+      announceAchievement(g, room.roomId, target, achId);
+    }
   }
 }
 // 画猜“在线”= 心跳新鲜 且 该玩家正开着画猜游戏页（在房间页/大厅者不算在线，不阻塞取消）
@@ -501,6 +519,14 @@ function dgBroadcast(room) {
     if (g.stage === 'result') {
       view.finalOrder = g.order.slice().sort((a, b) => (g.points[b] || 0) - (g.points[a] || 0));
       view.chainVotes = g.chainVotes || [];
+      const byPlayer = g.achievementsByPlayer || {};
+      const achSummary = {};
+      for (const p of g.order) {
+        const ids = byPlayer[p] || [];
+        if (!ids.length) continue;
+        achSummary[p] = ids.map(id => ({ id, name: (ACHIEVEMENTS[id] && ACHIEVEMENTS[id].name) || id, quality: (ACHIEVEMENTS[id] && ACHIEVEMENTS[id].quality) || 'common' }));
+      }
+      view.achSummary = achSummary;
     }
     send(name, view);
   }
@@ -2005,7 +2031,7 @@ io.on('connection', (socket) => {
   }
   function dgSubmitDone(g, room, needPre) {
     if (needPre === 'judge') dgVoteFinishMatch(g);
-    if (needPre === 'reward') dgApplyReward(g);
+    if (needPre === 'reward') dgApplyReward(g, room);
     if (dgAllDone(g)) dgAdvance(g, room);
     else dgBroadcast(room);
   }

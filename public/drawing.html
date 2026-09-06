@@ -55,6 +55,20 @@
     .chip.done { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 11px; color: #1f6fae; background: rgba(74,144,217,.16); border: 1px solid rgba(74,144,217,.45); font-size: .82rem; }
     body.dyn-pink .chip.done { color: #c73e79; background: rgba(240,98,146,.16); border-color: rgba(240,98,146,.5); }
     body.dyn-green .chip.done { color: #4f8a45; background: rgba(111,158,99,.17); border-color: rgba(111,158,99,.5); }
+    /* 实时成就横幅 + 结算成就汇总（磨砂主题色） */
+    .ach-banner { position: fixed; top: 14px; left: 50%; transform: translate(-50%, -90px); background: rgba(255,255,255,.75); color: #2f6fb2; border: 1px solid rgba(74,144,217,.55); border-radius: 12px; padding: 10px 18px; font-size: .9rem; font-weight: 600; z-index: 3000; opacity: 0; transition: all .35s; max-width: 86vw; text-align: center; box-shadow: 0 2px 12px rgba(31,45,61,.18); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+    body.dyn-pink .ach-banner { background: rgba(255,255,255,.78); color: #c73e79; border-color: rgba(240,98,146,.55); }
+    body.dyn-green .ach-banner { background: rgba(255,255,255,.78); color: #4f8a45; border-color: rgba(111,158,99,.55); }
+    .ach-banner.show { opacity: 1; transform: translate(-50%, 0); }
+    .ach-banner.q-rare { border-color: #4caf50; }
+    .ach-banner.q-epic { border-color: #9c27b0; }
+    .ach-banner.q-legend { border-color: #ff9800; font-size: 1rem; }
+    .ach-q-common { color: #9e9e9e; }
+    .ach-q-rare { color: #4caf50; font-weight: 600; }
+    .ach-q-epic { color: #9c27b0; font-weight: 600; }
+    .ach-q-legend { color: #ff9800; font-weight: 700; }
+    .d-ach-block { margin-top: 12px; padding-top: 8px; border-top: 1px dashed #e9ecef; text-align: left; }
+    .d-ach-row { font-size: .85rem; margin: 3px 0; color: #2c3e50; }
   </style>
 </head>
 <body>
@@ -64,6 +78,8 @@
     <a class="back" href="#" onclick="backRoom();return false;" id="topBack">返回房间</a>
   </div>
   <div class="wrap" id="wrap"><div class="empty">加载中…</div></div>
+
+  <div class="ach-banner" id="achBanner"></div>
 
   <!-- 取消本局确认（磨砂半透明主题弹窗） -->
   <div class="glass-mask" id="cancelMask" style="display:none;" onclick="if(event.target===this)closeCancel()">
@@ -309,8 +325,11 @@
       if (v.stage === 'result') {
         const list = (v.finalOrder || []).map((n, i) => `<div class="rv-step"><b>第 ${i + 1} 名</b>　${esc(dn(n))}　<span style="color:#4a90d9;">${v.points[n] || 0} 分</span></div>`).join('');
         const chainRes = (v.chainVotes || []).map((cv, i) => `<span style="margin-right:12px;">链${i + 1}：${cv && cv.match ? '匹配✓' : '未匹配'}</span>`).join('');
+        const achHtml = (v.achSummary && Object.keys(v.achSummary).length)
+          ? `<div class="d-ach-block">${Object.entries(v.achSummary).map(([p, arr]) =>
+              `<div class="d-ach-row">${esc(dn(p))}：${arr.map(a => `<span class="ach-q-${a.quality}">${esc(a.name)}</span>`).join('、')}</div>`).join('')}</div>` : '';
         w.innerHTML = topHtml + `<div class="role-hint">本轮结算</div>${list}
-          <div class="who">${chainRes}</div>
+          <div class="who">${chainRes}</div>${achHtml}
           <div style="margin-top:10px;"><span class="go" onclick="backRoom()">返回房间</span></div>`;
         return;
       }
@@ -382,6 +401,19 @@
       if (document.getElementById('cancelMask').style.display === 'flex') refreshCancel();
     });
     socket.on('dg_cancel', () => { window.location.href = '/room.html?game=drawing'; });
+    // —— 成就：实时横幅（磨砂主题）——
+    let achBannerTimer = null;
+    function showAchBanner(data) {
+      if (!data) return;
+      const el = document.getElementById('achBanner');
+      if (!el) return;
+      const ql = { common: '普通', rare: '稀有', epic: '史诗', legend: '传说', hidden: '隐藏' };
+      el.innerHTML = `${esc(dn(data.playerName))} 达成 ${ql[data.quality] || ''}成就「${esc(data.name)}」`;
+      el.className = 'ach-banner show q-' + (data.quality || 'common');
+      clearTimeout(achBannerTimer);
+      achBannerTimer = setTimeout(() => { el.className = 'ach-banner'; }, 3200);
+    }
+    socket.on('achievement_unlocked', showAchBanner);
     // ===== 状态渲染 =====
     let V = null;
     function roleHead() {
