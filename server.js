@@ -23,7 +23,11 @@ app.use(express.static('public', {
   }
 }));
 
+// 健康检查（供 Nginx/pm2/监控轮询；上线后 curl http://<host>:<port>/healthz 应返回 ok）
+app.get('/healthz', (req, res) => res.json({ ok: true, up: Math.round(process.uptime()) }));
+
 const HEARTBEAT_TIMEOUT = 30000;
+
 
 const VALID_KEYS = {
   'aaaa': '玩家1',
@@ -2887,8 +2891,12 @@ if (PERSIST_SYNC) {
   console.log('🧪 默契空间处于【内存模式】：开发/测试默认，重启即清空、不写入 data/（正式部署设 PERSIST_SYNC=true 即落盘）');
 }
 
-server.listen(3000, () => {
-  console.log('🏰 服务器启动：端口 3000');
+// 监听：可用环境变量 PORT / HOST 覆盖（默认 3000 / 0.0.0.0，公网可达）
+const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || '0.0.0.0';
+server.listen(PORT, HOST, () => {
+  console.log(`🏰 服务器启动：http://${HOST}:${PORT}`);
+  console.log(`💾 持久化：成就=${process.env.PERSIST_ACHIEVEMENTS === 'true' ? 'ON' : 'OFF(内存)'} / 时光墙=${process.env.PERSIST_TIMELINE === 'true' ? 'ON' : 'OFF(内存)'} / 默契=${process.env.PERSIST_SYNC === 'true' ? 'ON' : 'OFF(内存)'}`);
   console.log('✅ 单房间系统已启动');
   console.log('✅ 自动房主转移已开启');
   console.log('✅ 3秒自动同步已开启');
