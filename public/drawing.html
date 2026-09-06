@@ -113,7 +113,11 @@
         paintTheme(t);
       });
     }
-    socket.on('connect', () => { paintTheme(); sendHeartbeat(); });
+    socket.on('connect', () => {
+      paintTheme(); sendHeartbeat();
+      // 通知服务器“我已真正打开画猜游戏页”（先心跳登记身份，再上报在场）
+      socket.emit('dg_enter');
+    });
     setTimeout(() => { if (socket.connected) applyTheme(); }, 600);
     window.addEventListener('pageshow', () => { if (socket.connected) applyTheme(); });
     setInterval(sendHeartbeat, 10000);

@@ -355,6 +355,7 @@ const GAME_URL_MAP = {
 
 const yahtzeeGames = {};
 const drawingGames = {}; // 画猜接龙（drawing）对局
+const drawingAtGame = new Map(); // playerName -> 当前正打开“画猜接龙游戏页”的 socket.id（用于判定谁真正在对局内）
 // 通用取"某房间当前进行中的对局"（yahtzee / light / drawing 共用）
 function activeGameOf(room) {
   if (!room) return null;
@@ -440,6 +441,12 @@ function dgApplyReward(g) {
     g.points[target] = (g.points[target] || 0) + sign * (n * (n + 1) / 2);
   }
 }
+// 画猜“在线”= 心跳新鲜 且 该玩家正开着画猜游戏页（在房间页/大厅者不算在线，不阻塞取消）
+function dgPlayerOnline(room, n) {
+  const hb = userLastHeartbeat.get(n);
+  const sid = room.playerMap.get(n);
+  return !!(hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && drawingAtGame.get(n) === sid && io.sockets.sockets.has(sid));
+}
 function dgBroadcast(room) {
   const g = drawingGames[room.roomId];
   if (!g) return;
@@ -452,9 +459,7 @@ function dgBroadcast(room) {
   };
   const online = {};
   for (const n of g.order) {
-    const hb = userLastHeartbeat.get(n);
-    const sid = room.playerMap.get(n);
-    online[n] = !!(hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && io.sockets.sockets.has(sid));
+    online[n] = dgPlayerOnline(room, n);
   }
   const cancelOnline = g.order.filter(n => online[n]).length;
   for (const name of g.order) {
@@ -1360,26 +1365,32 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, maxPlayers });
   });
 
-  // 结算页"返回房间"：立即清理本房间的对局并复位准备状态，方便重新开局
+  // “返回房间”：仅当对局已结算/结束后才清理对局；
+  // 进行中返回只离开游戏页、保留对局（房间页会显示“本局进行中 → 返回游戏”，玩家可随时回归继续）
   socket.on('return_room', (cb) => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
     let cleared = false;
     for (const room of Object.values(GAME_ROOMS)) {
-      if (room.playerMap.has(name) && activeGameOf(room)) {
-        if (gameEndTimers[room.roomId]) {
-          clearTimeout(gameEndTimers[room.roomId]);
-          delete gameEndTimers[room.roomId];
-        }
-        delete yahtzeeGames[room.roomId];
-        delete drawingGames[room.roomId];
-        Object.keys(room.seats).forEach(seatId => {
-          if (room.seats[seatId]) room.seats[seatId].ready = false;
-        });
-        broadcastRoom(room);
-        cleared = true;
-        break;
+      if (!room.playerMap.has(name)) continue;
+      const game = activeGameOf(room);
+      if (!game) continue;
+      const finished = room.gameType === 'drawing'
+        ? game.stage === 'result'
+        : game.phase === 'finished';
+      if (!finished) { cleared = false; break; } // 进行中：仅退出页面，对局保留
+      if (gameEndTimers[room.roomId]) {
+        clearTimeout(gameEndTimers[room.roomId]);
+        delete gameEndTimers[room.roomId];
       }
+      delete yahtzeeGames[room.roomId];
+      delete drawingGames[room.roomId];
+      Object.keys(room.seats).forEach(seatId => {
+        if (room.seats[seatId]) room.seats[seatId].ready = false;
+      });
+      broadcastRoom(room);
+      cleared = true;
+      break;
     }
     if (cb) cb({ success: true, cleared });
   });
@@ -1978,6 +1989,15 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: !!room });
   });
 
+  // 玩家真正进入画猜游戏页：登记在场（房间页/大厅不算），并立即把最新状态推给全屋
+  socket.on('dg_enter', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    drawingAtGame.set(name, socket.id);
+    const room = Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'drawing');
+    if (room && drawingGames[room.roomId]) dgBroadcast(room);
+  });
+
   // ========== 画猜接龙 v2 操作：写词/作画/猜词/判定/奖励投票/下一轮 ==========
   function dgRoomOf(name) {
     return Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'drawing' && drawingGames[r.roomId]) || null;
@@ -2063,11 +2083,7 @@ io.on('connection', (socket) => {
     if (!g) { if (cb) cb({ success: false, msg: '当前没有进行中的对局' }); return; }
     if (!g.cancelVotes) g.cancelVotes = [];
     if (!g.cancelVotes.includes(me)) g.cancelVotes.push(me);
-    const onlineNames = g.order.filter(n => {
-      const hb = userLastHeartbeat.get(n);
-      const sid = room.playerMap.get(n);
-      return hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && io.sockets.sockets.has(sid);
-    });
+    const onlineNames = g.order.filter(n => dgPlayerOnline(room, n));
     if (onlineNames.length && g.cancelVotes.length >= onlineNames.length) {
       delete drawingGames[room.roomId];
       io.to(room.roomId).emit('dg_cancel', { reason: 'cancelled' });
@@ -2387,6 +2403,8 @@ io.on('connection', (socket) => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
     socketToUser.delete(socket.id);
+    // 离开画猜游戏页：清除“正在对局页”标记（仅当标记还指向本 socket）
+    if (drawingAtGame.get(name) === socket.id) drawingAtGame.delete(name);
 
     // 默契空间：离开会话（断线兜底）
     const syncKey = socketSyncKey.get(socket.id);
