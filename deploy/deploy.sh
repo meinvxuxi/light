@@ -21,7 +21,7 @@ if command -v pm2 >/dev/null 2>&1; then
   pm2 save
 else
   echo '==> 4/4 未安装 pm2，改用 nohup 前台常驻（建议生产装 pm2: npm i -g pm2）'
-  export PERSIST_ACHIEVEMENTS=true PERSIST_TIMELINE=true PERSIST_SYNC=true PERSIST_BOARD=true
+  export NODE_ENV=production PERSIST_ACHIEVEMENTS=true PERSIST_TIMELINE=true PERSIST_SYNC=true PERSIST_BOARD=true
   nohup node server.js > data/server.log 2>&1 &
   echo "PID: $!"
 fi

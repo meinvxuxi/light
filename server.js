@@ -14,8 +14,21 @@ const io = new Server(server, {
   pingInterval: 10000,
 });
 
-// 开发期禁用缓存：保证页面/脚本改动后刷新即为最新（避免“已修复但仍看到旧效果”）
-app.use(express.static('public', {
+const PUBLIC_DIR = path.join(__dirname, 'public');
+// 素材（主题背景/贴纸/头像等）在正式环境启用 7 天缓存 → 再次打开主题页秒出；
+// 开发环境仍不缓存，方便改图立即可见。
+app.use('/assets', express.static(path.join(PUBLIC_DIR, 'assets'), {
+  etag: false,
+  lastModified: false,
+  maxAge: process.env.NODE_ENV === 'production' ? '7d' : 0,
+  setHeaders(res) {
+    res.set('Cache-Control', process.env.NODE_ENV === 'production'
+      ? 'public, max-age=604800'
+      : 'no-cache, no-store, must-revalidate');
+  }
+}));
+// 页面文件（内含主题逻辑/内联 CSS）始终不强缓存：保证线上更新代码后刷新即最新
+app.use(express.static(PUBLIC_DIR, {
   etag: false,
   lastModified: false,
   setHeaders(res) {
