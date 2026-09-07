@@ -3017,8 +3017,8 @@ function syncFinishRound(pairKey) {
   sess.answers = {};
   sess.answered = 0;
   sess.gains = 0;
+  petGain(pairKey, gains > 0 ? 3 : 1); // 完成默契问答：宠物成长
 }
-petGain(pairKey, gains > 0 ? 3 : 1); // 完成默契问答：宠物成长
 // ========== 你画我猜：辅助 ==========
 function paintWordLen(w) { return [...String(w)].length; }
 function paintSendTo(sess, name, evt, data) {
