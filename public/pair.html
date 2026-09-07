@@ -42,6 +42,11 @@
     .asub { color: #9aa5b1; font-size: .8rem; width: 100%; }
     .aliasbar { font-size: .85rem; color: #6b7a90; padding: 8px 2px; margin-top: 8px; border-top: 1px dashed #e8ecf1; }
     .alias-hist { font-size: .78rem; color: #9aa5b1; padding: 4px 2px 8px; border-bottom: 1px dashed #f0f2f5; }
+    .pet-card { margin: 6px 0 2px; padding: 10px 12px; border: 1px dashed rgba(74,144,217,.4); border-radius: 12px; background: rgba(255,255,255,.55); }
+    .pet-head { font-size: .8rem; color: #6b7a90; margin-bottom: 4px; }
+    .pet-svg { text-align: center; }
+    .pet-meta { font-size: .78rem; color: #9aa5b1; margin-top: 2px; }
+    .pet-logs { margin-top: 6px; font-size: .75rem; color: #9aa5b1; border-top: 1px dashed #eef0f4; padding-top: 5px; line-height: 1.6; }
     .mtl { color: #e08a2d; font-size: .78rem; background: #fbf4ea; border-radius: 12px; padding: 1px 9px; }
     .present { font-size: .8rem; color: #27ae60; margin-top: 6px; }
     .present.wait { color: #9aa5b1; }
@@ -263,6 +268,51 @@
       if (!h.length) return '';
       return `<div class="alias-hist">曾用名：${h.map(x => esc(x.name || x)).join(' / ')}</div>`;
     }
+    // ===== 默契宠物（B方案：代码圆萌宠物；预留素材位：pet.data.img 存在则优先用图） =====
+    let petData = null;
+    function petSvgHtml(color) {
+      const size = petData ? Math.min(44 + petData.level * 2, 64) : 50;
+      return `<svg width="${size * 1.7}" height="${size}" viewBox="0 0 100 60">
+        <ellipse cx="50" cy="40" rx="38" ry="20" fill="${color}" fill-opacity=".45"/>
+        <ellipse cx="42" cy="32" rx="12" ry="7" fill="#fff" fill-opacity=".35"/>
+        <circle cx="38" cy="38" r="4.2" fill="#2c3e50"/><circle cx="62" cy="38" r="4.2" fill="#2c3e50"/>
+        <circle cx="39.4" cy="36.6" r="1.5" fill="#fff"/><circle cx="63.4" cy="36.6" r="1.5" fill="#fff"/>
+        <path d="M45 46 Q50 52 55 46" stroke="#2c3e50" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+        <ellipse cx="30" cy="45" rx="3" ry="2" fill="#f2a0a8" fill-opacity=".7"/>
+        <ellipse cx="70" cy="45" rx="3" ry="2" fill="#f2a0a8" fill-opacity=".7"/>
+      </svg>`;
+    }
+    function petCardHtml() {
+      if (!petData) return '<div class="pet-empty">🐾 宠物加载中…</div>';
+      const next = Math.ceil(Math.sqrt(petData.exp / 4)) + 1;
+      const pct = Math.min(100, Math.round((petData.exp / ((next * next) * 4)) * 100));
+      return `<div class="pet-card">
+        <div class="pet-head">默契宠物 · 等级 ${petData.level}</div>
+        <div class="pet-svg">${petSvgHtml(petData.color)}</div>
+        <div class="pet-meta">成长值 ${petData.exp}　·　距离下一级 ${pct}%</div>
+        <div style="height:6px;background:#eef0f4;border-radius:4px;overflow:hidden;margin:6px 0;"><div style="height:100%;width:${pct}%;background:${petData.color};"></div></div>
+        ${petData.canSign ? '<span class="go" onclick="petSignGo()">今日签到（+10 成长）</span>' : '<span class="soon">今日已签到</span>'}
+        ${(petData.logs && petData.logs.length) ? `<div class="pet-logs">${petData.logs.map(l => `<div>${esc(l.t)}</div>`).join('')}</div>` : ''}
+      </div>`;
+    }
+    function petLoad() {
+      if (!isMember || !pairKey) return;
+      socket.emit('sync_pet_get', { pair: pairKey }, (res) => {
+        if (!res || !res.success) return;
+        petData = { exp: res.exp || 0, level: res.level || 1, color: res.color || '#8fb7e8', canSign: !!res.canSign, logs: res.logs || [] };
+        const box = document.getElementById('petArea');
+        if (box) box.innerHTML = petCardHtml();
+      });
+    }
+    function petSignGo() {
+      if (!isMember || !pairKey) return;
+      socket.emit('sync_pet_sign', { pair: pairKey }, (res) => {
+        if (!res || !res.success) return;
+        petData = { exp: res.exp || 0, level: res.level || 1, color: res.color || '#8fb7e8', canSign: !!res.canSign, logs: res.logs || [] };
+        const box = document.getElementById('petArea');
+        if (box) box.innerHTML = petCardHtml();
+      });
+    }
     function aliasAsk() {
       const n = prompt('给这个默契组合起个名字（1~10 字，对方同意后生效）');
       if (!n) return;
@@ -328,7 +378,8 @@
       if (wallMode) { renderWall(); return; }
       const w = document.getElementById('wrap');
       if (!qaMode) {
-        w.innerHTML = metaHtml() + (isMember ? aliasBarHtml() + aliasHistHtml() + menuHtml() : viewerHtml());
+        w.innerHTML = metaHtml() + (isMember ? aliasBarHtml() + aliasHistHtml() + '<div id="petArea"></div>' + menuHtml() : viewerHtml());
+        if (isMember && !qaMode && !wallMode) petLoad();
       } else {
         w.innerHTML = metaHtml();
       }

@@ -1699,6 +1699,24 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, count: rows.length, rows });
   });
 
+  // 测试助手：宠物演示（成长 +200 / 今日签到 / 一条串门日志，测试账号专属内存态）
+  socket.on('test_pet_demo', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    const other = TEST_NAMES.find(n => n !== me);
+    const key = syncPairKey(me, other);
+    petEnsure(key);
+    petGain(key, 200);
+    petSign(key);
+    const p = petEnsure(key);
+    p.lastActivity = 0; // 触发一次“行动日志”
+    const snap = petSnapshot(key);
+    if (cb) cb({ success: true, msg: '宠物已演示成长（level=' + snap.level + '），可在默契空间对应组合查看', level: snap.level, exp: snap.exp });
+  });
+
   // 测试助手：模拟“游客达成稀有成就 → 游客留言板系统推送”
   socket.on('test_guest_ach_board', (cb) => {
     const me = socketToUser.get(socket.id);
@@ -2702,6 +2720,23 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true });
   });
 
+  // ===== 默契宠物：查看 / 每日签到 =====
+  socket.on('sync_pet_get', ({ pair }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    if (!name || !aliasMemberGuard(name, key)) { if (cb) cb({ success: false, msg: '仅组合成员可查看宠物' }); return; }
+    const snap = petSnapshot(key);
+    if (cb) cb({ success: true, ...snap });
+  });
+  socket.on('sync_pet_sign', ({ pair }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    if (!name || !aliasMemberGuard(name, key)) { if (cb) cb({ success: false, msg: '仅组合成员可签到' }); return; }
+    const r = petSign(key);
+    const snap = petSnapshot(key);
+    if (cb) cb({ success: true, added: r.added, ...snap });
+  });
+
   socket.on('disconnect', () => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
@@ -2902,6 +2937,48 @@ function syncBroadcastQuestion(pairKey) {
   if (!item) return;
   io.to('sync:' + pairKey).emit('sync_question', { index: sess.qi, q: item.q, opts: item.opts, total: sess.roundQs.length });
 }
+// ========== 默契宠物（B方案：代码圆萌宠 + 预留素材位；每对组合一只） ==========
+const PET_COLORS = ['#6ec6a0', '#8fb7e8', '#e8a0b8', '#f0c87a', '#b79ae0', '#e89a7a'];
+const PET_LOGS = ['🍃 去别人家串门回来啦', '🎒 出门逛了一圈，捡到 2 成长值', '💤 晒着太阳睡了个午觉', '🧦 在门口等你们回来，很乖', '⭐ 今天心情特别好，转了个圈'];
+function petColorFor(key) { let h = 7; for (const ch of String(key)) h = (h * 31 + ch.codePointAt(0)) >>> 0; return PET_COLORS[h % PET_COLORS.length]; }
+function petToday() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function petEnsure(pk) {
+  const pair = syncGetPair(pk);
+  const p = pair.pet = pair.pet || { exp: 0, lastSign: '', logs: [], lastActivity: 0, color: petColorFor(pk) };
+  return p;
+}
+function petTick(pk) {
+  const p = petEnsure(pk);
+  const now = Date.now();
+  if (now - (p.lastActivity || 0) < 6 * 3600 * 1000) return false; // 每 6 小时触发一次小行动
+  p.lastActivity = now;
+  p.logs.unshift({ t: PET_LOGS[Math.floor(Math.random() * PET_LOGS.length)], ts: now });
+  if (p.logs.length > 6) p.logs.pop();
+  syncSavePair(pk);
+  return true;
+}
+function petSnapshot(pk) {
+  const p = petEnsure(pk);
+  petTick(pk);
+  const exp = p.exp || 0;
+  const level = Math.floor(Math.sqrt(exp / 4)) + 1;
+  return { exp, level, color: p.color || petColorFor(pk), canSign: p.lastSign !== petToday(), logs: (p.logs || []).slice(0, 6), lastSign: p.lastSign };
+}
+function petSign(pk) {
+  const p = petEnsure(pk);
+  if (p.lastSign === petToday()) return { added: 0 };
+  p.lastSign = petToday();
+  p.exp = (p.exp || 0) + 10;
+  syncSavePair(pk);
+  return { added: 10 };
+}
+function petGain(pk, n) {
+  const p = petEnsure(pk);
+  p.exp = (p.exp || 0) + n;
+  syncSavePair(pk);
+  return p.exp;
+}
+
 // 通用：给某组合加默契分，并处理称号解锁与系统祝贺留言
 function syncAddScore(pairKey, gain) {
   const pair = syncGetPair(pairKey);
@@ -2941,6 +3018,7 @@ function syncFinishRound(pairKey) {
   sess.answered = 0;
   sess.gains = 0;
 }
+petGain(pairKey, gains > 0 ? 3 : 1); // 完成默契问答：宠物成长
 // ========== 你画我猜：辅助 ==========
 function paintWordLen(w) { return [...String(w)].length; }
 function paintSendTo(sess, name, evt, data) {
@@ -3002,6 +3080,7 @@ function finishPaintRound(pairKey, win) {
     win, word: pt.word || '', gain, newScore: res.score, newTitle: res.newTitle,
     attempts: (pt.attempts || []).slice(), painter: pt.painter, guesser: pt.guesser
   });
+  petGain(pairKey, win ? 3 : 1); // 完成你画我猜：宠物成长
 }
 // 玩家离开默契页（主动 sync_leave / socket 断开共用；自动取消其"准备"，结束进行中的对局）
 function syncLeaveKey(name, pk) {

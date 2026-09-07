@@ -110,6 +110,8 @@
     <button class="btn-trigger" onclick="triggerDrawing('all')">🎨 给四个测试号各触发全部画猜成就</button>
     <br>
     <button class="btn-trigger" onclick="guestAchDemo()">📢 模拟游客稀有成就 → 游客留言板</button>
+    <br>
+    <button class="btn-trigger" onclick="petDemo()">🐾 宠物演示（成长+签到+行动日志）</button>
     <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
       用 test1~test4 登录后一键触发成就，再到荣誉墙查看效果；测试数据只存内存，重启即清空。
     </p>
@@ -206,6 +208,13 @@
         } else {
           log('❌ ' + ((res && res.msg) || '生成失败'));
         }
+      });
+    }
+
+    function petDemo() {
+      socket.emit('test_pet_demo', (res) => {
+        if (res && res.success) log('🐾 已演示：' + ((res && res.msg) || ''));
+        else log('❌ ' + ((res && res.msg) || '失败'));
       });
     }
 
