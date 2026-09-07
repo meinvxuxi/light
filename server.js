@@ -675,6 +675,8 @@ function bmbAttack(g, room, attacker, target, r, c) {
   // 4) 淘汰判定
   if ((g.sunkHead[target] || []).length >= 5) {
     g.alive = g.alive.filter(n => n !== target);
+    g.elimOrder = g.elimOrder || [];
+    g.elimOrder.push(target);
     g.eliminated = g.eliminated || {};
     g.eliminated[target] = Date.now();
     bmbBoom(room, `📉 ${getDisplayName(target)} 已全员出局（剩余 ${g.alive.length} 人）`);
@@ -683,7 +685,9 @@ function bmbAttack(g, room, attacker, target, r, c) {
   const seq = g.playerOrder.filter(n => g.alive.includes(n));
   if (g.alive.length <= 1) {
     g.phase = 'over';
-    g.over = { winner: g.alive[0], alive: g.alive.slice() };
+    const winner = g.alive[0];
+    const players = g.playerOrder.map(n => ({ name: n, stats: g.stats[n] || {}, rank: n === winner ? 1 : (g.elimOrder || []).indexOf(n) + 2 }));
+    g.over = { winner, players };
   } else {
     const idx = seq.indexOf(attacker);
     g.turn = seq[(idx + 1) % seq.length];

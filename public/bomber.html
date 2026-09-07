@@ -114,7 +114,16 @@
           +'<div class="stage" style="margin-top:8px;">存活：'+S.alive.join('、')+'　·　当前行动：'+esc(S.turn)+'</div>';
         return;
       }
-      if(S.phase==='over') body.innerHTML='<div class="stage" style="font-size:1.1rem;padding:24px;">🏆 本局胜者：'+esc(S.over?S.over.winner:'')+'</div><div class="bar"><a class="go" href="/lobby.html">返回大厅</a></div>';
+      if(S.phase==='over'){
+        const rows=(S.over&&S.over.players||[]).slice().sort(function(a,b){return a.rank-b.rank;}).map(function(p){
+          const st=p.stats||{};
+          return '<tr><td>'+p.rank+'</td><td>'+esc(p.name)+'</td><td>'+(st.bodyHits||0)+'</td><td>'+(st.shipsDown||0)+'</td><td>'+(st.firstHit||'—')+'</td><td>'+(st.firstDown||'—')+'</td></tr>';
+        }).join('');
+        body.innerHTML = '<div class="stage" style="font-size:1.1rem;padding-top:20px;">🏆 本局胜者：'+esc(S.over?S.over.winner:'')+'</div>'
+          +'<table style="border-collapse:collapse;margin:10px auto;font-size:.86rem;"><tr style="background:#eef1f5;"><th style="padding:4px 10px;border:1px solid #dfe4ea;">名次</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">玩家</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">炸中机身</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">炸中机头</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">首中步数</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">首沉步数</th></tr>'+rows+'</table>'
+          +'<div class="bar"><a class="go" href="/lobby.html">返回大厅</a></div>';
+        return;
+      }
     }
     socket.on('bomber_state', function(s){ S=s; if(s.phase==='battle'||s.phase==='over') placed=[]; render(); });
     var barEl=document.createElement('div'); barEl.className='barrage'; document.body.appendChild(barEl); var barTimer=null;
@@ -122,5 +131,6 @@
     socket.on('connect', function(){ setTimeout(function(){ socket.emit('bomber_pull',function(res){ if(res&&res.success){ S=res; render(); } }); },400); });
   
 </script>
+  <script src="/emoji-widget.js"></script>
 </body>
 </html>
