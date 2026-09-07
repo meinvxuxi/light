@@ -237,7 +237,11 @@
   <script>
   
     const socket = io();
-    const myName = sessionStorage.getItem('playerName') || '未知玩家';
+    // 未登录直接点开房间链接 → 先回登录页，登录成功后自动回到本房间
+    if (!sessionStorage.getItem('playerName')) {
+      location.replace('/?next=' + encodeURIComponent(location.pathname + location.search));
+    }
+    const myName = sessionStorage.getItem('playerName') || '';
     const isTest = sessionStorage.getItem('isTest') === 'true';
 
     let roomId = '';

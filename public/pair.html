@@ -57,6 +57,12 @@
     .qa-opt.sel { background: rgba(74,144,217,.14); border-color: #4a90d9; font-weight: 700; }
     .qa-opt.dis { opacity: .55; cursor: default; }
     .qa-wait { color: #9aa5b1; font-size: .82rem; text-align: center; margin-top: 6px; }
+    .live-box { margin-top: 10px; border-top: 1px dashed #e8ecf1; padding-top: 8px; }
+    .live-typing { color: #4a90d9; font-weight: 700; min-height: 20px; font-size: .9rem; margin-bottom: 6px; word-break: break-all; }
+    body.dyn-pink .live-typing { color: #d8567f; }
+    body.dyn-green .live-typing { color: #4f8a45; }
+    body.dyn-gold .live-typing { color: #a8791b; }
+    body.dyn-red .live-typing { color: #8c332d; }
     .match-tip { display: none; text-align: center; padding: 10px 14px; border-radius: 12px; margin: 6px 0 10px; font-size: 1rem; font-weight: 700; color: #2f6fb2; background: rgba(74,144,217,.13); border: 1px solid rgba(74,144,217,.45); }
     .match-tip.show { display: block; }
     .match-tip.miss { color: #7f8fa6; background: rgba(122,134,150,.1); border-color: rgba(122,134,150,.3); }
@@ -180,6 +186,7 @@
     let pairInfo = { score: 0, titles: [], phase: 'idle', members: [], readyGame: null, readyVotes: [], alias: '', pendingName: '', pendingBy: '' };
     let qaMode = false;       // 是否进入问答视图
     let myAnswered = false;
+    let lastQOpts = [];       // 当前题的选项（用于展示对方作答）
     let roundGain = 0;
     let wallMode = false;     // 是否打开画作墙
     let wallList = [];
@@ -418,6 +425,7 @@
     socket.on('sync_question', (data) => {
       if (!data || !qaMode) return;
       myAnswered = false;
+      lastQOpts = data.opts || [];
       document.getElementById('qaProg').textContent = `第 ${data.index + 1} / ${data.total} 题`;
       document.getElementById('qaQ').textContent = data.q;
       document.getElementById('qaTip').className = 'match-tip';
@@ -427,6 +435,21 @@
     });
     socket.on('sync_result', (data) => {
       if (!data || !qaMode) return;
+      // 展示双方各自的选择
+      const mineName = myName;
+      const otherName = (data.players || []).find(n => n !== mineName);
+      const mineIdx = data.choices && data.choices[mineName];
+      const otherIdx = otherName && data.choices && data.choices[otherName];
+      const opts = lastQOpts || [];
+      if (mineIdx !== undefined && opts[mineIdx] !== undefined) {
+        document.querySelectorAll('#qaOpts .qa-opt').forEach((o, idx) => {
+          o.classList.add('dis');
+          if (idx === mineIdx) o.classList.add('sel');
+          if (idx === otherIdx) o.style.borderColor = '#f0a020'; // 对方的选择用橙色标出
+        });
+        const wait = document.getElementById('qaWait');
+        if (wait) wait.textContent = `你选了「${opts[mineIdx]}」 · 对方选了「${otherIdx !== undefined && opts[otherIdx] !== undefined ? opts[otherIdx] : '?'}」`;
+      }
       const tip = document.getElementById('qaTip');
       if (data.match) {
         tip.className = 'match-tip show';
@@ -437,7 +460,6 @@
       }
       const gainEl = document.getElementById('qaGain');
       if (gainEl) gainEl.textContent = '本轮默契 +' + data.gainSoFar;
-      document.getElementById('qaWait').textContent = '';
     });
     socket.on('sync_finish', (data) => {
       if (!data || !qaMode) return;
@@ -465,6 +487,8 @@
     let pStrokes = [];            // 笔画数据
     let pDeadline = 0;
     let pAttempts = [];           // 猜过的词（猜者本地/结束后可见）
+    let pPaintSeen = [];          // 画者看到的对方尝试词
+    let pLiveTyping = '';         // 画者看到的对方实时输入
     let pGain = 0;
     let pNewTitle = '';
     let pEnd = null;
@@ -482,7 +506,7 @@
     }
     function paintViewReset() {
       paintClearTimer();
-      paintOn = false; pStage = 'idle'; pRole = null; pWord = null; pWordLen = 0; pStrokes = []; pDeadline = 0; pAttempts = []; pEnd = null; pGain = 0; pNewTitle = '';
+      paintOn = false; pStage = 'idle'; pRole = null; pWord = null; pWordLen = 0; pStrokes = []; pDeadline = 0; pAttempts = []; pPaintSeen = []; pLiveTyping = ''; pEnd = null; pGain = 0; pNewTitle = '';
       pPeekWord = null;
     }
     function paintMeta() {
@@ -554,21 +578,41 @@
       const dash = isDrawer ? '' : `<div class="word-here">${paintDashHtml()}</div>`;
       const roleExtra = isDrawer
         ? `<div class="score-line">你要画：<b>${esc(pWord)}</b>（1~12 字，别让对方看到）</div>`
-        : `<div class="qa-wait">等画者动笔… 猜到就在下面输入</div>`;
+        : `<div class="qa-wait">对方能实时看到你的输入和猜词，猜中就结束～</div>`;
       const tools = isDrawer ? paintToolsHtml() : '';
       const guessArea = isDrawer ? '' : `
         <div class="guess-box">
-          <input id="guessInput" maxlength="12" placeholder="输入你猜的词" autocomplete="off" onkeydown="if(event.key==='Enter')paintGuess()">
+          <input id="guessInput" maxlength="12" placeholder="输入你猜的词" autocomplete="off" onkeydown="if(event.key==='Enter')paintGuess()" oninput="paintTypingLive()">
           <button onclick="paintGuess()">猜</button>
         </div>
         <div class="miss-tip" id="missTip"></div>
         <div class="glabel" id="attemptTitle">你的猜测记录</div>
         <div id="attemptList">${pAttempts.map(a => `<div class="attempt wrong">${esc(a.t)}</div>`).join('')}</div>`;
+      // 画者侧：实时看对面输入 + 猜词尝试
+      const seenPanel = isDrawer ? `
+        <div class="live-box">
+          <div class="glabel">对方正在输入</div>
+          <div class="live-typing" id="liveTyping">${pLiveTyping ? esc(pLiveTyping) : '…'}</div>
+          <div class="glabel">对方猜过</div>
+          <div id="painterSeen">${pPaintSeen.length ? pPaintSeen.map(t => `<div class="attempt wrong">${esc(t)}</div>`).join('') : '<div class="empty" style="padding:4px 0;">还没有尝试</div>'}</div>
+        </div>` : '';
       return `<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:.84rem;color:#6b7a90;">
-          <span>限时 60 秒</span><span class="cd" id="cdSec">60 秒</span>
+          <span>限时 80 秒</span><span class="cd" id="cdSec">80 秒</span>
         </div>${dash}${roleExtra}
         <div class="paint-canvas-box"><canvas class="paint-canvas" id="paintCanvas" width="900" height="540"></canvas></div>
-        ${tools}${guessArea}`;
+        ${tools}${guessArea}${seenPanel}`;
+    }
+    let pTypingTimer = null;
+    function paintTypingLive() {
+      const input = document.getElementById('guessInput');
+      if (!input) return;
+      clearTimeout(pTypingTimer);
+      pTypingTimer = setTimeout(() => socket.emit('paint_typing', { pair: pairKey, text: input.value }, () => {}), 200);
+    }
+    function paintDrawerTyping(text) {
+      pLiveTyping = text || '';
+      const el = document.getElementById('liveTyping');
+      if (el) el.textContent = pLiveTyping || '…';
     }
     // —— 画者工具栏 ——
     function paintToolsHtml() {
@@ -660,6 +704,8 @@
       const v = input.value.trim();
       if (!v) return;
       input.value = '';
+      clearTimeout(pTypingTimer);
+      socket.emit('paint_typing', { pair: pairKey, text: '' }, () => {});
       socket.emit('paint_guess', { pair: pairKey, text: v }, (res) => {
         if (res && res.correct === false) {
           pAttempts.push({ t: v, ts: Date.now() });
@@ -699,6 +745,8 @@
       pStage = data.stage || 'word';
       pStrokes = [];
       pAttempts = [];
+      pPaintSeen = [];
+      pLiveTyping = '';
       pWord = null;
       pEnd = null;
       pGain = 0;
@@ -714,6 +762,8 @@
       pDeadline = data.deadline || 0;
       if (data.strokes) pStrokes = data.strokes;
       pAttempts = [];
+      pPaintSeen = [];
+      pLiveTyping = '';
       paintRender();
     }
     socket.on('paint_round', (data) => { if (data) applyPaintRound(data); });
@@ -727,6 +777,20 @@
     socket.on('paint_guess_miss', () => {
       const tip = document.getElementById('missTip');
       if (tip) tip.textContent = '不对哦，再想想';
+    });
+    socket.on('paint_typing', (data) => {
+      if (!data || pRole !== 'drawer' || pStage !== 'draw') return;
+      paintDrawerTyping(data.text || '');
+    });
+    socket.on('paint_attempt', (data) => {
+      if (!data || pRole !== 'drawer' || pStage !== 'draw') return;
+      pPaintSeen.push(String(data.t || ''));
+      const box = document.getElementById('painterSeen');
+      if (box) box.innerHTML = pPaintSeen.map(t => `<div class="attempt wrong">${esc(t)}</div>`).join('');
+      paintDrawerTyping('');
+    });
+    socket.on('paint_attempt_ok', () => {
+      paintDrawerTyping('猜对啦！');
     });
     socket.on('paint_end', (data) => {
       if (!data || !paintOn) return;

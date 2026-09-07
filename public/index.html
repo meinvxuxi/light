@@ -133,6 +133,13 @@ body {
     const btn = document.getElementById('loginBtn');
     const error = document.getElementById('errorMsg');
 
+    // 支持“房间链接直达”：登录成功后回到原链接（仅限站内路径）
+    function goHome() {
+      const n = new URLSearchParams(location.search).get('next');
+      if (n && n.charAt(0) === '/' && n.charAt(1) !== '/') { location.href = n; return; }
+      location.href = '/lobby.html';
+    }
+
    btn.addEventListener('click', () => {
   const key = input.value.trim().toLowerCase();
   if (!key) return;
@@ -142,7 +149,7 @@ body {
       // 🔥 必须加这一行！！！
        sessionStorage.setItem('isTest', res.isTest ? 'true' : 'false'); 
       sessionStorage.setItem('isGuest', 'false');
-      window.location.href = '/lobby.html';
+      goHome();
     } else {
       error.textContent = res.message || '密钥错误';
     }
@@ -171,7 +178,7 @@ body {
         sessionStorage.setItem('playerName', res.name);
         sessionStorage.setItem('isGuest', 'true');
         sessionStorage.setItem('isTest', 'false');   // 防止继承上一个"测试账号"的标记
-        window.location.href = '/lobby.html';
+        goHome();
       });
     }
     guestKeyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmGuest(); });

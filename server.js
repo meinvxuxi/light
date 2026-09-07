@@ -2557,12 +2557,27 @@ io.on('connection', (socket) => {
     pt.attempts.push({ t: g, ts: Date.now() });
     const target = String(pt.word || '').trim().replace(/\s+/g, '');
     if (g === target) {
+      // 答对：结束画面会带全部尝试，画者同样能看到
+      paintSendTo(sess, pt.painter, 'paint_attempt_ok', { t: g });
       finishPaintRound(key, true);
       if (cb) cb({ success: true, correct: true });
     } else {
       paintSendTo(sess, name, 'paint_guess_miss', { n: pt.attempts.length });
+      // 实时让画者看到猜者提交的尝试词
+      paintSendTo(sess, pt.painter, 'paint_attempt', { t: g, n: pt.attempts.length });
       if (cb) cb({ success: true, correct: false });
     }
+  });
+
+  // 猜者输入过程实时同步给画者（画者也能看到对面在猜什么）
+  socket.on('paint_typing', ({ pair, text }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    const sess = syncSessions.get(key);
+    if (!sess || sess.game !== 'paint' || !sess.paint || sess.paint.guesser !== name || sess.paint.stage !== 'draw') return;
+    const clean = String(text || '').slice(0, 12);
+    paintSendTo(sess, sess.paint.painter, 'paint_typing', { text: clean });
+    if (cb) cb({ success: true });
   });
 
   // 结束画面 → 下一轮（自动交换画者/猜者）
@@ -2601,7 +2616,14 @@ io.on('connection', (socket) => {
       const [pa, pb] = sess.players;
       const match = sess.answers[pa] === sess.answers[pb];
       if (match) sess.gains += 2;
-      io.to('sync:' + key).emit('sync_result', { qi: sess.qi, match, total: sess.roundQs.length, gainSoFar: sess.gains });
+      io.to('sync:' + key).emit('sync_result', {
+        qi: sess.qi,
+        match,
+        total: sess.roundQs.length,
+        gainSoFar: sess.gains,
+        players: [pa, pb],
+        choices: { [pa]: sess.answers[pa], [pb]: sess.answers[pb] } // 双方各自的选择，用于“看到对面作答”
+      });
       setTimeout(() => {
         const s2 = syncSessions.get(key);
         if (!s2 || s2.phase !== 'playing') return;
@@ -2734,7 +2756,7 @@ const SYNC_TITLES = [
   { name: '天作之合', min: 500 }
 ];
 // ========== 你画我猜 ==========
-const DRAW_TIME = 60 * 1000; // 每轮限时 60 秒
+const DRAW_TIME = 80 * 1000; // 你画我猜每轮限时 80 秒（2026-09-07 反馈：原 60 偏短）
 const PAINT_WORDS = [
   '猫', '狗', '兔子', '大象', '熊猫', '企鹅', '鸭子', '蝴蝶', '鱼', '鲸鱼',
   '苹果', '香蕉', '西瓜', '草莓', '葡萄', '橙子', '桃子', '辣椒', '萝卜', '玉米',
