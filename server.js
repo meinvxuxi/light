@@ -2525,7 +2525,7 @@ io.on('connection', (socket) => {
       sess.readyVotes = (sess.readyVotes || []).filter(n => n !== name);
       if (!sess.readyVotes.length) sess.readyGame = null;
       syncEmitState(key);
-      if (cb) cb({ success: true });
+      if (cb) cb({ success: true, started: false, readyGame: sess.readyGame || null, readyVotes: (sess.readyVotes || []).slice() });
       return;
     }
     if (!sess.readyVotes.includes(name)) sess.readyVotes.push(name);
@@ -2544,7 +2544,7 @@ io.on('connection', (socket) => {
       return;
     }
     syncEmitState(key);
-    if (cb) cb({ success: true, started: false });
+    if (cb) cb({ success: true, started: false, readyGame: sess.readyGame || null, readyVotes: (sess.readyVotes || []).slice() });
   });
 
   // ========== 你画我猜：出词 / 笔画 / 猜测 / 下一轮 / 中止 ==========

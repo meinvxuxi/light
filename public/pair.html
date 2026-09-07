@@ -341,6 +341,12 @@
       const mine = (pairInfo.readyVotes || []).includes(myName);
       socket.emit('sync_ready', { pair: pairKey, game: g, ready: !mine }, (res) => {
         if (res && res.msg && !res.success) { renderRoot(); return; }
+        // 服务器直连回执：无论广播是否到达都即时同步状态
+        if (res && res.readyVotes) {
+          pairInfo.readyVotes = res.readyVotes.slice();
+          pairInfo.readyGame = res.readyGame || null;
+          renderRoot();
+        }
       });
     }
     function menuHtml() {
@@ -493,11 +499,13 @@
         }
       } else if (st.phase === 'idle') {
         const wasPlaying = qaMode || paintOn;
+        const wasPaint = paintOn; // 记录是否为“你画我猜”（取消弹窗只用于它）
+        const selfCancel = pSelfCancel;
+        pSelfCancel = false;
         if (qaMode) qaMode = false;
         if (paintOn) paintViewReset();
         if (wasPlaying && isMember) {
-          // 对方退出/取消/掉线导致本局终止
-          if (pSelfCancel) { pSelfCancel = false; renderRoot(); return; }
+          if (selfCancel || !wasPaint) { renderRoot(); return; } // 自己取消 / 问答自然结束：回菜单即可
           pfModal('对方已取消',
             '对方退出了这局游戏（可能返回了默契主页），本局已结束。',
             '<button class="vbtn ok" onclick="pfClose();renderRoot()">知道了</button>');
@@ -819,10 +827,10 @@
         <div class="glabel">画者：${esc(dn(pEnd ? pEnd.painter : pairNames[0]))} 的作画（上一步画布可见）</div>
         <div class="glabel">猜词记录（共 ${(pAttempts || []).length} 次）</div>
         ${att || '<div class="empty" style="padding:10px 0;">本轮没有猜测</div>'}
-        <div style="margin-top:14px;" id="pNextArea">${pNextMine
-          ? `<span class="who">已点下一轮，等待对方确认…</span>`
-          : `<button class="btn-ok" onclick="paintNext()">下一轮（需双方确认）</button>`}
-          <span class="go" onclick="paintCancel()" style="margin-left:14px;">返回菜单（取消）</span>
+        <div style="margin-top:10px;font-size:.88rem;line-height:1.9;" id="pNextArea">${pNextMine
+          ? '<span style="color:#9aa5b1;">已确认，等对方…</span>'
+          : '<span class="go" onclick="paintNext()">下一轮</span>'}
+          <span class="go" onclick="paintCancel()" style="margin-left:18px;color:#c62828;">取消</span>
         </div>`;
     }
     function paintNext() {
