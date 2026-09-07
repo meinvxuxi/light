@@ -559,6 +559,23 @@ function bmbConfig() { // 3机型至少各1 + 剩余2随机
   cfg.push(pool[0], pool[1]);
   return cfg.sort((a, b) => a - b);
 }
+function bmbRandomPlanes(config) {
+  const used = new Set();
+  const out = [];
+  for (let tries = 0; tries < 400 && out.length < config.length; tries++) {
+    const type = config[out.length];
+    const rotation = Math.floor(Math.random() * 4);
+    const headR = 1 + Math.floor(Math.random() * 15);
+    const headC = 1 + Math.floor(Math.random() * 15);
+    const cells = bmbCellsOf({ type, rotation, headR, headC });
+    if (cells.some(x => x.r < 1 || x.r > 15 || x.c < 1 || x.c > 15)) continue;
+    const k = cells.map(x => x.r + ',' + x.c);
+    if (k.some(x => used.has(x))) continue;
+    k.forEach(x => used.add(x));
+    out.push({ type, rotation, headR, headC, cells, headKey: type + '@' + headR + ',' + headC });
+  }
+  return out.length === config.length ? out : null;
+}
 function bmbValidate(planes, config) {
   if (!Array.isArray(planes) || planes.length !== 5) return '需要摆放 5 架飞机';
   const used = planes.map(p => [Number(p.type), Number(p.rotation || 0), Number(p.headR), Number(p.headC)]);
@@ -583,7 +600,7 @@ function bmbMakeGame(room, names) {
     roomId: room.roomId, gameType: 'bomber', playerOrder: names.slice(), alive, turn: names[0],
     config, planes: {}, ready: {}, phase: 'deploy', // deploy -> battle -> over
     headHit: {}, sunkHead: {}, boards: {}, attacks: {}, targetShots: {}, firedCoords: {}, meHits: {},
-    stats: {}, hitStreak: {}, lastEmpty: 0, cancelVotes: [],
+    stats: {}, hitStreak: {}, lastEmpty: 0, cancelVotes: [], autoT: null,
     startAt: Date.now()
   };
 }
@@ -3105,9 +3122,33 @@ io.on('connection', (socket) => {
       return Object.assign({}, p, { cells, headKey: p.type + '@' + p.headR + ',' + p.headC });
     });
     g.ready[name] = true;
+    const onlineAt = g.playerOrder.filter(n => {
+      const hb = userLastHeartbeat.get(n);
+      const sid = room.playerMap.get(n);
+      return hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && bomberAtGame.get(n) === sid && io.sockets.sockets.has(sid);
+    });
     if (g.playerOrder.every(n => g.ready[n])) {
       g.phase = 'battle';
       g.turn = g.playerOrder[0];
+      if (g.autoT) { clearTimeout(g.autoT); g.autoT = null; }
+    } else if (!g.autoT && onlineAt.length && onlineAt.every(n => g.ready[n])) {
+      // 在线者都已摆好、还有缺席未摆 → 8 秒后替缺席者随机布阵自动开局（缺席者回来后仍可取消/继续）
+      g.autoT = setTimeout(() => {
+        const g2 = bomberGames[room.roomId];
+        if (!g2 || g2.phase !== 'deploy') return;
+        let ok = true;
+        for (const n of g2.playerOrder) {
+          if (g2.ready[n]) continue;
+          const planes = bmbRandomPlanes(g2.config);
+          if (!planes) { ok = false; break; }
+          g2.planes[n] = planes;
+          g2.ready[n] = true;
+        }
+        if (!ok) return;
+        g2.phase = 'battle';
+        g2.turn = g2.playerOrder[0];
+        bmbBroadcast(room, g2);
+      }, 8000);
     }
     bmbBroadcast(room, g);
     if (cb) cb({ success: true });
