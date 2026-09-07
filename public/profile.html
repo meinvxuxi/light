@@ -163,7 +163,7 @@
     window.addEventListener('pageshow', () => { paintSaved(); if (socket.connected) applyTheme(); });
     setInterval(sendHeartbeat, 10000);
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机' };
     function gameLabel(k) { return GAME_LABEL[k] || k; }
     function statCell(lab, val) {
       return `<div class="st-cell">${lab}<b>${val}</b></div>`;
@@ -191,6 +191,11 @@
     }
     function metricStr(m) {
       const ps = ['场次', '冠军', '胜率', '累计总分', '单局最高'];
+      const vs = [m.games, m.wins, m.winRate + '%', m.totalScore, m.best];
+      return ps.map((p, i) => (i ? '<span class="st-sep">·</span>' : '') + p + ' <span class="mv">' + vs[i] + '</span>').join('');
+    }
+    function metricStrBomber(m) {
+      const ps = ['场次', '冠军', '胜率', '累计机头', '单局最高机头'];
       const vs = [m.games, m.wins, m.winRate + '%', m.totalScore, m.best];
       return ps.map((p, i) => (i ? '<span class="st-sep">·</span>' : '') + p + ' <span class="mv">' + vs[i] + '</span>').join('');
     }
@@ -227,6 +232,13 @@
         </div>
         <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">花菜专属战绩</div>
         ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStr(m)}</div>`).join('')}`;
+      } else if (curGame === 'bomber') {
+        html = `
+        <div class="st-grid">
+          ${statCell('游玩场次', s.games)}${statCell('冠军次数', s.wins)}${statCell('胜率', s.winRate + '%')}${statCell('累计炸毁机头', s.totalScore)}${statCell('一局最高炸毁机头', s.best)}
+        </div>
+        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">炸飞机专属战绩（含一次炸毁多架，不计已击毁机头的重复波及）</div>
+        ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrBomber(m)}</div>`).join('')}`;
       } else {
         html = `
         <div class="st-grid">

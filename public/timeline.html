@@ -48,7 +48,7 @@
     if (!myName) { window.location.href = '/index.html'; }
     if (sessionStorage.getItem('isGuest') === 'true') { window.location.href = '/lobby.html'; }
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', drawing: '画猜接龙' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', drawing: '画猜接龙', bomber: '炸飞机' };
 
     // ===== 显示名映射 =====
     let _dispMap = {};
@@ -86,7 +86,7 @@
               const votes = [];
               if (r.mvpVotes) votes.push(`MVP票 ${r.mvpVotes}`);
               if (r.culpritVotes) votes.push(`罪魁票 ${r.culpritVotes}`);
-              return `第${r.rank}名　${dn(r.name)}　${r.score}分${votes.length ? '（' + votes.join('、') + '）' : ''}`;
+              return `第${r.rank}名　${dn(r.name)}　${(typeof r.heads === 'number' && it.game === 'bomber') ? '炸毁机头 ' + r.heads + ' 架' : r.score + '分'}${votes.length ? '（' + votes.join('、') + '）' : ''}`;
             }).join('<br>');
           const detail = document.createElement('div');
           detail.className = 'tl-detail';

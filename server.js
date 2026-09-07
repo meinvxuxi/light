@@ -237,6 +237,28 @@ function recordBomberSparks(g) {
     if (v > 0 && v > (bomberSparkBoard.get(n) || 0)) bomberSparkBoard.set(n, v);
   }
 }
+function bomberRankOf(g, n) {
+  if (!g.over) return 0;
+  if (n === g.over.winner) return 1;
+  return ((g.elimOrder || []).indexOf(n) + 2) || 2;
+}
+// 炸飞机真实整局 → 时光墙（score = 本局炸毁机头数，与个人空间/烟火师榜口径一致）
+function recordBomberGame(g) {
+  if (!g || !g.over) return;
+  const officials = g.playerOrder.filter(isOfficialPlayer);
+  if (!officials.length) return;
+  addTimeline({
+    ts: Date.now(),
+    type: 'game',
+    game: 'bomber',
+    totalPlayers: g.playerOrder.length,
+    players: officials,
+    results: officials.map(n => {
+      const heads = (g.stats && g.stats[n] && g.stats[n].shipsDown) || 0;
+      return { name: n, score: heads, rank: bomberRankOf(g, n), heads };
+    })
+  });
+}
 
 // ===== 画猜接龙（花菜）榜与战绩 =====
 let drawingHighBoard = new Map(); // 玩家名 -> 单局最高分
@@ -302,6 +324,12 @@ function seedTestProfile(name) {
     game: 'drawing',
     modes: [
       { mode: '4人', games: 4, wins: 1, winRate: 25, totalScore: 30, best: 13 }
+    ]
+  }, {
+    game: 'bomber',
+    modes: [
+      { mode: '2人', games: 1, wins: 0, winRate: 0, totalScore: 2, best: 2 },
+      { mode: '4人', games: 2, wins: 1, winRate: 50, totalScore: 7, best: 4 }
     ]
   }];
   const totals = { games: 10, wins: 4, winRate: 40, totalScore: 1774, best: 336 };
@@ -392,7 +420,16 @@ const ACHIEVEMENTS = {
   dg_fmvp:          { name: 'FMVP',              quality: 'common', game: 'drawing' },
   dg_spirit:        { name: '灵魂画手',          quality: 'common', game: 'drawing' },
   dg_cabbage_grand: { name: '花菜大满贯',        quality: 'rare', game: 'drawing' },
-  dg_cabbage_killer:{ name: '花菜杀手',          quality: 'rare', game: 'drawing' }
+  dg_cabbage_killer:{ name: '花菜杀手',          quality: 'rare', game: 'drawing' },
+  // ===== 炸飞机（bomber）成就（cj1.md） =====
+  bomber_edge:      { name: '描边大师',          quality: 'common', game: 'bomber' },
+  bomber_bounce:    { name: '蹦蹦炸弹',          quality: 'common', game: 'bomber' },
+  bomber_first:     { name: '开门红',            quality: 'rare',   game: 'bomber' },
+  bomber_unlucky:   { name: '倒霉路人',          quality: 'epic',   game: 'bomber' },
+  bomber_streak2:   { name: '世一炸·2连击',      quality: 'common', game: 'bomber' },
+  bomber_streak3:   { name: '世一炸·3连击',      quality: 'rare',   game: 'bomber' },
+  bomber_streak4:   { name: '世一炸·4连击',      quality: 'epic',   game: 'bomber' },
+  bomber_streak5:   { name: '世一炸·5连击+',     quality: 'legend', game: 'bomber' }
 };
 const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
 
@@ -610,7 +647,7 @@ function bmbMakeGame(room, names) {
     roomId: room.roomId, gameType: 'bomber', playerOrder: names.slice(), alive, turn: names[0],
     config, planes: {}, ready: {}, phase: 'deploy', // deploy -> battle -> over
     headHit: {}, sunkHead: {}, boards: {}, attacks: {}, targetShots: {}, firedCoords: {}, meHits: {},
-    stats: {}, hitStreak: {}, lastEmpty: 0, cancelVotes: [], autoT: null,
+    stats: {}, hitStreak: {}, emptyStreak: {}, sunkBy: {}, achievementsByPlayer: {}, lastEmpty: 0, cancelVotes: [], autoT: null,
     startAt: Date.now()
   };
 }
@@ -666,6 +703,13 @@ function bmbAdvance(g, room) {
   }
   return false;
 }
+// 倒霉路人：自己 5 架飞机全是被“传播轰炸（非被直接选为目标）”击毁
+function bmbAwardUnlucky(g, room, d) {
+  if (!g.alive.includes(d)) return;
+  const sb = (g.sunkBy && g.sunkBy[d]) || {};
+  const allProp = (g.sunkHead[d] || []).every(hk => sb[hk] === 'prop');
+  if (allProp) announceAchievement(g, room.roomId, d, 'bomber_unlucky', false);
+}
 function bmbAttack(g, room, attacker, target, r, c) {
   const res = { x: c, y: r, res: '空' };
   (g.stats[attacker] = g.stats[attacker] || {});
@@ -687,6 +731,7 @@ function bmbAttack(g, room, attacker, target, r, c) {
       res.res = '沉';
       g.sunkHead[target] = g.sunkHead[target] || [];
       g.sunkHead[target].push(headKey);
+      (g.sunkBy[target] = g.sunkBy[target] || {})[headKey] = 'direct';
       downed.push(target);
       if (!g.stats[attacker].firstDown) g.stats[attacker].firstDown = (g.attacks[attacker] || []).length + 1;
     } else {
@@ -706,6 +751,7 @@ function bmbAttack(g, room, attacker, target, r, c) {
       if (!(g.sunkHead[other] || []).includes(hk)) {
         g.sunkHead[other] = g.sunkHead[other] || [];
         g.sunkHead[other].push(hk);
+        (g.sunkBy[other] = g.sunkBy[other] || {})[hk] = 'prop';
         if (other !== target) downed.push(other);
       }
     }
@@ -741,11 +787,24 @@ function bmbAttack(g, room, attacker, target, r, c) {
   }
   g.attacks[attacker] = g.attacks[attacker] || [];
   g.attacks[attacker].push({ to: target, x: c, y: r, res: res.res });
-  if (res.res === '空') { g.lastEmpty = (g.lastEmpty || 0) + 1; } else { g.lastEmpty = 0; }
-  if (res.res !== '空') { g.hitStreak[attacker] = (g.hitStreak[attacker] || 0) + 1; } else { g.hitStreak[attacker] = 0; }
+  const isHit = res.res !== '空';
+  g.lastEmpty = isHit ? 0 : (g.lastEmpty || 0) + 1;
+  g.hitStreak[attacker] = isHit ? (g.hitStreak[attacker] || 0) + 1 : 0;
+  g.emptyStreak[attacker] = isHit ? 0 : (g.emptyStreak[attacker] || 0) + 1;
+  // —— 炸飞机成就判定（cj1.md）——
+  if (downed.length >= 2) announceAchievement(g, room.roomId, attacker, 'bomber_bounce', false); // 蹦蹦炸弹
+  if (!(g.attacks[attacker] || []).length && downed.includes(target)) {
+    announceAchievement(g, room.roomId, attacker, 'bomber_first', false); // 开门红
+  }
+  const comboMap = { 2: 'bomber_streak2', 3: 'bomber_streak3', 4: 'bomber_streak4' };
+  const hs = g.hitStreak[attacker] || 0;
+  if (hs >= 5) announceAchievement(g, room.roomId, attacker, 'bomber_streak5', false); // 世一炸·5连击+
+  else if (comboMap[hs]) announceAchievement(g, room.roomId, attacker, comboMap[hs], false);
+  if ((g.emptyStreak[attacker] || 0) >= 8) announceAchievement(g, room.roomId, attacker, 'bomber_edge', true); // 描边大师（可重复累计）
   // 4) 淘汰判定：被击落第 5 架飞机的任何玩家都出局（含波及）
   for (const d of downed) {
     if (g.alive.includes(d) && (g.sunkHead[d] || []).length >= (g.config || []).length) {
+      bmbAwardUnlucky(g, room, d);
       g.alive = g.alive.filter(n => n !== d);
       g.elimOrder = g.elimOrder || [];
       if (!g.elimOrder.includes(d)) g.elimOrder.push(d);
@@ -757,6 +816,7 @@ function bmbAttack(g, room, attacker, target, r, c) {
   // 4.5) 兜底：任何“机头已炸满 5 架”的存活者都补移除；只剩最后一人即进入结算
   for (const n of g.alive.slice()) {
     if ((g.sunkHead[n] || []).length >= (g.config || []).length) {
+      bmbAwardUnlucky(g, room, n);
       g.alive = g.alive.filter(m => m !== n);
       g.elimOrder = g.elimOrder || [];
       if (!g.elimOrder.includes(n)) g.elimOrder.push(n);
@@ -772,6 +832,9 @@ function bmbAttack(g, room, attacker, target, r, c) {
     const winner = g.alive[0];
     const players = g.playerOrder.map(n => ({ name: n, stats: g.stats[n] || {}, rank: n === winner ? 1 : (g.elimOrder || []).indexOf(n) + 2 }));
     g.over = { winner, players };
+    recordBomberGame(g); // 时光墙：只记正式玩家整局
+    broadcastAchievementSummary(room.roomId, g); // 本局成就汇总（炸飞机也可在弹幕端接入展示）
+    if (g.autoT) { clearTimeout(g.autoT); g.autoT = null; }
   } else {
     const seq = g.playerOrder.filter(n => g.alive.includes(n));
     const idx = seq.indexOf(attacker);
