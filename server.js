@@ -583,7 +583,7 @@ function bmbMakeGame(room, names) {
     roomId: room.roomId, gameType: 'bomber', playerOrder: names.slice(), alive, turn: names[0],
     config, planes: {}, ready: {}, phase: 'deploy', // deploy -> battle -> over
     headHit: {}, sunkHead: {}, boards: {}, attacks: {}, targetShots: {}, firedCoords: {}, meHits: {},
-    stats: {}, hitStreak: {}, lastEmpty: 0,
+    stats: {}, hitStreak: {}, lastEmpty: 0, cancelVotes: [],
     startAt: Date.now()
   };
 }
@@ -593,13 +593,20 @@ function bmbState(g, name, room) {
   for (const [t, arr] of Object.entries(g.targetShots || {})) {
     if (t !== name) shotsByTarget[t] = (arr || []).slice();
   }
+  const online = {};
+  for (const n of g.playerOrder) {
+    const hb = userLastHeartbeat.get(n);
+    const sid = room.playerMap.get(n);
+    online[n] = !!(hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && bomberAtGame.get(n) === sid && io.sockets.sockets.has(sid));
+  }
   return {
-    phase: g.phase, turn: g.turn, alive: g.alive.slice(), config: g.config.slice(), you: name,
+    phase: g.phase, turn: g.turn, alive: g.alive.slice(), order: g.playerOrder.slice(), config: g.config.slice(), you: name,
     ready: g.ready, board: bmbBoardView(g, name),
     yourHits: (g.attacks && g.attacks[name]) || [],
     shotsByTarget, firedByTarget: g.firedCoords || {},
     meHits: (g.meHits && g.meHits[name]) || [],
     stats: g.stats[name] || {},
+    online, cancelVotes: (g.cancelVotes || []).slice(),
     over: g.over || null
   };
 }
@@ -697,6 +704,7 @@ function bmbAttack(g, room, attacker, target, r, c) {
 }
 const drawingAtGame = new Map(); // playerName -> 当前正打开“画猜接龙游戏页”的 socket.id（用于判定谁真正在对局内）
 const lobbyViewers = new Map(); // playerName -> 正在大厅页的 socket.id（表情包跨页互发用）
+const bomberAtGame = new Map(); // playerName -> 正在炸飞机游戏页的 socket.id（离开/返回与取消判定）
 // 通用取"某房间当前进行中的对局"（yahtzee / light / drawing 共用）
 function activeGameOf(room) {
   if (!room) return null;
@@ -3034,6 +3042,39 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true });
   });
 
+  // 玩家真正打开炸飞机页：登记在场（房间页/大厅不算在线）
+  socket.on('bomber_enter', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    bomberAtGame.set(name, socket.id);
+    const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'bomber') : null;
+    const g = room && bomberGames[room.roomId];
+    if (room && g) bmbBroadcast(room, g);
+  });
+  // 取消对局：在线者全员同意（离线不计票，离开的人可在房间页“返回游戏”继续玩）
+  socket.on('bomber_cancel_vote', (cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'bomber') : null;
+    const g = room && bomberGames[room.roomId];
+    if (!room || !g || !g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const members = g.playerOrder; // 本局所有人
+    const onlineNames = members.filter(n => {
+      const hb = userLastHeartbeat.get(n);
+      const sid = room.playerMap.get(n);
+      return hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && bomberAtGame.get(n) === sid && io.sockets.sockets.has(sid);
+    });
+    if (!g.cancelVotes.includes(name)) g.cancelVotes.push(name);
+    if (onlineNames.length && g.cancelVotes.length >= onlineNames.length) {
+      delete bomberGames[room.roomId];
+      io.to(room.roomId).emit('bomber_cancel');
+      Object.keys(room.seats).forEach(seatId => { if (room.seats[seatId]) room.seats[seatId].ready = false; });
+      broadcastRoom(room);
+      if (cb) cb({ success: true, cancelled: true });
+      return;
+    }
+    bmbBroadcast(room, g);
+    if (cb) cb({ success: true, votes: g.cancelVotes.slice() });
+  });
   // ========== 炸飞机：摆放 / 开火 ==========
   socket.on('bomber_pull', (cb) => {
     const name = socketToUser.get(socket.id);
@@ -3086,6 +3127,8 @@ io.on('connection', (socket) => {
     if (drawingAtGame.get(name) === socket.id) drawingAtGame.delete(name);
     // 离开大厅页
     if (lobbyViewers.get(name) === socket.id) lobbyViewers.delete(name);
+    // 离开炸飞机游戏页
+    if (bomberAtGame.get(name) === socket.id) bomberAtGame.delete(name);
 
     // 默契空间：离开会话（断线兜底）
     const syncKey = socketSyncKey.get(socket.id);

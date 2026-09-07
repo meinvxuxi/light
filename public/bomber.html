@@ -32,12 +32,17 @@
   .pl { border:2px solid #dfe4ea; padding:4px 8px; border-radius:8px; font-size:.8rem; cursor:pointer; background:#fff; }
   .pl.sel { border-color:#4a90d9; font-weight:700; }
   .legend { font-size:.76rem; color:#9aa5b1; margin-top:4px; line-height:1.7; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:12px; font-size:.76rem; margin:0 4px 2px 0; }
+  .pill.ready { color:#fff; background:#6f9e63; }
+  .pill.wait { color:#2f6fb2; background:rgba(74,144,217,.15); }
+  .pill.off { color:#e67e22; background:#fdeede; }
 </style>
 </head>
 <body>
   <div class="head">
     <b>💣 炸飞机</b>
-    <a class="go" href="#" onclick="if(confirm('退出会放弃本局吗？'))location.href='/lobby.html';return false;">返回大厅</a>
+    <a class="go" style="color:#c62828;margin-right:14px;" onclick="bmbCancelVote()">取消对局</a>
+    <a class="go" href="/lobby.html">返回大厅</a>
   </div>
   <div class="wrap">
     <div class="stage" id="stage">连接中…</div>
@@ -84,7 +89,16 @@
     function undoLast(){ if(placed.length){ placed.pop(); selType=null; render(); } }
     function rotLabel(){ return ['上','右','下','左'][selRot]||'上'; }
     function submit(){ const payload=placed.map(p=>({type:p.type,rotation:p.rotation||0,headR:p.headR,headC:p.headC})); socket.emit('bomber_place',{planes:payload},(res)=>{ if(res&&!res.success) toast(res.msg||'摆放无效'); }); }
-    function fireAt(r,c){ if(!target||target===me()) return; socket.emit('bomber_fire',{target,x:c,y:r},(res)=>{ if(res&&!res.success) toast(res.msg||'无法轰炸'); }); }
+    function bmbCancelVote(){ socket.emit('bomber_cancel_vote', function(res){ if(res&&res.success){ if(res.cancelled) return; const v=(res.votes||[]).length; const total=(S&&S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0); toast('已投票取消（'+v+'/'+total+'）等待其他在线玩家…'); } }); }
+    function statusPills(){
+      const names=S&&S.order?S.order.slice():[];
+      return names.map(function(n){
+        const on=S.online&&S.online[n];
+        let cls='off',lab='离线';
+        if(on){ if(S.ready&&S.ready[n]){cls='ready';lab='已就位';} else {cls='wait';lab='等待中';} }
+        return '<span class="pill '+cls+'">'+esc(n)+' · '+lab+'</span>';
+      }).join('');
+    }
     function me(){ return S&&S.you; }
     function render(){
       const body=document.getElementById('body'); if(!S||!body) return;
@@ -94,9 +108,9 @@
         body.innerHTML = '<div class="panel"><div class="ptitle">你的棋盘（先选飞机→转方向→点格子=机头落点）</div>'+gridTable(placed.flatMap(p=>p.cells),'placeAt')
           +'<div class="cfgline">本轮构成：机型1 ×'+remCount(1)+'（已放'+placed.filter(p=>p.type===1).length+'）　机型2 ×'+remCount(2)+'（已放'+placed.filter(p=>p.type===2).length+'）　机型3 ×'+remCount(3)+'（已放'+placed.filter(p=>p.type===3).length+'）</div>'
           +'<div class="pile">'+types.map(function(t){ var c=remCount(t); return '<span class="pl '+(selType===t?'sel':'')+'" style="'+(c<=0?'opacity:.35;pointer-events:none;':'')+'" onclick="selType='+t+';render()">机型'+t+'（剩'+c+'）</span>'; }).join('')+'</div>'
-          +'<div class="bar"><button onclick="selRot=(selRot+1)%4;render()">朝向：'+rotLabel()+'（点我旋转）</button> <button onclick="undoLast()">撤销上一架</button> <button onclick="submit()" '+(placed.length===5?'':'disabled')+'>确认摆放（'+placed.length+'/5）</button></div>'
+          +'<div class="bar"><button onclick="selRot=(selRot+1)%4;render()">朝向：'+rotLabel()+'（点我旋转）</button> <button onclick="undoLast()">撤销上一架</button> <button onclick="submit()" '+(placed.length===5&&!S.ready[S.you]?'':'disabled')+'>'+(S.ready[S.you]?'已提交，等待其他人…':'确认摆放（'+placed.length+'/5）')+'</button></div>'
           +'<div class="legend">点已放格可移除单架 · 共 '+remSum+' 架待摆</div>'
-          +'<div class="tip">其他人已提交：'+Object.keys(S.ready||{}).length+'/'+S.alive.length+'</div></div>';
+          +'<div class="tip">'+statusPills()+'</div></div>';
         return;
       }
       if(S.phase==='battle'){
@@ -111,6 +125,7 @@
           +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" onclick="target=\''+n+'\';render()">'+esc(n)+'</span>';}).join('')+'</div>'
           +gridTable(null,'fireAt',targetHits,missMap)
           +'<div class="cfgline">'+targetHits.filter(function(h){return h.res==='沉';}).length+' 沉 / '+targetHits.filter(function(h){return h.res==='伤';}).length+' 伤 / '+targetHits.filter(function(h){return h.res==='空';}).length+' 空</div></div></div>'
+          +'<div class="tip" style="text-align:center;">'+statusPills()+'</div>'
           +'<div class="stage" style="margin-top:8px;">存活：'+S.alive.join('、')+'　·　当前行动：'+esc(S.turn)+'</div>';
         return;
       }
@@ -128,7 +143,8 @@
     socket.on('bomber_state', function(s){ S=s; if(s.phase==='battle'||s.phase==='over') placed=[]; render(); });
     var barEl=document.createElement('div'); barEl.className='barrage'; document.body.appendChild(barEl); var barTimer=null;
     socket.on('bomber_boom', function(d){ if(!d||!d.text) return; barEl.textContent=d.text; barEl.style.opacity='1'; clearTimeout(barTimer); barTimer=setTimeout(function(){ barEl.style.opacity='0'; },2600); });
-    socket.on('connect', function(){ setTimeout(function(){ socket.emit('bomber_pull',function(res){ if(res&&res.success){ S=res; render(); } }); },400); });
+    socket.on('bomber_cancel', function(){ location.href='/room.html?game=bomber'; });
+    socket.on('connect', function(){ setTimeout(function(){ socket.emit('bomber_enter'); socket.emit('bomber_pull',function(res){ if(res&&res.success){ S=res; render(); } }); },400); });
   
 </script>
   <script src="/emoji-widget.js"></script>
