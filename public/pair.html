@@ -424,7 +424,7 @@
       if (wallMode) { renderWall(); return; }
       const w = document.getElementById('wrap');
       if (!qaMode) {
-        w.innerHTML = metaHtml() + (isMember ? aliasBarHtml() + aliasHistHtml() + '<div class="pet-entry" onclick="petOpen()">🐾 <span class="go">默契宠物小屋</span></div>' + menuHtml() : viewerHtml());
+        w.innerHTML = metaHtml() + (isMember ? aliasBarHtml() + aliasHistHtml() + menuHtml() : viewerHtml());
       } else {
         w.innerHTML = metaHtml();
       }
