@@ -616,8 +616,11 @@ function bmbState(g, name, room) {
     const sid = room.playerMap.get(n);
     online[n] = !!(hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && bomberAtGame.get(n) === sid && io.sockets.sockets.has(sid));
   }
+  const disp = {};
+  g.playerOrder.forEach(n => { disp[n] = getDisplayName(n); });
   return {
     phase: g.phase, turn: g.turn, alive: g.alive.slice(), order: g.playerOrder.slice(), config: g.config.slice(), you: name,
+    disp,
     ready: g.ready, board: bmbBoardView(g, name),
     yourHits: (g.attacks && g.attacks[name]) || [],
     shotsByTarget, firedByTarget: g.firedCoords || {},

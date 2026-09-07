@@ -24,7 +24,7 @@
   table.g td.miss { background:#eceff3; }
   table.g td.wound { background:#cfe9d8; }
   table.g td.ownhit { background:#cdd3da; color:#55606c; font-weight:800; }
-  .barrage { position:fixed; left:50%; bottom:56px; transform:translateX(-50%); z-index:98; font-size:.86rem; color:#2c3e50; background:rgba(255,255,255,.9); border:1px solid #4a90d9; padding:6px 16px; border-radius:12px; pointer-events:none; opacity:0; transition:opacity .2s; }
+  .barrage { position:fixed; left:50%; bottom:56px; transform:translateX(-50%); z-index:98; font-size:.9rem; color:#c62828; background:rgba(255,255,255,.9); border:1px solid rgba(198,40,40,.5); padding:7px 18px; border-radius:12px; pointer-events:none; opacity:0; transition:opacity .2s; font-weight:600; }
   .bar { text-align:center; margin:12px 0; }
   .go { color:#4a90d9; cursor:pointer; font-weight:600; }
   .tip { font-size:.8rem; color:#6b7a90; min-height:18px; }
@@ -43,7 +43,7 @@
 <body>
   <div class="head">
     <b>💣 炸飞机</b>
-    <a class="go" style="color:#c62828;margin-right:14px;" onclick="bmbCancelVote()">取消对局</a>
+    <a class="go" style="color:#c62828;margin-right:14px;" onclick="bmbCancelVote()" id="cancelLb">取消对局</a>
     <a class="go" href="/lobby.html">返回大厅</a>
   </div>
   <div class="wrap">
@@ -66,6 +66,7 @@
     function cellsOf(p) { return rot(p.type, p.rotation||0).map(([dr,dc]) => ({ r: p.headR+dr, c: p.headC+dc, head: dr===0&&dc===0 })); }
     let S=null, placed=[], selType=null, selRot=0, preview=null, target=null, toastEl=null;
     function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+    function dn(n){ return (S&&S.disp&&S.disp[n])?S.disp[n]:n; }
     function tip(t){ const el=document.getElementById('stage'); if(el) el.textContent=t||''; }
     function toast(m){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;background:rgba(255,255,255,.9);border:1px solid #4a90d9;color:#2c3e50;padding:8px 18px;border-radius:10px;font-size:.86rem;'; document.body.appendChild(toastEl);} toastEl.textContent=m; clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.textContent='';},1800); }
     function gridTable(cells, clickFn, hits, missMap) {
@@ -97,6 +98,7 @@
       preview={ type:selType, rotation:selRot, headR:r, headC:c, cells:cells.map(x=>({r:x.r,c:x.c,pv:1,bad:!!overlap||out})), valid:!overlap&&!out };
       render();
     }
+    function rotPreview(){ if(!preview) return; selRot=(selRot+1)%4; const cells=cellsOf({type:preview.type,rotation:selRot,headR:preview.headR,headC:preview.headC}); const out=cells.some(x=>x.r<1||x.r>15||x.c<1||x.c>15); const own=occupiedSet(); const overlap=cells.some(x=>own.has(x.r+','+x.c)); preview.rotation=selRot; preview.cells=cells.map(x=>({r:x.r,c:x.c,pv:1,bad:!!overlap||out})); preview.valid=!overlap&&!out; render(); }
     function confirmPreview(){ if(!preview) return; if(!preview.valid) return toast('重叠或越界，不能确认'); placed.push({type:preview.type,rotation:preview.rotation,headR:preview.headR,headC:preview.headC,cells:preview.cells.map(x=>({r:x.r,c:x.c,head:x.r===preview.headR&&x.c===preview.headC}))}); preview=null; selType=null; render(); }
     function cancelPreview(){ preview=null; render(); }
     function removeAt(r,c){ if(preview) return; const i=placed.findIndex(p=>p.cells.some(x=>x.r===r&&x.c===c)); if(i>=0){ placed.splice(i,1); render(); } }
@@ -110,7 +112,7 @@
         const on=S.online&&S.online[n];
         let cls='off',lab='离线';
         if(on){ if(S.ready&&S.ready[n]){cls='ready';lab='已就位';} else {cls='wait';lab='等待中';} }
-        return '<span class="pill '+cls+'">'+esc(n)+' · '+lab+'</span>';
+        return '<span class="pill '+cls+'">'+esc(dn(n))+' · '+lab+'</span>';
       }).join('');
       if(S && S.cancelVotes && S.cancelVotes.length){
         const onlineTotal=(S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0);
@@ -119,7 +121,9 @@
       return out;
     }
     function me(){ return S&&S.you; }
+    function updateCancel(){ const el=document.getElementById('cancelLb'); if(!el) return; if(!S){ el.textContent='取消对局'; return; } const v=(S.cancelVotes||[]).length; const voted=(S.cancelVotes||[]).includes(S.you); const total=(S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0); el.textContent = v>0 ? ('取消对局（'+v+'/'+total+(voted?'，再点撤回':'')+'）') : '取消对局'; }
     function render(){
+      updateCancel();
       const body=document.getElementById('body'); if(!S||!body) return;
       if(S.phase==='deploy'){
         const types=[1,2,3]; const remSum=types.reduce((a,t)=>a+remCount(t),0);
@@ -129,7 +133,7 @@
           +'<div class="cfgline">本轮构成：机型1 ×'+remCount(1)+'（已放'+placed.filter(p=>p.type===1).length+'）　机型2 ×'+remCount(2)+'（已放'+placed.filter(p=>p.type===2).length+'）　机型3 ×'+remCount(3)+'（已放'+placed.filter(p=>p.type===3).length+'）</div>'
           +'<div class="pile">'+types.map(function(t){ var c=remCount(t); return '<span class="pl '+(selType===t?'sel':'')+'" style="'+(c<=0?'opacity:.35;pointer-events:none;':'')+'" onclick="preview=null;selType='+t+';render()">机型'+t+'（剩'+c+'）</span>'; }).join('')+'</div>'
           +(preview
-            ? '<div class="bar"><button onclick="confirmPreview()">✓ 确认（'+rotLabel()+'）</button> <button onclick="cancelPreview()">✕ 取消预览</button></div><div class="tip" style="color:'+(preview.valid?'#2f8f46':'#e67e22')+';">'+(preview.valid?'点击其它格子可移动预览':'半透明橙色=重叠或越界，不能确认')+'</div>'
+            ? '<div class="bar"><button onclick="rotPreview()">转向：'+rotLabel()+'</button> <button onclick="confirmPreview()">✓ 确认</button> <button onclick="cancelPreview()">✕ 取消预览</button></div><div class="tip" style="color:'+(preview.valid?'#2f8f46':'#e67e22')+';">'+(preview.valid?'点击其它格子可移动预览':'半透明橙色=重叠或越界，不能确认')+'</div>'
             : '<div class="bar"><button onclick="selRot=(selRot+1)%4;render()">朝向：'+rotLabel()+'（点我旋转）</button> <button onclick="undoLast()">撤销上一架</button> <button onclick="submit()" '+(placed.length===5&&!S.ready[S.you]?'':'disabled')+'>'+(S.ready[S.you]?'已提交，等待其他人…':'确认摆放（'+placed.length+'/5）')+'</button></div>')
           +'<div class="legend">'+placed.length+'/5 已放 · '+remSum+' 待摆</div>'
           +'<div class="tip">'+statusPills()+'</div></div>';
@@ -144,19 +148,19 @@
         const myTurn=S.turn===me();
         body.innerHTML = '<div class="gridwrap"><div class="panel"><div class="ptitle">我的布防（✕=被炸过）</div>'+gridTable(yourCells)+'</div>'
           +'<div class="panel"><div class="ptitle">轰炸 '+(target||'')+' 的棋盘'+(myTurn?'（轮到你）':'（等待对方…）')+'</div>'
-          +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" onclick="target=\''+n+'\';render()">'+esc(n)+'</span>';}).join('')+'</div>'
+          +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" onclick="target=\''+n+'\';render()">'+esc(dn(n))+'</span>';}).join('')+'</div>'
           +gridTable(null,'fireAt',targetHits,missMap)
           +'<div class="cfgline">'+targetHits.filter(function(h){return h.res==='沉';}).length+' 沉 / '+targetHits.filter(function(h){return h.res==='伤';}).length+' 伤 / '+targetHits.filter(function(h){return h.res==='空';}).length+' 空</div></div></div>'
           +'<div class="tip" style="text-align:center;">'+statusPills()+'</div>'
-          +'<div class="stage" style="margin-top:8px;">存活：'+S.alive.join('、')+'　·　当前行动：'+esc(S.turn)+'</div>';
+          +'<div class="stage" style="margin-top:8px;">存活：'+S.alive.map(function(n){return dn(n);}).join('、')+'　·　当前行动：'+esc(dn(S.turn))+'</div>';
         return;
       }
       if(S.phase==='over'){
         const rows=(S.over&&S.over.players||[]).slice().sort(function(a,b){return a.rank-b.rank;}).map(function(p){
           const st=p.stats||{};
-          return '<tr><td>'+p.rank+'</td><td>'+esc(p.name)+'</td><td>'+(st.bodyHits||0)+'</td><td>'+(st.shipsDown||0)+'</td><td>'+(st.firstHit||'—')+'</td><td>'+(st.firstDown||'—')+'</td></tr>';
+          return '<tr><td>'+p.rank+'</td><td>'+esc(dn(p.name))+'</td><td>'+(st.bodyHits||0)+'</td><td>'+(st.shipsDown||0)+'</td><td>'+(st.firstHit||'—')+'</td><td>'+(st.firstDown||'—')+'</td></tr>';
         }).join('');
-        body.innerHTML = '<div class="stage" style="font-size:1.1rem;padding-top:20px;">🏆 本局胜者：'+esc(S.over?S.over.winner:'')+'</div>'
+        body.innerHTML = '<div class="stage" style="font-size:1.1rem;padding-top:20px;">🏆 本局胜者：'+esc(dn(S.over?S.over.winner:''))+'</div>'
           +'<table style="border-collapse:collapse;margin:10px auto;font-size:.86rem;"><tr style="background:#eef1f5;"><th style="padding:4px 10px;border:1px solid #dfe4ea;">名次</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">玩家</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">炸中机身</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">炸中机头</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">首中步数</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">首沉步数</th></tr>'+rows+'</table>'
           +'<div class="bar"><a class="go" href="/lobby.html">返回大厅</a></div>';
         return;
