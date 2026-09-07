@@ -522,6 +522,7 @@ const ACH_Q_LABEL = { common: '普通', rare: '稀有', epic: '史诗', legend: 
 const yahtzeeGames = {};
 const drawingGames = {}; // 画猜接龙（drawing）对局
 const drawingAtGame = new Map(); // playerName -> 当前正打开“画猜接龙游戏页”的 socket.id（用于判定谁真正在对局内）
+const lobbyViewers = new Map(); // playerName -> 正在大厅页的 socket.id（表情包跨页互发用）
 // 通用取"某房间当前进行中的对局"（yahtzee / light / drawing 共用）
 function activeGameOf(room) {
   if (!room) return null;
@@ -2777,6 +2778,13 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: !!r.ok, msg: r.msg || '已换好新颜色', ...snap });
   });
 
+  // ===== 大厅在场（表情包可在主页互相看见/发送） =====
+  socket.on('lobby_enter', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    lobbyViewers.set(name, socket.id);
+  });
+
   // ===== 表情包：取可装配清单 / 保存装配 / 游戏内发送 =====
   socket.on('get_emoji', (cb) => {
     const name = socketToUser.get(socket.id);
@@ -2807,12 +2815,20 @@ io.on('connection', (socket) => {
     const syncKey = socketSyncKey.get(socket.id);
     const payload = { from: name, id, url };
     if (syncKey && syncSessions.has(syncKey)) {
-      io.to('sync:' + syncKey).emit('emoji_burst', payload);
+      socket.to('sync:' + syncKey).emit('emoji_burst', payload);
     } else {
+      let inRoom = false;
       for (const room of Object.values(GAME_ROOMS)) {
         if (room.playerMap.has(name) && (activeGameOf(room) || Object.values(room.seats).some(s => s && s.name === name))) {
-          io.to(room.roomId).emit('emoji_burst', payload);
+          socket.to(room.roomId).emit('emoji_burst', payload);
+          inRoom = true;
           break;
+        }
+      }
+      if (!inRoom) {
+        // 大厅互发：发给其他正在主页的人
+        for (const [uname, sid] of lobbyViewers) {
+          if (uname !== name && io.sockets.sockets.has(sid)) io.to(sid).emit('emoji_burst', payload);
         }
       }
     }
@@ -2825,6 +2841,8 @@ io.on('connection', (socket) => {
     socketToUser.delete(socket.id);
     // 离开画猜游戏页：清除“正在对局页”标记（仅当标记还指向本 socket）
     if (drawingAtGame.get(name) === socket.id) drawingAtGame.delete(name);
+    // 离开大厅页
+    if (lobbyViewers.get(name) === socket.id) lobbyViewers.delete(name);
 
     // 默契空间：离开会话（断线兜底）
     const syncKey = socketSyncKey.get(socket.id);
