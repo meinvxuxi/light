@@ -14,12 +14,12 @@
   .panel { text-align:center; }
   .ptitle { font-size:.82rem; color:#9aa5b1; margin-bottom:6px; }
   table.g { border-collapse:collapse; margin:0 auto; }
-  table.g td { width:20px; height:20px; border:1px solid #dfe4ea; font-size:9px; text-align:center; cursor:pointer; background:#fff; }
-  table.g td:hover { background:#eef4fb; }
+  table.g td { width:20px; height:20px; border:1px solid #dfe4ea; font-size:9px; text-align:center; background:#fff; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; }
+  table.g td.clickable { cursor:pointer; }
   table.g td.mine { background:#cfe9d8; }
   table.g td.mine.head { background:#ffb3b3; }
   table.g td.pv { background:rgba(74,144,217,.3); border-color:rgba(74,144,217,.8); }
-  table.g td.pvbad { background:rgba(240,147,43,.35); border-color:#e67e22; }
+  table.g td.pvbad { background:rgba(240,147,43,.72); border-color:#e67e22; box-shadow:inset 0 0 0 2px rgba(230,126,34,.9); }
   table.g td.hit { background:#ff6b6b; color:#fff; }
   table.g td.miss { background:#eceff3; }
   table.g td.wound { background:#cfe9d8; }
@@ -65,6 +65,10 @@
   body.dyn-green .overcard { border-color:rgba(111,158,99,.42); }
   body.dyn-gold .overcard { border-color:rgba(214,168,67,.42); }
   body.dyn-red .overcard { border-color:rgba(166,64,58,.42); }
+  .ach-pop { position:fixed; left:50%; top:22%; transform:translate(-50%,0); z-index:6000; background:rgba(255,255,255,.8); border:1px solid rgba(74,144,217,.55); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-radius:16px; padding:12px 22px; text-align:center; font-weight:700; font-size:.95rem; color:#2c3e50; box-shadow:0 10px 30px rgba(31,45,61,.2); pointer-events:none; opacity:0; transition:opacity .25s; }
+  .ach-pop small { display:block; color:#9aa5b1; font-weight:400; font-size:.75rem; margin-top:3px; }
+  .ovach { margin-top:12px; border-top:1px dashed rgba(74,144,217,.35); padding-top:8px; font-size:.8rem; }
+  .ovach .ach-row2 { display:flex; justify-content:space-between; align-items:center; padding:3px 2px; color:#6b7a90; }
 </style>
 </head>
 <body>
@@ -91,7 +95,7 @@
       3: [[0,0],[1,-1],[1,0],[1,1],[2,-2],[2,0],[2,2],[3,0],[4,-1],[4,0],[4,1]] };
     function rot(type, rot) { return CELLS[type].map(([dr, dc]) => rot===1?[dc,-dr]:rot===2?[-dr,-dc]:rot===3?[-dc,dr]:[dr,dc]); }
     function cellsOf(p) { return rot(p.type, p.rotation||0).map(([dr,dc]) => ({ r: p.headR+dr, c: p.headC+dc, head: dr===0&&dc===0 })); }
-    let S=null, placed=[], selType=null, selRot=0, preview=null, target=null, toastEl=null;
+    let S=null, placed=[], selType=null, selRot=0, preview=null, target=null, toastEl=null, achSummary={};
     function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     function dn(n){ return (S&&S.disp&&S.disp[n])?S.disp[n]:n; }
     function tip(t){ const el=document.getElementById('stage'); if(el) el.textContent=t||''; }
@@ -114,7 +118,7 @@
         } else if(cell){ cls=cell.head?'mine head':'mine'; }
         else if(missMap && missMap[key]) cls='miss';
         else if(hits){ const ht=hits.find(h=>h.y===r&&h.x===c); if(ht){ cls = ht.res==='沉'?'hit':(ht.res==='伤'?'wound':'miss'); txt = ht.res==='沉'?'✕':''; } }
-        h+='<td class="'+cls+'"'+extra+(clickFn?' onclick="'+clickFn+'('+r+','+c+')"':'')+'>'+txt+'</td>';
+        h+='<td class="'+cls+(clickFn?' clickable':'')+'"'+extra+(clickFn?' onclick="'+clickFn+'('+r+','+c+')"':'')+'>'+txt+'</td>';
       } h+='</tr>'; }
       return h+'</table>';
     }
@@ -208,8 +212,17 @@
             +'<div class="ovstat"><span>机身 '+ (st.bodyHits||0) +'</span><span>机头 '+(st.shipsDown||0)+'</span><span>首中 '+(st.firstHit||'—')+'</span><span>首沉 '+(st.firstDown||'—')+'</span></div>'
             +'</div>';
         }).join('');
+        const qC={common:'#9aa5b1',rare:'#4caf50',epic:'#9c27b0',legend:'#ff9800',hidden:'#d32f2f'};
+        const achRows=plist.map(function(p){
+          const arr=achSummary[p.name]||[];
+          if(!arr.length) return '';
+          return '<div class="ach-row2"><span>'+esc(dn(p.name))+'</span><span>'
+            +arr.map(function(a){ return '<span style="color:'+(qC[a.quality]||'#2c3e50')+';font-weight:600;">🏅 '+esc(a.name)+'</span>'; }).join('　')
+            +'</span></div>';
+        }).filter(Boolean).join('');
+        const achHtml=achRows?'<div class="ovach"><div style="font-weight:700;color:#2c3e50;margin-bottom:2px;">🎖 本局成就</div>'+achRows+'</div>':'';
         body.innerHTML='<div class="overcard"><div class="wline">🏆 '+esc(dn(winName))+' 获胜！</div>'
-          +'<div class="ovrow">'+ov+'</div></div>'
+          +'<div class="ovrow">'+ov+'</div>'+achHtml+'</div>'
           +'<div class="bar"><a class="go" href="/lobby.html">返回大厅</a></div>';
         return;
       }
@@ -217,6 +230,18 @@
     socket.on('bomber_state', function(s){ S=s; if(s.phase==='battle'||s.phase==='over') placed=[]; render(); });
     var barEl=document.createElement('div'); barEl.className='barrage'; document.body.appendChild(barEl); var barTimer=null;
     socket.on('bomber_boom', function(d){ if(!d||!d.text) return; barEl.textContent=d.text; barEl.style.opacity='1'; clearTimeout(barTimer); barTimer=setTimeout(function(){ barEl.style.opacity='0'; },2600); });
+    var achEl=document.createElement('div'); achEl.className='ach-pop'; document.body.appendChild(achEl); var achTimer=null;
+    socket.on('achievement_unlocked', function(d){
+      if(!d||!d.name) return;
+      const qLab={common:'普通',rare:'稀有',epic:'史诗',legend:'传说',hidden:'隐藏'};
+      achEl.innerHTML='🏅 解锁成就「'+esc(d.name)+'」<small>'+((d.quality&&(qLab[d.quality]||d.quality))||'')+(d.playerName?' · '+esc(dn(d.playerName)):'')+'</small>';
+      achEl.style.opacity='1'; clearTimeout(achTimer); achTimer=setTimeout(function(){ achEl.style.opacity='0'; },2600);
+    });
+    socket.on('achievement_summary', function(d){
+      if(!d||!d.players) return;
+      achSummary=d.players;
+      if(S&&S.phase==='over') render();
+    });
     socket.on('bomber_cancel', function(){ location.href='/room.html?game=bomber'; });
     socket.on('connect', function(){ setTimeout(function(){ socket.emit('bomber_enter'); socket.emit('bomber_pull',function(res){ if(res&&res.success){ S=res; render(); } }); },400); });
     // 兜底轮询：事件偶发收不到也能同步；对局已结束/被取消时自动回房间

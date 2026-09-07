@@ -764,8 +764,9 @@ function bmbAttack(g, room, attacker, target, r, c) {
       downed.push(target);
       if (!g.stats[attacker].firstDown) g.stats[attacker].firstDown = (g.attacks[attacker] || []).length + 1;
     } else {
-      res.res = sunk ? '沉' : '伤';
-      if (!sunk) {
+      // 机身格：无论这架飞机的机头是否已沉，一律显示“伤”（绿）并计入机身命中
+      res.res = hitCell.cell.head ? '沉' : '伤';
+      if (!hitCell.cell.head) {
         (g.stats[attacker] = g.stats[attacker] || {}).bodyHits = (g.stats[attacker].bodyHits || 0) + 1;
         if (!g.stats[attacker].firstHit) g.stats[attacker].firstHit = (g.attacks[attacker] || []).length + 1;
       }
@@ -800,8 +801,7 @@ function bmbAttack(g, room, attacker, target, r, c) {
     for (const p of (g.planes[o] || [])) {
       const cc = (p.cells || []).find(cell => cell.r === r && cell.c === c);
       if (cc) {
-        const planeSunk = (g.sunkHead[o] || []).includes(p.headKey);
-        oRes = cc.head ? '沉' : (planeSunk ? '沉' : '伤');
+        oRes = cc.head ? '沉' : '伤'; // 机头=红；机身格无论机头是否已沉都显示绿
         break;
       }
     }
