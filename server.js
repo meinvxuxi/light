@@ -2156,10 +2156,20 @@ io.on('connection', (socket) => {
           { name: peers[0], score: 262, rank: 1 },
           { name: me, score: 238, rank: 2 }
         ]
-      }
+      },
+      {
+        ts: now - 8000, type: 'game', game: 'bomber', totalPlayers: 4, players: all, _test: true,
+        results: [
+          { name: me, score: 6, rank: 1, heads: 6 },
+          { name: peers[0], score: 3, rank: 2, heads: 3 },
+          { name: peers[1], score: 1, rank: 3, heads: 1 },
+          { name: peers[2], score: 0, rank: 4, heads: 0 }
+        ]
+      },
+      { ts: now - 5000, type: 'achievement', player: me, achievementId: 'bomber_edge', achievementName: '描边大师', quality: 'common', _test: true }
     ];
     seeds.forEach(e => addTimeline(e));
-    if (cb) cb({ success: true, count: seeds.length, msg: '已生成 2 条对局 + 1 条成就的测试时光墙' });
+    if (cb) cb({ success: true, count: seeds.length, msg: '已生成 3 条对局 + 2 条成就的测试时光墙（含炸飞机）' });
   });
 
   // 测试助手：清掉测试生成的时光墙记录（保留正式记录）
