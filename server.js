@@ -309,6 +309,36 @@ function resolveUserTheme(name) {
   const u = usersData[name];
   return (u && u.theme) ? u.theme : defaultThemeFor(name);
 }
+// ===== 表情包：清单（p1~p4 专属 + 通用；不区分通用/专属文案，纯平铺） =====
+const EXPR_DIRS = [
+  { key: 'bqb1', dir: 'p1/bqb1', owner: '玩家1' },
+  { key: 'bqb2', dir: 'p2/bqb2', owner: '玩家2' },
+  { key: 'bqb3', dir: 'p3/bqb3', owner: '玩家3' },
+  { key: 'bqb4', dir: 'p4/bqb4', owner: '玩家4' },
+  { key: 'common', dir: 'p1/表情包通用', owner: null } // 通用包（界面不写“通用/专属”字样）
+];
+let EXPR_CACHE = null;
+function exprList() {
+  if (EXPR_CACHE) return EXPR_CACHE;
+  const out = [];
+  for (const p of EXPR_DIRS) {
+    const folder = path.join(__dirname, 'public', 'assets', 'avatars', p.dir);
+    let files = [];
+    try { files = fs.readdirSync(folder).filter(f => f.toLowerCase().endsWith('.png')); } catch (e) { /* 目录不存在跳过 */ }
+    files.forEach(f => {
+      out.push({
+        id: f.slice(0, -4), // 去掉 .png，其余按原文件名
+        url: '/assets/avatars/' + p.dir.split('/').map(encodeURIComponent).join('/') + '/' + encodeURIComponent(f),
+        owner: p.owner
+      });
+    });
+  }
+  EXPR_CACHE = out;
+  return out;
+}
+function exprAllowedFor(name) {
+  return exprList().filter(x => !x.owner || x.owner === name);
+}
 // 正式玩家的“上次离线时间”写入 users.json（重启后仍记得）
 function persistLastOffline(name) {
   if (!OFFICIAL_ACCOUNT_NAMES.includes(name)) return;
@@ -1838,6 +1868,7 @@ io.on('connection', (socket) => {
       title: playerTitle(name),
       unlockedTitles: playerUnlockedTitles(name),
       titleChoice: (u.title || ''),
+      emojiIds: (u.emoji || []).slice(),
       canEdit: OFFICIAL_ACCOUNT_NAMES.includes(name),
       allowedThemes: ['initial']
         .concat(OWNER_THEMES[name] || [])
@@ -2744,6 +2775,48 @@ io.on('connection', (socket) => {
     const r = petBuy(key, color);
     const snap = petSnapshot(key, name);
     if (cb) cb({ success: !!r.ok, msg: r.msg || '已换好新颜色', ...snap });
+  });
+
+  // ===== 表情包：取可装配清单 / 保存装配 / 游戏内发送 =====
+  socket.on('get_emoji', (cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || (name.startsWith('游客') && !GUEST_KEY)) { if (cb) cb({ success: false }); return; }
+    const allowed = isTestAccount(name) ? exprList() : exprAllowedFor(name); // 测试号可预览全部
+    if (cb) cb({ success: true, items: allowed.map(x => ({ id: x.id, url: x.url })), mine: ((usersData[name] || {}).emoji || []).slice() });
+  });
+  socket.on('set_emoji', ({ ids = [] }, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || name.startsWith('游客')) { if (cb) cb({ success: false, msg: '暂不支持游客装配' }); return; }
+    const allowed = isTestAccount(name) ? exprList() : exprAllowedFor(name);
+    const valid = [];
+    for (const id of ids.slice(0, 3)) {
+      if (valid.length >= 3) break;
+      if (allowed.some(x => x.id === id) && !valid.includes(id)) valid.push(id);
+    }
+    usersData[name] = usersData[name] || {};
+    usersData[name].emoji = valid;
+    saveUsers();
+    if (cb) cb({ success: true, mine: valid.slice() });
+  });
+  socket.on('emoji_send', ({ id, url }, cb) => {
+    const name = socketToUser.get(socket.id);
+    if (!name || name.startsWith('游客')) { if (cb) cb({ success: false, msg: '仅正式玩家/测试号可发送表情' }); return; }
+    const allowed = isTestAccount(name) ? exprList() : exprAllowedFor(name);
+    const ok = allowed.some(x => x.url === url && x.id === id);
+    if (!ok) { if (cb) cb({ success: false, msg: '未装配该表情' }); return; }
+    const syncKey = socketSyncKey.get(socket.id);
+    const payload = { from: name, id, url };
+    if (syncKey && syncSessions.has(syncKey)) {
+      io.to('sync:' + syncKey).emit('emoji_burst', payload);
+    } else {
+      for (const room of Object.values(GAME_ROOMS)) {
+        if (room.playerMap.has(name) && (activeGameOf(room) || Object.values(room.seats).some(s => s && s.name === name))) {
+          io.to(room.roomId).emit('emoji_burst', payload);
+          break;
+        }
+      }
+    }
+    if (cb) cb({ success: true });
   });
 
   socket.on('disconnect', () => {
