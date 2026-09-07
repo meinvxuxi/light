@@ -23,7 +23,8 @@
   table.g td.hit { background:#ff6b6b; color:#fff; }
   table.g td.miss { background:#eceff3; }
   table.g td.wound { background:#cfe9d8; }
-  table.g td.ownhit { background:#cdd3da; color:#55606c; font-weight:800; }
+  table.g td.ownhit { position:relative; }
+  table.g td.ownhit::after { content:'✕'; position:absolute; top:0; left:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:11px; color:#2a3644; text-shadow:0 0 3px #fff,0 0 3px #fff; }
   .barrage { position:fixed; left:50%; bottom:56px; transform:translateX(-50%); z-index:98; font-size:.9rem; color:#c62828; background:rgba(255,255,255,.9); border:1px solid rgba(198,40,40,.5); padding:7px 18px; border-radius:12px; pointer-events:none; opacity:0; transition:opacity .2s; font-weight:600; }
   .bar { text-align:center; margin:12px 0; }
   .go { color:#4a90d9; cursor:pointer; font-weight:600; }
@@ -69,17 +70,25 @@
     function dn(n){ return (S&&S.disp&&S.disp[n])?S.disp[n]:n; }
     function tip(t){ const el=document.getElementById('stage'); if(el) el.textContent=t||''; }
     function toast(m){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;background:rgba(255,255,255,.9);border:1px solid #4a90d9;color:#2c3e50;padding:8px 18px;border-radius:10px;font-size:.86rem;'; document.body.appendChild(toastEl);} toastEl.textContent=m; clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.textContent='';},1800); }
-    function gridTable(cells, clickFn, hits, missMap) {
+    function gridTable(cells, clickFn, hits, missMap, ownMarks) {
       let h='<table class="g">';
       for (let r=1;r<=15;r++){ h+='<tr>'; for(let c=1;c<=15;c++){
+        const key=r+','+c;
         const cell=(cells||[]).find(x=>x.r===r&&x.c===c);
-        let cls='',txt='';
-        if(cell && cell.hitRes){ cls='ownhit'; txt='✕'; }
-        else if(cell && cell.pv){ cls=cell.pvbad?'pvbad':'pv'; }
-        else if(missMap && missMap[r+','+c]) cls='miss';
+        let cls='',txt='',extra='';
+        if(cell && cell.pv){
+          cls=cell.pvbad?'pvbad':'pv';
+          if(cell.pvbad && cell.under){ // 与已摆飞机重叠：半透明橙盖在机身颜色之上
+            const under=cell.under===2?'#ffb3b3':'#cfe9d8';
+            extra=' style="background:linear-gradient(rgba(240,147,43,.55),rgba(240,147,43,.55)),'+under+'"';
+          }
+        } else if(ownMarks && ownMarks[key]) {
+          const base=cell?(cell.head?'mine head':'mine'):'';
+          cls='ownhit'+(base?' '+base:'');
+        } else if(cell){ cls=cell.head?'mine head':'mine'; }
+        else if(missMap && missMap[key]) cls='miss';
         else if(hits){ const ht=hits.find(h=>h.y===r&&h.x===c); if(ht){ cls = ht.res==='沉'?'hit':(ht.res==='伤'?'wound':'miss'); txt = ht.res==='沉'?'✕':''; } }
-        else if(cell){ cls=cell.head?'mine head':'mine'; }
-        h+='<td class="'+cls+'"'+(clickFn?' onclick="'+clickFn+'('+r+','+c+')"':'')+'>'+txt+'</td>';
+        h+='<td class="'+cls+'"'+extra+(clickFn?' onclick="'+clickFn+'('+r+','+c+')"':'')+'>'+txt+'</td>';
       } h+='</tr>'; }
       return h+'</table>';
     }
@@ -89,16 +98,18 @@
 
     function remCount(t){ const need=S?S.config.slice():[]; for(const p of placed){ const i=need.indexOf(p.type); if(i>=0) need.splice(i,1);} let c=0; for(const v of need) if(v===t)c++; return c; }
     function occupiedSet(){ const own=new Set(); placed.forEach(p=>p.cells.forEach(x=>own.add(x.r+','+x.c))); return own; }
+    function underType(x){ for(const p of placed){ const cc=p.cells.find(z=>z.r===x.r&&z.c===x.c); if(cc) return cc.head?2:1; } return 0; }
     function boardCellClick(r,c){ // 首次点击生成预览，再次点其它格 = 移动预览
       if(!selType) return toast('先选一架待摆飞机');
       const cells=cellsOf({type:selType,rotation:selRot,headR:r,headC:c});
       const out=cells.some(x=>x.r<1||x.r>15||x.c<1||x.c>15);
       const own=occupiedSet();
       const overlap=cells.some(x=>own.has(x.r+','+x.c));
-      preview={ type:selType, rotation:selRot, headR:r, headC:c, cells:cells.map(x=>({r:x.r,c:x.c,pv:1,bad:!!overlap||out})), valid:!overlap&&!out };
+      const bad=!!overlap||out;
+      preview={ type:selType, rotation:selRot, headR:r, headC:c, cells:cells.map(x=>({r:x.r,c:x.c,pv:1,bad,under:own.has(x.r+','+x.c)?underType(x):0})), valid:!overlap&&!out };
       render();
     }
-    function rotPreview(){ if(!preview) return; selRot=(selRot+1)%4; const cells=cellsOf({type:preview.type,rotation:selRot,headR:preview.headR,headC:preview.headC}); const out=cells.some(x=>x.r<1||x.r>15||x.c<1||x.c>15); const own=occupiedSet(); const overlap=cells.some(x=>own.has(x.r+','+x.c)); preview.rotation=selRot; preview.cells=cells.map(x=>({r:x.r,c:x.c,pv:1,bad:!!overlap||out})); preview.valid=!overlap&&!out; render(); }
+    function rotPreview(){ if(!preview) return; selRot=(selRot+1)%4; const cells=cellsOf({type:preview.type,rotation:selRot,headR:preview.headR,headC:preview.headC}); const out=cells.some(x=>x.r<1||x.r>15||x.c<1||x.c>15); const own=occupiedSet(); const overlap=cells.some(x=>own.has(x.r+','+x.c)); const bad=!!overlap||out; preview.rotation=selRot; preview.cells=cells.map(x=>({r:x.r,c:x.c,pv:1,bad,under:own.has(x.r+','+x.c)?underType(x):0})); preview.valid=!overlap&&!out; render(); }
     function confirmPreview(){ if(!preview) return; if(!preview.valid) return toast('重叠或越界，不能确认'); placed.push({type:preview.type,rotation:preview.rotation,headR:preview.headR,headC:preview.headC,cells:preview.cells.map(x=>({r:x.r,c:x.c,head:x.r===preview.headR&&x.c===preview.headC}))}); preview=null; selType=null; render(); }
     function cancelPreview(){ preview=null; render(); }
     function removeAt(r,c){ if(preview) return; const i=placed.findIndex(p=>p.cells.some(x=>x.r===r&&x.c===c)); if(i>=0){ placed.splice(i,1); render(); } }
@@ -141,13 +152,14 @@
         return;
       }
       if(S.phase==='battle'){
-        const yourCells=(S.board||[]).flat().concat((S.meHits||[]).map(function(h){return {r:h.y,c:h.x,hitRes:h.res};}));
+        const yourCells=(S.board||[]).flat();
+        const ownMarks={}; (S.meHits||[]).forEach(function(h){ ownMarks[h.y+','+h.x]=1; });
         const aliveOpts=(S.alive||[]).filter(function(n){return n!==me();});
         if(!target||aliveOpts.indexOf(target)<0) target=aliveOpts[0];
         const targetHits=((S.shotsByTarget||{})[target]||[]).slice();
         const missMap={}; targetHits.filter(function(h){return h.res==='空';}).forEach(function(h){missMap[h.y+','+h.x]=1;});
         const myTurn=S.turn===me();
-        body.innerHTML = '<div class="gridwrap"><div class="panel"><div class="ptitle">我的布防（✕=被炸过）</div>'+gridTable(yourCells)+'</div>'
+        body.innerHTML = '<div class="gridwrap"><div class="panel"><div class="ptitle">我的布防（✕=被炸过）</div>'+gridTable(yourCells,null,null,null,ownMarks)+'</div>'
           +'<div class="panel"><div class="ptitle">轰炸 '+(target||'')+' 的棋盘'+(myTurn?'（轮到你）':'（等待对方…）')+'</div>'
           +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" onclick="target=\''+n+'\';render()">'+esc(dn(n))+'</span>';}).join('')+'</div>'
           +gridTable(null, myTurn?'fireAt':null, targetHits, missMap)

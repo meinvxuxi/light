@@ -660,8 +660,6 @@ function bmbAttack(g, room, attacker, target, r, c) {
   const res = { x: c, y: r, res: '空' };
   (g.stats[attacker] = g.stats[attacker] || {});
   const key = r + ',' + c;
-  g.firedCoords[target] = g.firedCoords[target] || [];
-  if (!g.firedCoords[target].includes(key)) g.firedCoords[target].push(key);
   // 1) 判定对 target 的反馈
   const tPlanes = g.planes[target] || [];
   const hitCell = (() => {
@@ -709,18 +707,30 @@ function bmbAttack(g, room, attacker, target, r, c) {
     const who = shown.length === 1 ? shown[0] : shown.slice(0, -1).join('、') + ' 和 ' + shown[shown.length - 1];
     bmbBoom(room, `💥 ${getDisplayName(attacker)} 炸毁了 ${who} 的飞机！`);
   }
-  // 3) 每个“其他人”的棋盘该格都显示“这发炮弹落到你这了”：无论空/机身/机头、是否传播，一律标 X
-  for (const other of g.playerOrder) {
-    if (other === attacker) continue;
-    g.meHits[other] = g.meHits[other] || [];
-    if (!g.meHits[other].some(h => h.x === c && h.y === r)) {
-      g.meHits[other].push({ x: c, y: r, res: res.res, by: attacker });
+  // 3) 全盘落点记录：一发炮弹 = 对所有非攻击者都是公开坐标事件。
+  //    每个受影响玩家：自己盘标 X、其“轰炸面板”记一发、firedCoords 防同格重复轰炸。
+  for (const o of g.playerOrder) {
+    if (o === attacker) continue;
+    let oRes = '空';
+    for (const p of (g.planes[o] || [])) {
+      const cc = (p.cells || []).find(cell => cell.r === r && cell.c === c);
+      if (cc) {
+        const planeSunk = (g.sunkHead[o] || []).includes(p.headKey);
+        oRes = cc.head ? '沉' : (planeSunk ? '沉' : '伤');
+        break;
+      }
+    }
+    g.meHits[o] = g.meHits[o] || [];
+    if (!g.meHits[o].some(h => h.x === c && h.y === r)) g.meHits[o].push({ x: c, y: r, res: oRes, by: attacker });
+    g.firedCoords[o] = g.firedCoords[o] || [];
+    if (!g.firedCoords[o].includes(key)) g.firedCoords[o].push(key);
+    g.targetShots[o] = g.targetShots[o] || [];
+    if (!g.targetShots[o].some(s => s.x === c && s.y === r)) {
+      g.targetShots[o].push({ x: c, y: r, res: oRes, by: attacker, prop: o !== target });
     }
   }
   g.attacks[attacker] = g.attacks[attacker] || [];
   g.attacks[attacker].push({ to: target, x: c, y: r, res: res.res });
-  g.targetShots[target] = g.targetShots[target] || [];
-  if (!g.targetShots[target].some(s => s.x === c && s.y === r)) g.targetShots[target].push({ x: c, y: r, res: res.res, by: attacker });
   if (res.res === '空') { g.lastEmpty = (g.lastEmpty || 0) + 1; } else { g.lastEmpty = 0; }
   if (res.res !== '空') { g.hitStreak[attacker] = (g.hitStreak[attacker] || 0) + 1; } else { g.hitStreak[attacker] = 0; }
   // 4) 淘汰判定：被击落第 5 架飞机的任何玩家都出局（含波及）
