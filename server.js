@@ -637,6 +637,24 @@ function bmbBroadcast(room, g) {
   });
 }
 function bmbBoom(room, text) { io.to(room.roomId).emit('bomber_boom', { text }); }
+// 该玩家当前是否“正在炸飞机页”（能真正行动）
+function bmbInGameNow(name, room) {
+  const sid = room.playerMap.get(name);
+  const sid2 = bomberAtGame.get(name);
+  const hb = userLastHeartbeat.get(name);
+  return !!sid && sid === sid2 && io.sockets.sockets.has(sid) && !!hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT;
+}
+// 回合轮转到“下一名在游戏页的存活玩家”；所有人都缺席时原地不动（等回来的人）
+function bmbAdvance(g, room) {
+  if (g.phase !== 'battle' || g.alive.length <= 1) return false;
+  const seq = g.playerOrder.filter(n => g.alive.includes(n));
+  const idx = seq.indexOf(g.turn);
+  for (let k = 1; k <= seq.length; k++) {
+    const cand = seq[(idx + k) % seq.length];
+    if (bmbInGameNow(cand, room)) { g.turn = cand; return true; }
+  }
+  return false;
+}
 function bmbAttack(g, room, attacker, target, r, c) {
   const res = { x: c, y: r, res: '空' };
   const key = r + ',' + c;
@@ -708,16 +726,20 @@ function bmbAttack(g, room, attacker, target, r, c) {
     g.eliminated[target] = Date.now();
     bmbBoom(room, `📉 ${getDisplayName(target)} 已全员出局（剩余 ${g.alive.length} 人）`);
   }
-  // 5) 固定座位轮转：只跳过已淘汰者，不再“跳过被轰炸者”
-  const seq = g.playerOrder.filter(n => g.alive.includes(n));
+  // 5) 固定座位轮转：给下一名在场存活玩家；若都不在场就保持座位等回来
   if (g.alive.length <= 1) {
     g.phase = 'over';
     const winner = g.alive[0];
     const players = g.playerOrder.map(n => ({ name: n, stats: g.stats[n] || {}, rank: n === winner ? 1 : (g.elimOrder || []).indexOf(n) + 2 }));
     g.over = { winner, players };
   } else {
+    const seq = g.playerOrder.filter(n => g.alive.includes(n));
     const idx = seq.indexOf(attacker);
     g.turn = seq[(idx + 1) % seq.length];
+    if (!bmbAdvance(g, room)) {
+      // 下一家缺席且没人能在场行动：保持现有轮转；稍后某人在场时自动轮转
+      g.turn = seq[(idx + 1) % seq.length];
+    }
   }
   bmbBroadcast(room, g);
   return res;
@@ -3107,6 +3129,7 @@ io.on('connection', (socket) => {
     const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'bomber') : null;
     const g = room && bomberGames[room.roomId];
     if (!room || !g) { if (cb) cb({ success: false }); return; }
+    if (g.phase === 'battle' && bmbAdvance(g, room)) bmbBroadcast(room, g);
     if (cb) cb({ success: true, ...bmbState(g, name, room) });
   });
   socket.on('bomber_place', ({ planes }, cb) => {
@@ -3151,6 +3174,8 @@ io.on('connection', (socket) => {
         g2.phase = 'battle';
         g2.turn = g2.playerOrder[0];
         bmbBroadcast(room, g2);
+        if (bmbAdvance(g2, room)) bmbBroadcast(room, g2);
+        console.log('🛫 自动布阵完成，bomber 进入 battle，当前回合=', g2.turn);
       }, 8000);
     }
     bmbBroadcast(room, g);
@@ -3163,6 +3188,10 @@ io.on('connection', (socket) => {
     console.log('💣 bomber_fire', name, '->', target, x, y, 'turn=', g && g.turn, 'phase=', g && g.phase, 'alive=', g && g.alive);
     if (!room || !g || g.phase !== 'battle') { if (cb) cb({ success: false, msg: '对局尚未开始' }); return; }
     const r = Number(y), c = Number(x);
+    if (!Number.isInteger(r) || !Number.isInteger(c) || r < 1 || r > 15 || c < 1 || c > 15) { if (cb) cb({ success: false, msg: '目标格无效' }); return; }
+    if (!g.playerOrder.includes(name) || !g.alive.includes(name)) { if (cb) cb({ success: false, msg: '你已不在本局中' }); return; }
+    if (!g.alive.includes(target) || target === name) { if (cb) cb({ success: false, msg: '请选择存活的对手' }); return; }
+    if (g.turn !== name) { if (cb) cb({ success: false, msg: '还没轮到你行动' }); return; }
     if (g.turn !== name || !g.alive.includes(name)) { if (cb) cb({ success: false, msg: '还没轮到你' }); return; }
     if (target === name || !g.alive.includes(target)) { if (cb) cb({ success: false, msg: '目标无效' }); return; }
     if (r < 1 || r > 15 || c < 1 || c > 15) { if (cb) cb({ success: false, msg: '坐标越界' }); return; }

@@ -105,6 +105,7 @@
     function undoLast(){ if(preview) return; if(placed.length){ placed.pop(); selType=null; preview=null; render(); } }
     function rotLabel(){ return ['上','右','下','左'][selRot]||'上'; }
     function submit(){ const payload=placed.map(p=>({type:p.type,rotation:p.rotation||0,headR:p.headR,headC:p.headC})); socket.emit('bomber_place',{planes:payload},(res)=>{ if(res&&!res.success) toast(res.msg||'摆放无效'); }); }
+    function fireAt(r,c){ if(!target||target===me()) return; socket.emit('bomber_fire',{target:target,x:c,y:r},(res)=>{ if(res&&!res.success) toast(res.msg||'无法轰炸'); }); }
     function bmbCancelVote(){ if(!S) return; const voted=(S.cancelVotes||[]).includes(S.you); const revoke=!!voted; socket.emit('bomber_cancel_vote', { revoke }, function(res){ if(res&&res.success){ if(res.cancelled) return; const v=(res.votes||[]).length; const total=(S&&S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0); toast(revoke?('已撤回取消票（'+v+'/'+total+'）'):('已投票取消（'+v+'/'+total+'）等待其他在线玩家…')); } }); }
     function statusPills(){
       const names=S&&S.order?S.order.slice():[];
@@ -149,7 +150,7 @@
         body.innerHTML = '<div class="gridwrap"><div class="panel"><div class="ptitle">我的布防（✕=被炸过）</div>'+gridTable(yourCells)+'</div>'
           +'<div class="panel"><div class="ptitle">轰炸 '+(target||'')+' 的棋盘'+(myTurn?'（轮到你）':'（等待对方…）')+'</div>'
           +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" onclick="target=\''+n+'\';render()">'+esc(dn(n))+'</span>';}).join('')+'</div>'
-          +gridTable(null,'fireAt',targetHits,missMap)
+          +gridTable(null, myTurn?'fireAt':null, targetHits, missMap)
           +'<div class="cfgline">'+targetHits.filter(function(h){return h.res==='沉';}).length+' 沉 / '+targetHits.filter(function(h){return h.res==='伤';}).length+' 伤 / '+targetHits.filter(function(h){return h.res==='空';}).length+' 空</div></div></div>'
           +'<div class="tip" style="text-align:center;">'+statusPills()+'</div>'
           +'<div class="stage" style="margin-top:8px;">存活：'+S.alive.map(function(n){return dn(n);}).join('、')+'　·　当前行动：'+esc(dn(S.turn))+'</div>';
