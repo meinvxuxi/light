@@ -106,12 +106,17 @@
     function bmbCancelVote(){ if(!S) return; const voted=(S.cancelVotes||[]).includes(S.you); const revoke=!!voted; socket.emit('bomber_cancel_vote', { revoke }, function(res){ if(res&&res.success){ if(res.cancelled) return; const v=(res.votes||[]).length; const total=(S&&S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0); toast(revoke?('已撤回取消票（'+v+'/'+total+'）'):('已投票取消（'+v+'/'+total+'）等待其他在线玩家…')); } }); }
     function statusPills(){
       const names=S&&S.order?S.order.slice():[];
-      return names.map(function(n){
+      let out=names.map(function(n){
         const on=S.online&&S.online[n];
         let cls='off',lab='离线';
         if(on){ if(S.ready&&S.ready[n]){cls='ready';lab='已就位';} else {cls='wait';lab='等待中';} }
         return '<span class="pill '+cls+'">'+esc(n)+' · '+lab+'</span>';
       }).join('');
+      if(S && S.cancelVotes && S.cancelVotes.length){
+        const onlineTotal=(S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0);
+        out+=' <span class="pill wait">取消投票 '+S.cancelVotes.length+'/'+onlineTotal+'</span>';
+      }
+      return out;
     }
     function me(){ return S&&S.you; }
     function render(){
