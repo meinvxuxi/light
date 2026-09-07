@@ -1710,11 +1710,12 @@ io.on('connection', (socket) => {
     const key = syncPairKey(me, other);
     petEnsure(key);
     petGain(key, 200);
-    petSign(key);
+    petSign(key, me);
     const p = petEnsure(key);
+    p.gold = (p.gold || 0) + 50;
     p.lastActivity = 0; // 触发一次“行动日志”
-    const snap = petSnapshot(key);
-    if (cb) cb({ success: true, msg: '宠物已演示成长（level=' + snap.level + '），可在默契空间对应组合查看', level: snap.level, exp: snap.exp });
+    const snap = petSnapshot(key, me);
+    if (cb) cb({ success: true, msg: '宠物已演示成长（level=' + snap.level + '，金币 ' + snap.gold + '），可在默契空间对应组合查看', level: snap.level, exp: snap.exp, gold: snap.gold });
   });
 
   // 测试助手：模拟“游客达成稀有成就 → 游客留言板系统推送”
@@ -2720,21 +2721,29 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true });
   });
 
-  // ===== 默契宠物：查看 / 每日签到 =====
+  // ===== 默契宠物 v2：查看 / 双人签到 / 买外观 =====
   socket.on('sync_pet_get', ({ pair }, cb) => {
     const name = socketToUser.get(socket.id);
     const key = String(pair || '');
     if (!name || !aliasMemberGuard(name, key)) { if (cb) cb({ success: false, msg: '仅组合成员可查看宠物' }); return; }
-    const snap = petSnapshot(key);
+    const snap = petSnapshot(key, name);
     if (cb) cb({ success: true, ...snap });
   });
   socket.on('sync_pet_sign', ({ pair }, cb) => {
     const name = socketToUser.get(socket.id);
     const key = String(pair || '');
     if (!name || !aliasMemberGuard(name, key)) { if (cb) cb({ success: false, msg: '仅组合成员可签到' }); return; }
-    const r = petSign(key);
-    const snap = petSnapshot(key);
-    if (cb) cb({ success: true, added: r.added, ...snap });
+    const r = petSign(key, name);
+    const snap = petSnapshot(key, name);
+    if (cb) cb({ success: true, added: r.added, done: r.done, ...snap });
+  });
+  socket.on('sync_pet_buy', ({ pair, color }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const key = String(pair || '');
+    if (!name || !aliasMemberGuard(name, key)) { if (cb) cb({ success: false, msg: '仅组合成员可购买' }); return; }
+    const r = petBuy(key, color);
+    const snap = petSnapshot(key, name);
+    if (cb) cb({ success: !!r.ok, msg: r.msg || '已换好新颜色', ...snap });
   });
 
   socket.on('disconnect', () => {
@@ -2937,40 +2946,71 @@ function syncBroadcastQuestion(pairKey) {
   if (!item) return;
   io.to('sync:' + pairKey).emit('sync_question', { index: sess.qi, q: item.q, opts: item.opts, total: sess.roundQs.length });
 }
-// ========== 默契宠物（B方案：代码圆萌宠 + 预留素材位；每对组合一只） ==========
-const PET_COLORS = ['#6ec6a0', '#8fb7e8', '#e8a0b8', '#f0c87a', '#b79ae0', '#e89a7a'];
-const PET_LOGS = ['🍃 去别人家串门回来啦', '🎒 出门逛了一圈，捡到 2 成长值', '💤 晒着太阳睡了个午觉', '🧦 在门口等你们回来，很乖', '⭐ 今天心情特别好，转了个圈'];
-function petColorFor(key) { let h = 7; for (const ch of String(key)) h = (h * 31 + ch.codePointAt(0)) >>> 0; return PET_COLORS[h % PET_COLORS.length]; }
+// ========== 默契宠物 v2（圆身极简线条 + 金币 + 外观 + 双人签到；预留素材替换位） ==========
+const PET_SKINS = ['#f2c94c', '#e8a0b8', '#8fb7e8', '#6ec6a0', '#b79ae0', '#e89a7a']; // 0=淡黄初始
+const PET_LOGS2 = [
+  { t: '💛 打了半天工，赚到 ', g: 3 },
+  { t: '🐭 溜去隔壁家顺了点金币 +', g: 5 },
+  { t: '🍃 出门散步，捡到金币 +', g: 2 },
+  { t: '💤 晒着太阳睡了个午觉', g: 0 }
+];
 function petToday() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function petEnsure(pk) {
   const pair = syncGetPair(pk);
-  const p = pair.pet = pair.pet || { exp: 0, lastSign: '', logs: [], lastActivity: 0, color: petColorFor(pk) };
-  return p;
+  if (!pair.pet) pair.pet = { exp: 0, gold: 10, color: PET_SKINS[0], signDay: '', signs: [], logs: [], lastActivity: 0 };
+  return pair.pet;
+}
+function petAddLog(p, text) {
+  p.logs.unshift({ t: text, ts: Date.now() });
+  if (p.logs.length > 8) p.logs.pop();
 }
 function petTick(pk) {
   const p = petEnsure(pk);
   const now = Date.now();
-  if (now - (p.lastActivity || 0) < 6 * 3600 * 1000) return false; // 每 6 小时触发一次小行动
+  if (now - (p.lastActivity || 0) < 6 * 3600 * 1000) return;
   p.lastActivity = now;
-  p.logs.unshift({ t: PET_LOGS[Math.floor(Math.random() * PET_LOGS.length)], ts: now });
-  if (p.logs.length > 6) p.logs.pop();
+  const act = PET_LOGS2[Math.floor(Math.random() * PET_LOGS2.length)];
+  if (act.g > 0) p.gold = (p.gold || 0) + act.g;
+  petAddLog(p, act.t + (act.g ? act.g + ' 🪙' : ''));
   syncSavePair(pk);
-  return true;
 }
-function petSnapshot(pk) {
+function petSnapshot(pk, name) {
   const p = petEnsure(pk);
   petTick(pk);
+  if (p.signDay !== petToday()) { p.signDay = petToday(); p.signs = []; }
   const exp = p.exp || 0;
-  const level = Math.floor(Math.sqrt(exp / 4)) + 1;
-  return { exp, level, color: p.color || petColorFor(pk), canSign: p.lastSign !== petToday(), logs: (p.logs || []).slice(0, 6), lastSign: p.lastSign };
+  return {
+    exp, gold: p.gold || 0, color: p.color || PET_SKINS[0],
+    level: Math.floor(Math.sqrt(exp / 4)) + 1,
+    signs: (p.signs || []).slice(), meSigned: (p.signs || []).includes(name),
+    done: (p.signs || []).length >= 2, skins: PET_SKINS,
+    logs: (p.logs || []).slice(0, 8)
+  };
 }
-function petSign(pk) {
+function petSign(pk, name) {
   const p = petEnsure(pk);
-  if (p.lastSign === petToday()) return { added: 0 };
-  p.lastSign = petToday();
-  p.exp = (p.exp || 0) + 10;
+  if (p.signDay !== petToday()) { p.signDay = petToday(); p.signs = []; }
+  if (p.signs.includes(name)) return { added: 0, done: p.signs.length >= 2 };
+  p.signs.push(name);
+  const done = p.signs.length >= 2;
+  const added = done ? 20 : 10; // 双方都签才算完成
+  p.exp = (p.exp || 0) + added;
+  petAddLog(p, done ? '✅ 今天两人都来看我啦 +20' : '🖐 收到一次签到，等另一半… +10');
   syncSavePair(pk);
-  return { added: 10 };
+  return { added, done };
+}
+function petBuy(pk, color) {
+  const p = petEnsure(pk);
+  const c = String(color || '');
+  if (!PET_SKINS.includes(c)) return { ok: false };
+  if (p.color === c) return { ok: false, msg: '已经是这个颜色了' };
+  const cost = 30;
+  if ((p.gold || 0) < cost) return { ok: false, msg: '金币不够（需要 30）' };
+  p.gold -= cost;
+  p.color = c;
+  petAddLog(p, '🛍 用 30 🪙 换了个新颜色');
+  syncSavePair(pk);
+  return { ok: true };
 }
 function petGain(pk, n) {
   const p = petEnsure(pk);

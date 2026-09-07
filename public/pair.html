@@ -47,6 +47,14 @@
     .pet-svg { text-align: center; }
     .pet-meta { font-size: .78rem; color: #9aa5b1; margin-top: 2px; }
     .pet-logs { margin-top: 6px; font-size: .75rem; color: #9aa5b1; border-top: 1px dashed #eef0f4; padding-top: 5px; line-height: 1.6; }
+    .pet-entry { font-size: .85rem; color: #6b7a90; padding: 8px 2px 2px; cursor: pointer; }
+    .pet-entry .go { color: #4a90d9; }
+    body.dyn-pink .pet-entry .go { color: #f06292; } body.dyn-green .pet-entry .go { color: #6f9e63; } body.dyn-gold .pet-entry .go { color: #a8791b; } body.dyn-red .pet-entry .go { color: #8c332d; }
+    .pet-svg-body { cursor: pointer; display: block; margin: 0 auto; }
+    .pet-eyes { animation: petblink 4.2s infinite; transform-box: fill-box; transform-origin: center; }
+    @keyframes petblink { 0%, 92%, 100% { opacity: 1; } 94%, 97% { opacity: .15; } }
+    .pet-svg-body.pet-run { animation: petrun .9s ease; }
+    @keyframes petrun { 0% { transform: translateX(0); } 30% { transform: translateX(12px) rotate(-4deg); } 60% { transform: translateX(-8px); } 100% { transform: translateX(0); } }
     .mtl { color: #e08a2d; font-size: .78rem; background: #fbf4ea; border-radius: 12px; padding: 1px 9px; }
     .present { font-size: .8rem; color: #27ae60; margin-top: 6px; }
     .present.wait { color: #9aa5b1; }
@@ -129,12 +137,17 @@
       const m = document.getElementById('pfMask');
       const b = document.getElementById('pfBox');
       if (!m || !b) return;
+      b.style.maxWidth = '330px';
       b.innerHTML = `<div style="font-weight:700;margin-bottom:8px;">${esc(title)}</div>
         <div style="color:#6b7a90;font-size:.88rem;line-height:1.6;">${body}</div>
         <div style="margin-top:6px;">${actionsHtml || ''}</div>`;
       m.style.display = 'flex';
     }
     function pfClose() { document.getElementById('pfMask').style.display = 'none'; }
+    function pfModalWide(on) {
+      const b = document.getElementById('pfBox');
+      if (b) b.style.maxWidth = on ? '400px' : '330px';
+    }
 
     // ===== 主题引擎（五套） =====
     const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg', pomelo: '/assets/avatars/p3/nene.jpg', agly: '/assets/avatars/p1/agly/aglybj.jpg', lyff: '/assets/avatars/p4/lyff/lyffbj.jpg' };
@@ -268,50 +281,77 @@
       if (!h.length) return '';
       return `<div class="alias-hist">曾用名：${h.map(x => esc(x.name || x)).join(' / ')}</div>`;
     }
-    // ===== 默契宠物（B方案：代码圆萌宠物；预留素材位：pet.data.img 存在则优先用图） =====
+    // ===== 默契宠物 v2（圆身+竖线眼睛+眨眼/跑动/表情；主页只留小入口） =====
     let petData = null;
-    function petSvgHtml(color) {
-      const size = petData ? Math.min(44 + petData.level * 2, 64) : 50;
-      return `<svg width="${size * 1.7}" height="${size}" viewBox="0 0 100 60">
-        <ellipse cx="50" cy="40" rx="38" ry="20" fill="${color}" fill-opacity=".45"/>
-        <ellipse cx="42" cy="32" rx="12" ry="7" fill="#fff" fill-opacity=".35"/>
-        <circle cx="38" cy="38" r="4.2" fill="#2c3e50"/><circle cx="62" cy="38" r="4.2" fill="#2c3e50"/>
-        <circle cx="39.4" cy="36.6" r="1.5" fill="#fff"/><circle cx="63.4" cy="36.6" r="1.5" fill="#fff"/>
-        <path d="M45 46 Q50 52 55 46" stroke="#2c3e50" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-        <ellipse cx="30" cy="45" rx="3" ry="2" fill="#f2a0a8" fill-opacity=".7"/>
-        <ellipse cx="70" cy="45" rx="3" ry="2" fill="#f2a0a8" fill-opacity=".7"/>
+    function petSvgHtml() {
+      const c = (petData && petData.color) || '#f2c94c';
+      const lv = petData ? petData.level : 1;
+      const r = Math.min(26 + lv * 0.8, 34);
+      const eyeH = 9 + Math.min(lv, 6);
+      return `<svg class="pet-svg-body" viewBox="0 0 120 110" width="150" height="138" onclick="petReact()">
+        <defs><radialGradient id="petg" cx=".5" cy=".35" r=".7"><stop offset="0%" stop-color="#fff" stop-opacity=".75"/><stop offset="100%" stop-color="${c}" stop-opacity=".2"/></radialGradient></defs>
+        <ellipse cx="60" cy="96" rx="30" ry="5" fill="#00000022"/>
+        <circle cx="60" cy="58" r="${r}" fill="${c}" fill-opacity=".42"/>
+        <circle cx="60" cy="58" r="${r}" fill="url(#petg)"/>
+        <g class="pet-eyes">
+          <line x1="47" y1="54" x2="47" y2="${54 - eyeH}" stroke="#3a3a3a" stroke-width="2.6" stroke-linecap="round"/>
+          <line x1="73" y1="54" x2="73" y2="${54 - eyeH}" stroke="#3a3a3a" stroke-width="2.6" stroke-linecap="round"/>
+        </g>
+        <path d="M52 70 Q60 77 68 70" stroke="#3a3a3a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <circle cx="40" cy="66" r="4" fill="#f2a0a8" fill-opacity=".75"/>
+        <circle cx="80" cy="66" r="4" fill="#f2a0a8" fill-opacity=".75"/>
       </svg>`;
     }
-    function petCardHtml() {
-      if (!petData) return '<div class="pet-empty">🐾 宠物加载中…</div>';
-      const next = Math.ceil(Math.sqrt(petData.exp / 4)) + 1;
-      const pct = Math.min(100, Math.round((petData.exp / ((next * next) * 4)) * 100));
-      return `<div class="pet-card">
-        <div class="pet-head">默契宠物 · 等级 ${petData.level}</div>
-        <div class="pet-svg">${petSvgHtml(petData.color)}</div>
-        <div class="pet-meta">成长值 ${petData.exp}　·　距离下一级 ${pct}%</div>
-        <div style="height:6px;background:#eef0f4;border-radius:4px;overflow:hidden;margin:6px 0;"><div style="height:100%;width:${pct}%;background:${petData.color};"></div></div>
-        ${petData.canSign ? '<span class="go" onclick="petSignGo()">今日签到（+10 成长）</span>' : '<span class="soon">今日已签到</span>'}
-        ${(petData.logs && petData.logs.length) ? `<div class="pet-logs">${petData.logs.map(l => `<div>${esc(l.t)}</div>`).join('')}</div>` : ''}
-      </div>`;
-    }
-    function petLoad() {
-      if (!isMember || !pairKey) return;
+    function petOpen() {
       socket.emit('sync_pet_get', { pair: pairKey }, (res) => {
-        if (!res || !res.success) return;
-        petData = { exp: res.exp || 0, level: res.level || 1, color: res.color || '#8fb7e8', canSign: !!res.canSign, logs: res.logs || [] };
-        const box = document.getElementById('petArea');
-        if (box) box.innerHTML = petCardHtml();
+        if (!res || !res.success) { pfModal('默契宠物', '加载失败，稍后再试', '<button class="vbtn ok" onclick="pfClose()">知道了</button>'); return; }
+        petData = res;
+        petRenderModal();
       });
+    }
+    function petRenderModal() {
+      if (!petData) return;
+      const d = petData;
+      const signed = (d.signs || []).length;
+      const signRow = d.done
+        ? '<span style="color:#27ae60;">今日签到 ✅ 2/2</span>'
+        : (d.meSigned ? `<span style="color:#9aa5b1;">签到 ${signed}/2（等待对方）</span>` : `<span class="go" onclick="petSignGo()">签到 ${signed}/2</span>`);
+      const skins = (d.skins || []).map((s, i) =>
+        `<span onclick="petBuyGo(${i})" style="display:inline-block;width:22px;height:22px;border-radius:50%;background:${s};border:2px solid ${s === d.color ? '#2c3e50' : 'transparent'};cursor:pointer;"></span>`).join('');
+      pfModal('默契宠物',
+        `<div style="text-align:center;">${petSvgHtml()}
+          <div style="margin:2px 0;">Lv.${d.level} · 成长 ${d.exp} · <span style="color:#b8860b;">🪙 ${d.gold}</span></div>
+          ${signRow}
+          <div style="margin-top:6px;">换色（30🪙）：${skins}</div>
+        </div>
+        ${(d.logs && d.logs.length) ? `<div style="margin-top:10px;text-align:left;font-size:.78rem;color:#9aa5b1;border-top:1px dashed #e8ecf1;padding-top:6px;line-height:1.8;">${d.logs.map(l => '<div>· ' + esc(l.t) + '</div>').join('')}</div>` : ''}`,
+        '<button class="vbtn ok" onclick="pfClose()">收起</button>');
+      pfModalWide(true);
+    }
+    function petRefresh(extra) {
+      if (extra) Object.assign(petData, extra);
+      petRenderModal();
     }
     function petSignGo() {
-      if (!isMember || !pairKey) return;
       socket.emit('sync_pet_sign', { pair: pairKey }, (res) => {
         if (!res || !res.success) return;
-        petData = { exp: res.exp || 0, level: res.level || 1, color: res.color || '#8fb7e8', canSign: !!res.canSign, logs: res.logs || [] };
-        const box = document.getElementById('petArea');
-        if (box) box.innerHTML = petCardHtml();
+        petRefresh(res);
       });
+    }
+    function petBuyGo(i) {
+      if (!petData || !(petData.skins || [])[i]) return;
+      socket.emit('sync_pet_buy', { pair: pairKey, color: petData.skins[i] }, (res) => {
+        if (res && res.success) { petRefresh(res); return; }
+        if (res && res.msg) pfModal('金币不够', res.msg, '<button class="vbtn ok" onclick="petOpen()">好</button>');
+      });
+    }
+    function petReact() {
+      const svg = document.querySelector('.pet-svg-body');
+      if (!svg) return;
+      svg.classList.remove('pet-run');
+      void svg.offsetWidth;
+      svg.classList.add('pet-run');
+      setTimeout(() => svg.classList.remove('pet-run'), 900);
     }
     function aliasAsk() {
       const n = prompt('给这个默契组合起个名字（1~10 字，对方同意后生效）');
@@ -384,8 +424,7 @@
       if (wallMode) { renderWall(); return; }
       const w = document.getElementById('wrap');
       if (!qaMode) {
-        w.innerHTML = metaHtml() + (isMember ? aliasBarHtml() + aliasHistHtml() + '<div id="petArea"></div>' + menuHtml() : viewerHtml());
-        if (isMember && !qaMode && !wallMode) petLoad();
+        w.innerHTML = metaHtml() + (isMember ? aliasBarHtml() + aliasHistHtml() + '<div class="pet-entry" onclick="petOpen()">🐾 <span class="go">默契宠物小屋</span></div>' + menuHtml() : viewerHtml());
       } else {
         w.innerHTML = metaHtml();
       }
