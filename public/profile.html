@@ -277,8 +277,11 @@
         : (res.lastSeen ? `离线 · 上次在线 ${fmtShort(res.lastSeen)}` : '离线');
       const ach = res.achievements || [];
       stAch = ach;
-      const achHtml = ach.length
-        ? `<div class="ach-grid">${ach.map(a => `<span class="ach-chip q-${esc(a.quality)}">${esc(a.name)}</span>`).join('')}</div>`
+      // 总览成就墙：同一可升级成就只显示最高品质一个（游戏分页里仍显示完整分档）
+      const topSeen = {}; const achTop = [];
+      ach.forEach(a => { const k = a.group || a.id; if (!topSeen[k]) { topSeen[k] = 1; achTop.push(a); } });
+      const achHtml = achTop.length
+        ? `<div class="ach-grid">${achTop.map(a => `<span class="ach-chip q-${esc(a.quality)}">${esc(a.baseName || a.name)}</span>`).join('')}</div>`
         : '<div class="empty">还没有成就记录，去玩一局快艇骰子吧～</div>';
       w.innerHTML = `
         <div class="pl-head">
@@ -294,7 +297,7 @@
         </div>
         <div id="stBox"></div>
 
-        <div class="lab" id="achLab">成就（已解锁 ${ach.length} / ${res.totalAch || 12}）</div>
+        <div class="lab" id="achLab">成就（已解锁 ${achTop.length} / ${res.totalAch || 12}）</div>
         <div id="achList">${achHtml}</div>`;
       renderStatsBox();
     }

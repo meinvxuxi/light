@@ -434,12 +434,33 @@ const ACHIEVEMENTS = {
   bomber_bounce:    { name: '蹦蹦炸弹',          quality: 'common', game: 'bomber' },
   bomber_first:     { name: '开门红',            quality: 'rare',   game: 'bomber' },
   bomber_unlucky:   { name: '倒霉路人',          quality: 'epic',   game: 'bomber' },
-  bomber_streak2:   { name: '世一炸·2连击',      quality: 'common', game: 'bomber' },
-  bomber_streak3:   { name: '世一炸·3连击',      quality: 'rare',   game: 'bomber' },
-  bomber_streak4:   { name: '世一炸·4连击',      quality: 'epic',   game: 'bomber' },
-  bomber_streak5:   { name: '世一炸·5连击+',     quality: 'legend', game: 'bomber' }
+  bomber_streak2:   { name: '世一炸·2连击',      quality: 'common', game: 'bomber', base: '世一炸', group: 'bomber_streak' },
+  bomber_streak3:   { name: '世一炸·3连击',      quality: 'rare',   game: 'bomber', base: '世一炸', group: 'bomber_streak' },
+  bomber_streak4:   { name: '世一炸·4连击',      quality: 'epic',   game: 'bomber', base: '世一炸', group: 'bomber_streak' },
+  bomber_streak5:   { name: '世一炸·5连击+',     quality: 'legend', game: 'bomber', base: '世一炸', group: 'bomber_streak' }
 };
 const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
+// 成就“组”：同一可升级成就在总览/结算里只算一个（如世一炸 = 一个组，4 档分拆展示）
+function achGroupOf(id) { const m = ACHIEVEMENTS[id]; return (m && m.group) || id; }
+function achBaseNameOf(id) { const m = ACHIEVEMENTS[id]; return (m && m.base) || (m && m.name) || id; }
+function achQNo(q) { return ACH_QUALITY_NO[q] || 0; }
+function totalAchCount() {
+  const set = new Set();
+  for (const [id, m] of Object.entries(ACHIEVEMENTS)) set.add((m && m.group) || id);
+  return set.size;
+}
+// 输入一批成就 id，只保留每个“组”里品质最高的一项（品质相同时保留原名）
+function collapseAchIds(ids) {
+  const best = new Map();
+  for (const id of ids) {
+    const m = ACHIEVEMENTS[id];
+    if (!m) continue;
+    const g = achGroupOf(id);
+    const qn = achQNo(m.quality);
+    if (!best.has(g) || qn > best.get(g)[0]) best.set(g, [qn, Object.assign({ id }, m)]);
+  }
+  return Array.from(best.values()).map(x => x[1]);
+}
 
 // 内存中的成就记录（启动时从 data/ 读入）
 let achRecords = [];
@@ -567,10 +588,10 @@ function broadcastAchievementSummary(roomId, game) {
   const players = {};
   for (const [name, ids] of Object.entries(byPlayer)) {
     if (!ids || !ids.length) continue;
-    players[name] = ids.map(id => ({
-      id,
-      name: (ACHIEVEMENTS[id] && ACHIEVEMENTS[id].name) || id,
-      quality: (ACHIEVEMENTS[id] && ACHIEVEMENTS[id].quality) || 'common'
+    players[name] = collapseAchIds(ids).map(m => ({
+      id: m.id || '',
+      name: m.name || ids[0] || '',
+      quality: m.quality || 'common'
     }));
   }
   if (Object.keys(players).length) io.to(roomId).emit('achievement_summary', { players });
@@ -2325,6 +2346,7 @@ io.on('connection', (socket) => {
       const meta = ACHIEVEMENTS[r.achievementId] || { name: r.achievementId, quality: 'common', game: '?' };
       return {
         id: r.achievementId, name: meta.name, quality: meta.quality, game: meta.game,
+        group: (meta.group || r.achievementId), baseName: (meta.base || meta.name),
         count: r.count, firstTime: r.firstTime, lastTime: r.lastTime
       };
     }).sort((a, b) => (ACH_QUALITY_NO[b.quality] || 0) - (ACH_QUALITY_NO[a.quality] || 0));
@@ -2350,7 +2372,7 @@ io.on('connection', (socket) => {
       stats,
       drawingCareer,
       achievements,
-      totalAch: Object.keys(ACHIEVEMENTS).length
+      totalAch: totalAchCount()
     });
   });
 
@@ -2383,8 +2405,9 @@ io.on('connection', (socket) => {
     const achRow = new Map();
     for (const r of achRecords) {
       if (!OFFICIAL_ACCOUNT_NAMES.includes(r.playerName)) continue;
-      const row = achRow.get(r.playerName) || { count: 0 };
-      row.count++;
+      const row = achRow.get(r.playerName) || { count: 0, groups: new Set() };
+      const g = achGroupOf(r.achievementId);
+      if (!row.groups.has(g)) { row.groups.add(g); row.count++; }
       achRow.set(r.playerName, row);
     }
     const achArr = OFFICIAL_ACCOUNT_NAMES
