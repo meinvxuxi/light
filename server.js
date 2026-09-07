@@ -705,16 +705,16 @@ function bmbAttack(g, room, attacker, target, r, c) {
   if (downed.length) {
     (g.stats[attacker] = g.stats[attacker] || {}).shipsDown = (g.stats[attacker].shipsDown || 0) + downed.length;
     if (!g.stats[attacker].firstDown) g.stats[attacker].firstDown = (g.attacks[attacker] || []).length + 1;
-    const names = g.playerOrder.filter(n => downed.includes(n)).map(n => getDisplayName(n));
-    bmbBoom(room, `💥 ${getDisplayName(attacker)} 一次击落了 ${names.join('、')} 的飞机！`);
+    const shown = g.playerOrder.filter(n => downed.includes(n)).map(n => getDisplayName(n));
+    const who = shown.length === 1 ? shown[0] : shown.slice(0, -1).join('、') + ' 和 ' + shown[shown.length - 1];
+    bmbBoom(room, `💥 ${getDisplayName(attacker)} 炸毁了 ${who} 的飞机！`);
   }
-  // 3) 被波及玩家的“自己棋盘该格”也显示命中痕迹
+  // 3) 每个“其他人”的棋盘该格都显示“这发炮弹落到你这了”：无论空/机身/机头、是否传播，一律标 X
   for (const other of g.playerOrder) {
     if (other === attacker) continue;
-    const has = (g.planes[other] || []).some(p => (p.cells || []).some(cell => cell.r === r && cell.c === c));
-    if (has) {
-      g.meHits[other] = g.meHits[other] || [];
-      if (!g.meHits[other].some(h => h.x === c && h.y === r)) g.meHits[other].push({ x: c, y: r, res: res.res, by: attacker });
+    g.meHits[other] = g.meHits[other] || [];
+    if (!g.meHits[other].some(h => h.x === c && h.y === r)) {
+      g.meHits[other].push({ x: c, y: r, res: res.res, by: attacker });
     }
   }
   g.attacks[attacker] = g.attacks[attacker] || [];
