@@ -107,10 +107,11 @@
         const cell=(cells||[]).find(x=>x.r===r&&x.c===c);
         let cls='',txt='',extra='';
         if(cell && cell.pv){
-          cls=cell.pvbad?'pvbad':'pv';
-          if(cell.pvbad && cell.under){ // 与已摆飞机重叠：半透明橙盖在机身颜色之上
+          const bad=cell.pvbad || cell.bad;
+          cls=bad?'pvbad':'pv';
+          if(bad && cell.under){ // 与已摆飞机重叠：半透明橙盖在机身颜色之上
             const under=cell.under===2?'#ffb3b3':'#cfe9d8';
-            extra=' style="background:linear-gradient(rgba(240,147,43,.55),rgba(240,147,43,.55)),'+under+'"';
+            extra=' style="background:linear-gradient(rgba(240,147,43,.72),rgba(240,147,43,.72)),'+under+'"';
           }
         } else if(ownMarks && ownMarks[key]) {
           const base=cell?(cell.head?'mine head':'mine'):'';
