@@ -146,7 +146,15 @@ function isOfficialPlayer(name) { return OFFICIAL_ACCOUNT_NAMES.includes(name); 
 const ACH_TITLES_BY_GAME = {
   yahtzee: { common: '快艇新秀', rare: '快艇好手', epic: '快艇高手', legend: '快艇大师', hidden: '快艇怪人' },
   // 画猜接龙系列（方案 D 双极风雅，2026-09-06 确认）
-  drawing: { common: '妙笔生花', rare: '妙手偶得', epic: '神笔马良', legend: '执笔乾坤', hidden: '灵魂画手' }
+  drawing: { common: '妙笔生花', rare: '妙手偶得', epic: '神笔马良', legend: '执笔乾坤', hidden: '灵魂画手' },
+  // 炸飞机·烟火师系列（2026-09-07 定稿）
+  bomber: {
+    common: '雨纷纷 旧故里草木深',
+    rare: 'S1烟火师',
+    epic: '艺术就是爆炸',
+    legend: '宇宙热寂之前',
+    hidden: '哑火艺术家' // 未来隐藏成就兜底用
+  }
 };
 const ACH_TITLE_ORDER = ['common', 'rare', 'epic', 'legend'];
 // 该玩家当前已解锁的可选头衔（低→高；测试账号按自己内存中的测试成就算）
