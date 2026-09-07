@@ -146,4 +146,5 @@
 - **2026-09-07 v5.3**：表情包三形态——ovo 大面板 / =w= 左上角常驻小托盘（缩小完整展示、点击即发、收到小提醒条）/ TAT 完全静音，右下小圆按钮长按循环切换并记忆，托盘/弹窗随主题磨砂配色；同步入库 p1~p4 大量头像/表情素材；默契宠物入口暂时移除（后端与接口保留，待重做）。
 - **2026-09-07 上线说明**：全部代码/素材/日志已 commit & push（git 仓库为更新通道）；正式数据只存 data/（已被 .gitignore 排除，不受代码更新影响）；正式部署需保持 PERSIST_ACHIEVEMENTS / PERSIST_TIMELINE / PERSIST_SYNC / PERSIST_BOARD = true，更新=备份 data → git pull → npm install → 带环境变量重启。
 - **2026-09-07 服务器登记**：用户购入阿里云 Ubuntu 海外轻量服务器并已完成首次部署（IP/路径/命令见 `development/服务器运行手册.md`）；正式数据 `data/` 运行时自动落盘 + 服务器每日 03:15 crontab 自动打包（保留 7 份）+ 建议阿里云磁盘每周快照；历史会话中的"每日自动备份"已确认落地并留档。
+- **2026-09-08 正式服首更**：在阿里云服务器 `/root/light` 首次执行一键更新 `git pull && bash deploy/update.sh`，输出 `✅ 健康检查 ok`，pm2 `light online`（↺7）；服务器数据保留完好，更新前已自动备份 `data/` 至 `/root/backup/before-update-*.tgz`。
   - 后续每次开发完成后在本节追加一行，并同步「主进程表」状态。
