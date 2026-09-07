@@ -254,7 +254,7 @@
 
     const params = new URLSearchParams(window.location.search);
     const gameName = params.get('game') || 'yahtzee';
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机' };
     const isDrawing = gameName === 'drawing'; // 画猜接龙固定 4 人，无人数设置
     document.getElementById('roomTitle').textContent = (GAME_LABEL[gameName] || '游戏') + ' · 房间';
 
@@ -431,8 +431,8 @@
     }
 
     function enterGame() {
-      const urlMap = { yahtzee: '/yahtzee.html', light: '/light.html', drawing: '/drawing.html' };
-      const fallback = { yahtzee: 'yahtzee_001', light: 'light_001', drawing: 'drawing_001' };
+      const urlMap = { yahtzee: '/yahtzee.html', light: '/light.html', drawing: '/drawing.html', bomber: '/bomber.html' };
+      const fallback = { yahtzee: 'yahtzee_001', light: 'light_001', drawing: 'drawing_001', bomber: 'bomber_001' };
       const g = (gameName in urlMap) ? gameName : 'yahtzee';
       const rid = roomId || (latestRoom && latestRoom.roomId) || fallback[g];
       window.location.href = urlMap[g] + '?room=' + rid;

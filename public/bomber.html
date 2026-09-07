@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>炸飞机</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#f0f2f5; color:#2c3e50; font-family:'Segoe UI','PingFang SC',sans-serif; padding:12px; }
+  .head { max-width:820px; margin:0 auto; display:flex; justify-content:space-between; align-items:center; }
+  .wrap { max-width:820px; margin:0 auto; padding-top:10px; }
+  .stage { text-align:center; color:#6b7a90; font-size:.9rem; margin:4px 0 10px; }
+  .gridwrap { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; }
+  .panel { text-align:center; }
+  .ptitle { font-size:.82rem; color:#9aa5b1; margin-bottom:6px; }
+  table.g { border-collapse:collapse; margin:0 auto; }
+  table.g td { width:20px; height:20px; border:1px solid #dfe4ea; font-size:9px; text-align:center; cursor:pointer; background:#fff; }
+  table.g td:hover { background:#eef4fb; }
+  table.g td.mine { background:#cfe9d8; }
+  table.g td.mine.head { background:#f0c87a; }
+  table.g td.hit { background:#ff6b6b; color:#fff; }
+  table.g td.miss { background:#eceff3; }
+  table.g td.wound { background:#ffd166; }
+  .bar { text-align:center; margin:12px 0; }
+  .go { color:#4a90d9; cursor:pointer; font-weight:600; }
+  .tip { font-size:.8rem; color:#6b7a90; min-height:18px; }
+  .cfgline { font-size:.82rem; color:#9aa5b1; margin-top:6px; }
+  button { border-radius:8px; border:1px solid #dfe4ea; background:#fff; padding:6px 14px; cursor:pointer; }
+  .pile { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin:8px 0; }
+  .pl { border:2px solid #dfe4ea; padding:4px 8px; border-radius:8px; font-size:.8rem; cursor:pointer; background:#fff; }
+  .pl.sel { border-color:#4a90d9; font-weight:700; }
+  .legend { font-size:.76rem; color:#9aa5b1; margin-top:4px; line-height:1.7; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <b>💣 炸飞机</b>
+    <a class="go" href="#" onclick="if(confirm('退出会放弃本局吗？'))location.href='/lobby.html';return false;">返回大厅</a>
+  </div>
+  <div class="wrap">
+    <div class="stage" id="stage">连接中…</div>
+    <div id="body"></div>
+  </div>
+  
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const myName = sessionStorage.getItem('playerName');
+    if (!myName) location.href = '/index.html';
+    const socket = io();
+    const IS_T = sessionStorage.getItem('isTest') === 'true';
+    socket.on('connect', () => socket.emit('heartbeat', myName, IS_T, true));
+    setInterval(() => socket.emit('heartbeat', myName, IS_T, true), 10000);
+    const CELLS = { 1: [[0,0],[1,-2],[1,-1],[1,0],[1,1],[1,2],[2,0],[3,-1],[3,0],[3,1]],
+      2: [[0,0],[1,0],[2,-2],[2,-1],[2,0],[2,1],[2,2],[3,0],[4,-1],[4,1]],
+      3: [[0,0],[1,-1],[1,0],[1,1],[2,-2],[2,0],[2,2],[3,0],[4,-1],[4,0],[4,1]] };
+    function rot(type, rot) { return CELLS[type].map(([dr, dc]) => rot===1?[dc,-dr]:rot===2?[-dr,-dc]:rot===3?[-dc,dr]:[dr,dc]); }
+    function cellsOf(p) { return rot(p.type, p.rotation||0).map(([dr,dc]) => ({ r: p.headR+dr, c: p.headC+dc, head: dr===0&&dc===0 })); }
+    let S=null, placed=[], selType=null, target=null, toastEl=null;
+    function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+    function tip(t){ const el=document.getElementById('stage'); if(el) el.textContent=t||''; }
+    function toast(m){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;background:rgba(255,255,255,.9);border:1px solid #4a90d9;color:#2c3e50;padding:8px 18px;border-radius:10px;font-size:.86rem;'; document.body.appendChild(toastEl);} toastEl.textContent=m; clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.textContent='';},1800); }
+    function gridTable(cells, clickFn, hits, missMap) {
+      let h='<table class="g">';
+      for (let r=1;r<=15;r++){ h+='<tr>'; for(let c=1;c<=15;c++){
+        const cell=(cells||[]).find(x=>x.r===r&&x.c===c);
+        let cls='',txt='';
+        if(missMap && missMap[r+','+c]) cls='miss';
+        else if(hits){ const ht=hits.find(h=>h.y===r&&h.x===c); if(ht){ cls = ht.res==='沉'?'hit':(ht.res==='伤'?'wound':'miss'); txt = ht.res==='沉'?'✕':(ht.res==='伤'?'●':'·'); } }
+        else if(cell){ cls=cell.head?'mine head':'mine'; txt=cell.head?'★':''; }
+        h+='<td class="'+cls+'"'+(clickFn?' onclick="'+clickFn+'('+r+','+c+')"':'')+'>'+txt+'</td>';
+      } h+='</tr>'; }
+      return h+'</table>';
+    }
+    function pendingList(){ const need=(S&&S.config?S.config.slice():[]); for(const t of placed.map(p=>p.type)){ const i=need.indexOf(t); if(i>=0) need.splice(i,1);} return need; }
+  </script>
+<script>
+
+    function placeAt(r,c){ if(!selType) return toast('先选一架待摆飞机'); const cells=cellsOf({type:selType,rotation:0,headR:r,headC:c}); if(cells.some(x=>x.r<1||x.r>15||x.c<1||x.c>15)) return toast('超出棋盘'); const own=new Set(); placed.forEach(p=>p.cells.forEach(x=>own.add(x.r+','+x.c))); if(cells.some(x=>own.has(x.r+','+x.c))) return toast('与已放飞机重叠'); placed.push({type:selType,rotation:0,headR:r,headC:c,cells}); render(); }
+    function removeAt(r,c){ const i=placed.findIndex(p=>p.cells.some(x=>x.r===r&&x.c===c)); if(i>=0){ placed.splice(i,1); render(); } }
+    function submit(){ const payload=placed.map(p=>({type:p.type,rotation:0,headR:p.headR,headC:p.headC})); socket.emit('bomber_place',{planes:payload},(res)=>{ if(res&&!res.success) toast(res.msg||'摆放无效'); }); }
+    function fireAt(r,c){ if(!target||target===me()) return; socket.emit('bomber_fire',{target,x:c,y:r},(res)=>{ if(res&&!res.success) toast(res.msg||'无法轰炸'); }); }
+    function me(){ return S&&S.you; }
+    function render(){
+      const body=document.getElementById('body'); if(!S||!body) return;
+      if(S.phase==='deploy'){
+        const remain=pendingList(); if(!selType&&remain.length) selType=remain[0];
+        body.innerHTML = '<div class="panel"><div class="ptitle">你的棋盘（点格子=机头落点）</div>'+gridTable(placed.flatMap(p=>p.cells),'placeAt')
+          +'<div class="cfgline">本轮飞机构成：机型 '+S.config.slice().sort((a,b)=>a-b).join('、')+'</div>'
+          +'<div class="pile">'+S.config.map(function(t,i){ var v='机型'+t+' ×1'; if(S.config.indexOf(t)!==i) return ''; return '<span class="pl '+(selType===t?'sel':'')+'" onclick="selType='+t+';render()">'+v+'</span>'; }).join('')+'</div>'
+          +'<div class="legend">已放 '+placed.length+'/5 · 待摆 '+remain.length+'　点已放的格子可移除重摆</div>'
+          +'<div class="bar"><button onclick="submit()" '+(placed.length===5?'':'disabled')+'>确认摆放（'+placed.length+'/5）</button></div>'
+          +'<div class="tip">其他人已提交：'+Object.keys(S.ready||{}).length+'/'+S.alive.length+'</div></div>';
+        return;
+      }
+      if(S.phase==='battle'){
+        const yourCells=(S.board||[]).flat(); const aliveOpts=(S.alive||[]).filter(function(n){return n!==me();});
+        if(!target||aliveOpts.indexOf(target)<0) target=aliveOpts[0];
+        const targetHits=(S.yourHits||[]).filter(function(h){return h.to===target;});
+        const missMap={}; targetHits.filter(function(h){return h.res==='空';}).forEach(function(h){missMap[h.y+','+h.x]=1;});
+        const myTurn=S.turn===me();
+        body.innerHTML = '<div class="gridwrap"><div class="panel"><div class="ptitle">我的布防</div>'+gridTable(yourCells)+'</div>'
+          +'<div class="panel"><div class="ptitle">轰炸 '+(target||'')+' 的棋盘'+(myTurn?'（轮到你）':'（等待对方…）')+'</div>'
+          +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" onclick="target=\''+n+'\';render()">'+esc(n)+'</span>';}).join('')+'</div>'
+          +gridTable(null,'fireAt',targetHits,missMap)
+          +'<div class="cfgline">'+targetHits.filter(function(h){return h.res==='沉';}).length+' 沉 / '+targetHits.filter(function(h){return h.res==='伤';}).length+' 伤 / '+targetHits.filter(function(h){return h.res==='空';}).length+' 空</div></div></div>'
+          +'<div class="stage" style="margin-top:8px;">存活：'+S.alive.join('、')+'　·　当前行动：'+esc(S.turn)+'</div>';
+        return;
+      }
+      if(S.phase==='over') body.innerHTML='<div class="stage" style="font-size:1.1rem;padding:24px;">🏆 本局胜者：'+esc(S.over?S.over.winner:'')+'</div><div class="bar"><a class="go" href="/lobby.html">返回大厅</a></div>';
+    }
+    socket.on('bomber_state', function(s){ S=s; if(s.phase==='battle'||s.phase==='over') placed=[]; render(); });
+    socket.on('connect', function(){ setTimeout(function(){ socket.emit('bomber_pull',function(res){ if(res&&res.success){ S=res; render(); } }); },400); });
+  
+</script>
+</body>
+</html>

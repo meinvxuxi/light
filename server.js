@@ -96,6 +96,16 @@ const GAME_ROOMS = {
     spectators: [],
     playerMap: new Map(),
     leaveTimers: {}
+  },
+  bomber: {
+    roomId: 'bomber_001',
+    gameType: 'bomber',
+    hostName: null,
+    maxPlayers: 4,
+    seats: { 1: null, 2: null, 3: null, 4: null },
+    spectators: [],
+    playerMap: new Map(),
+    leaveTimers: {}
   }
 };
 
@@ -514,19 +524,154 @@ function broadcastAchievementSummary(roomId, game) {
 const GAME_URL_MAP = {
   yahtzee: '/yahtzee.html',
   light: '/light.html',
-  drawing: '/drawing.html'
+  drawing: '/drawing.html',
+  bomber: '/bomber.html'
 };
-const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙' };
+const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机' };
 const ACH_Q_LABEL = { common: '普通', rare: '稀有', epic: '史诗', legend: '传说', hidden: '隐藏' };
 
 const yahtzeeGames = {};
 const drawingGames = {}; // 画猜接龙（drawing）对局
+const bomberGames = {}; // 炸飞机（bomber）对局
+// —— 机型相对坐标（相对机头，0=上）——
+const BMB_CELLS = {
+  1: [[0,0],[1,-2],[1,-1],[1,0],[1,1],[1,2],[2,0],[3,-1],[3,0],[3,1]],
+  2: [[0,0],[1,0],[2,-2],[2,-1],[2,0],[2,1],[2,2],[3,0],[4,-1],[4,1]],
+  3: [[0,0],[1,-1],[1,0],[1,1],[2,-2],[2,0],[2,2],[3,0],[4,-1],[4,0],[4,1]]
+};
+function bmbRotCells(type, rot) {
+  return BMB_CELLS[type].map(([dr, dc]) => {
+    if (rot === 1) return [dc, -dr];
+    if (rot === 2) return [-dr, -dc];
+    if (rot === 3) return [-dc, dr];
+    return [dr, dc];
+  });
+}
+function bmbCellsOf(plane) {
+  return bmbRotCells(Number(plane.type), Number(plane.rotation || 0)).map(([dr, dc]) => ({
+    r: Number(plane.headR) + dr, c: Number(plane.headC) + dc, head: dr === 0 && dc === 0
+  }));
+}
+function bmbConfig() { // 3机型至少各1 + 剩余2随机
+  const cfg = [1, 2, 3];
+  const pool = [1, 1, 2, 2, 3, 3];
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  cfg.push(pool[0], pool[1]);
+  return cfg.sort((a, b) => a - b);
+}
+function bmbValidate(planes, config) {
+  if (!Array.isArray(planes) || planes.length !== 5) return '需要摆放 5 架飞机';
+  const used = planes.map(p => [Number(p.type), Number(p.rotation || 0), Number(p.headR), Number(p.headC)]);
+  const sorted = used.map(p => p[0]).slice().sort();
+  if (sorted.join(',') !== config.slice().sort((a, b) => a - b).join(',')) return '机型组成与本轮配置不一致';
+  const seen = new Set();
+  for (const p of used) {
+    if (p[2] < 1 || p[2] > 15 || p[3] < 1 || p[3] > 15) return '飞机超出棋盘';
+    for (const cell of bmbCellsOf({ type: p[0], rotation: p[1], headR: p[2], headC: p[3] })) {
+      if (cell.r < 1 || cell.r > 15 || cell.c < 1 || cell.c > 15) return '飞机超出棋盘';
+      const k = cell.r + ',' + cell.c;
+      if (seen.has(k)) return '飞机之间不能重叠';
+      seen.add(k);
+    }
+  }
+  return null;
+}
+function bmbMakeGame(room, names) {
+  const config = bmbConfig();
+  const alive = names.slice();
+  return {
+    roomId: room.roomId, gameType: 'bomber', playerOrder: names.slice(), alive, turn: names[0],
+    config, planes: {}, ready: {}, phase: 'deploy', // deploy -> battle -> over
+    headHit: {}, sunkHead: {}, boards: {}, attacks: {}, // attacks: attacker -> [{to,x,y,res}]
+    stats: {}, hitStreak: {}, lastEmpty: 0,
+    startAt: Date.now()
+  };
+}
+function bmbBoardView(g, name) { return (g.planes[name] || []).map(p => p.cells || bmbCellsOf(p)); }
+function bmbState(g, name, room) {
+  return {
+    phase: g.phase, turn: g.turn, alive: g.alive.slice(), config: g.config.slice(), you: name,
+    ready: g.ready, board: bmbBoardView(g, name),
+    yourHits: (g.attacks && g.attacks[name]) || [], stats: g.stats[name] || {},
+    over: g.over || null
+  };
+}
+function bmbBroadcast(room, g) {
+  g.playerOrder.forEach(n => {
+    const sid = room.playerMap.get(n);
+    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('bomber_state', bmbState(g, n, room));
+  });
+}
+// 攻击：target 棋盘判定 + 对全房间同格传播（不反馈C/D）
+function bmbAttack(g, room, attacker, target, r, c) {
+  const res = { x: c, y: r, res: '空' }; // 反馈：空/伤/沉
+  const my = g.planes[attacker] = g.planes[attacker] || [];
+  const targetPlanes = g.planes[target] || [];
+  const key = r + ',' + c;
+  // 打 target
+  const tHit = targetPlanes.map((p, i) => ({ p, i, cell: p.cells.find(cell => cell.r === r && cell.c === c) })).find(o => o.cell);
+  if (tHit) {
+    if (tHit.cell.head) {
+      res.res = '沉';
+      if (!(g.sunkHead[target] || []).includes(tHit.p.headKey)) {
+        g.sunkHead[target] = g.sunkHead[target] || [];
+        g.sunkHead[target].push(tHit.p.headKey);
+        (g.stats[attacker] = g.stats[attacker] || { shipsDown: 0, bodyHits: 0, firstHit: null, firstDown: null });
+        g.stats[attacker].shipsDown = (g.stats[attacker].shipsDown || 0) + 1;
+        if (!g.stats[attacker].firstDown) g.stats[attacker].firstDown = (g.attacks[attacker] || []).length + 1;
+      }
+    } else {
+      res.res = '伤';
+      (g.stats[attacker] = g.stats[attacker] || { bodyHits: 0 });
+      g.stats[attacker].bodyHits = (g.stats[attacker].bodyHits || 0) + 1;
+      if (!g.stats[attacker].firstHit) g.stats[attacker].firstHit = (g.attacks[attacker] || []).length + 1;
+    }
+  }
+  g.attacks[attacker] = g.attacks[attacker] || [];
+  g.attacks[attacker].push({ to: target, x: c, y: r, res: res.res });
+  if (res.res === '空') { g.lastEmpty = (g.lastEmpty || 0) + 1; } else { g.lastEmpty = 0; }
+  if (res.res !== '空') { g.hitStreak[attacker] = (g.hitStreak[attacker] || 0) + 1; } else { g.hitStreak[attacker] = 0; }
+  // 传播：同格伤害所有其他人（不产生反馈）
+  for (const other of g.alive) {
+    if (other === attacker || other === target) continue;
+    const hit = (g.planes[other] || []).find(p => p.cells.some(cell => cell.r === r && cell.c === c && cell.head));
+    if (hit && !(g.sunkHead[other] || []).includes(hit.headKey)) {
+      g.sunkHead[other] = g.sunkHead[other] || [];
+      g.sunkHead[other].push(hit.headKey);
+      (g.stats[attacker] = g.stats[attacker] || {}).propKills = (g.stats[attacker].propKills || 0) + 1;
+    }
+  }
+  // 淘汰判定：对方5架机头全中
+  const targetSunk = (g.sunkHead[target] || []).length;
+  if (targetSunk >= 5) {
+    g.alive = g.alive.filter(n => n !== target);
+    g.eliminated = g.eliminated || {};
+    g.eliminated[target] = Date.now();
+  }
+  // 下一回合：下一存活者
+  const idx = g.alive.indexOf(attacker);
+  let next = null;
+  for (let i = 1; i <= g.alive.length; i++) {
+    const n = g.alive[(idx + i) % g.alive.length];
+    if (n && n !== target) { next = n; break; }
+  }
+  if (g.alive.length <= 1) {
+    g.phase = 'over';
+    g.over = { winner: g.alive[0], alive: g.alive.slice() };
+  } else {
+    g.turn = next;
+  }
+  bmbBroadcast(room, g);
+  return res;
+}
 const drawingAtGame = new Map(); // playerName -> 当前正打开“画猜接龙游戏页”的 socket.id（用于判定谁真正在对局内）
 const lobbyViewers = new Map(); // playerName -> 正在大厅页的 socket.id（表情包跨页互发用）
 // 通用取"某房间当前进行中的对局"（yahtzee / light / drawing 共用）
 function activeGameOf(room) {
   if (!room) return null;
-  return room.gameType === 'drawing' ? (drawingGames[room.roomId] || null) : (yahtzeeGames[room.roomId] || null);
+  if (room.gameType === 'drawing') return drawingGames[room.roomId] || null;
+  if (room.gameType === 'bomber') return bomberGames[room.roomId] || null;
+  return yahtzeeGames[room.roomId] || null;
 }
 
 // ============================================================
@@ -925,6 +1070,10 @@ function resetRoom(room) {
     delete drawingGames[room.roomId];
     console.log(`🔄 房间 ${room.roomId} 的画猜接龙已清除`);
   }
+  if (bomberGames[room.roomId]) {
+    delete bomberGames[room.roomId];
+    console.log(`🔄 房间 ${room.roomId} 的炸飞机已清除`);
+  }
   if (gameEndTimers[room.roomId]) {
     clearTimeout(gameEndTimers[room.roomId]);
     delete gameEndTimers[room.roomId];
@@ -941,6 +1090,20 @@ function resetRoom(room) {
 function removeOfflinePlayer(room, playerName, force) {
   // 画猜接龙：离线只标记不除名——座位/对局保留、可随时重进；仅当房间内所有人均无心跳才重置房间
   if (room.gameType === 'drawing' && drawingGames[room.roomId]) {
+    if (room.leaveTimers[playerName]) {
+      clearTimeout(room.leaveTimers[playerName]);
+      delete room.leaveTimers[playerName];
+    }
+    const allOff = [...room.playerMap.keys()].every(n => {
+      const hb = userLastHeartbeat.get(n);
+      return !hb || (Date.now() - hb) > HEARTBEAT_TIMEOUT;
+    });
+    if (allOff) resetRoom(room);
+    else broadcastRoom(room);
+    return;
+  }
+  // 炸飞机：对局进行中同样“离线只标记不除名”，座位/对局保留，可重进继续
+  if (room.gameType === 'bomber' && bomberGames[room.roomId]) {
     if (room.leaveTimers[playerName]) {
       clearTimeout(room.leaveTimers[playerName]);
       delete room.leaveTimers[playerName];
@@ -2049,7 +2212,7 @@ io.on('connection', (socket) => {
       delete gameEndTimers[room.roomId];
     }
     const players = Object.values(room.seats).filter(Boolean);
-    const needPlayers = room.gameType === 'drawing' ? 4 : 2; // 画猜接龙为四人版
+    const needPlayers = room.gameType === 'drawing' ? 4 : 2; // 画猜接龙为四人版；其余默认至少 2 人
     if (players.length < needPlayers || !players.every(p => p.ready)) return;
     if (room.gameType === 'yahtzee') {
       const playerNames = players.map(p => p.name);
@@ -2057,10 +2220,15 @@ io.on('connection', (socket) => {
     } else if (room.gameType === 'drawing') {
       const playerNames = players.map(p => p.name);
       dgInit(room.roomId, playerNames);
+    } else if (room.gameType === 'bomber') {
+      const playerNames = players.map(p => p.name);
+      bomberGames[room.roomId] = bmbMakeGame(room, playerNames);
     }
     broadcastRoom(room);
     if (room.gameType === 'drawing') {
       dgBroadcast(room);
+    } else if (room.gameType === 'bomber') {
+      bmbBroadcast(room, bomberGames[room.roomId]);
     } else {
       broadcastYahtzeeState(room.roomId);
     }
@@ -2832,6 +3000,49 @@ io.on('connection', (socket) => {
         }
       }
     }
+    if (cb) cb({ success: true });
+  });
+
+  // ========== 炸飞机：摆放 / 开火 ==========
+  socket.on('bomber_pull', (cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'bomber') : null;
+    const g = room && bomberGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false }); return; }
+    if (cb) cb({ success: true, ...bmbState(g, name, room) });
+  });
+  socket.on('bomber_place', ({ planes }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'bomber') : null;
+    const g = room && bomberGames[room.roomId];
+    if (!room || !g || g.phase !== 'deploy' || g.ready[name]) { if (cb) cb({ success: false, msg: '当前不能摆放' }); return; }
+    if (!g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '你不在本局中' }); return; }
+    const norm = (planes || []).map(p => ({ type: Number(p.type), rotation: Number(p.rotation || 0), headR: Number(p.headR), headC: Number(p.headC) }));
+    const err = bmbValidate(norm, g.config);
+    if (err) { if (cb) cb({ success: false, msg: err }); return; }
+    g.planes[name] = norm.map(p => {
+      const cells = bmbCellsOf(p);
+      return Object.assign({}, p, { cells, headKey: p.type + '@' + p.headR + ',' + p.headC });
+    });
+    g.ready[name] = true;
+    if (g.playerOrder.every(n => g.ready[n])) {
+      g.phase = 'battle';
+      g.turn = g.playerOrder[0];
+    }
+    bmbBroadcast(room, g);
+    if (cb) cb({ success: true });
+  });
+  socket.on('bomber_fire', ({ target, x, y }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'bomber') : null;
+    const g = room && bomberGames[room.roomId];
+    if (!room || !g || g.phase !== 'battle') { if (cb) cb({ success: false, msg: '对局尚未开始' }); return; }
+    const r = Number(y), c = Number(x);
+    if (g.turn !== name || !g.alive.includes(name)) { if (cb) cb({ success: false, msg: '还没轮到你' }); return; }
+    if (target === name || !g.alive.includes(target)) { if (cb) cb({ success: false, msg: '目标无效' }); return; }
+    if (r < 1 || r > 15 || c < 1 || c > 15) { if (cb) cb({ success: false, msg: '坐标越界' }); return; }
+    if ((g.attacks[name] || []).some(a => a.to === target && a.x === c && a.y === r)) { if (cb) cb({ success: false, msg: '这个坐标已经打过了' }); return; }
+    bmbAttack(g, room, name, target, r, c);
     if (cb) cb({ success: true });
   });
 
