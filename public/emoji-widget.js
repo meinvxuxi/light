@@ -19,9 +19,17 @@
     'body.dyn-pink .emj-burst .emj-card{border-color:rgba(240,98,146,.5)}body.dyn-green .emj-burst .emj-card{border-color:rgba(111,158,99,.5)}body.dyn-gold .emj-burst .emj-card{border-color:rgba(214,168,67,.5)}body.dyn-red .emj-burst .emj-card{border-color:rgba(166,64,58,.5)}',
     '.emj-burst img{width:min(40vw,220px);height:auto;border-radius:10px;display:block}',
     '.emj-burst .emj-who{text-align:center;font-size:.82rem;color:#2c3e50;font-weight:600;margin-top:6px}',
-    '.emj-mini{position:fixed;left:10px;top:10px;z-index:5000;display:none;align-items:center;gap:7px;background:rgba(255,255,255,.6);border:1px solid rgba(74,144,217,.45);border-radius:12px;padding:5px 10px 5px 6px;backdrop-filter:blur(10px);box-shadow:0 4px 16px rgba(31,45,61,.14);pointer-events:none;opacity:0;transition:opacity .3s}',
-    '.emj-mini img{width:46px;height:46px;object-fit:contain;border-radius:8px}',
-    '.emj-mini .emj-who{font-size:.72rem;color:#2c3e50;margin:0}',
+    '.emj-mini{position:fixed;left:10px;top:10px;z-index:5000;display:none;align-items:center;gap:3px;background:rgba(255,255,255,.68);border:1px solid rgba(74,144,217,.45);border-radius:14px;padding:5px 8px;backdrop-filter:blur(10px);box-shadow:0 4px 16px rgba(31,45,61,.14)}',
+    '.emj-mini img{width:40px;height:40px;object-fit:contain;border-radius:7px;cursor:pointer;transition:transform .12s}',
+    '.emj-mini img:hover{transform:scale(1.1)}',
+    '.emj-mini .emj-tip{font-size:.72rem;color:#6b7a90;padding:4px 6px}',
+    '.emj-alert{position:fixed;left:10px;top:64px;z-index:5000;display:none;align-items:center;gap:6px;background:rgba(255,255,255,.7);border:1px solid rgba(74,144,217,.45);border-radius:12px;padding:4px 10px 4px 5px;backdrop-filter:blur(10px);pointer-events:none;opacity:0;transition:opacity .3s}',
+    '.emj-alert img{width:44px;height:44px;object-fit:contain;border-radius:7px}',
+    '.emj-alert .emj-who{font-size:.72rem;color:#2c3e50;margin:0;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    'body.dyn-pink .emj-mini,body.dyn-pink .emj-alert{border-color:rgba(240,98,146,.5)}',
+    'body.dyn-green .emj-mini,body.dyn-green .emj-alert{border-color:rgba(111,158,99,.5)}',
+    'body.dyn-gold .emj-mini,body.dyn-gold .emj-alert{border-color:rgba(214,168,67,.5)}',
+    'body.dyn-red .emj-mini,body.dyn-red .emj-alert{border-color:rgba(166,64,58,.5)}',
     '@keyframes emjpop{0%{opacity:0}10%{opacity:1}80%{opacity:1}100%{opacity:0}}'
   ].join('\n');
   var styleEl = document.createElement('style'); styleEl.textContent = STYLE; document.head.appendChild(styleEl);
@@ -32,7 +40,8 @@
   var wrap = document.createElement('div'); wrap.className = 'emj-wrap';
   var btn = document.createElement('div'); btn.className = 'emj-btn'; btn.textContent = 'ovo'; btn.title = '表情包：点击展开 · 长按 ovo/=w=/TAT 切换显示形态';
   var panel = document.createElement('div'); panel.className = 'emj-panel';
-  var mini = document.createElement('div'); mini.className = 'emj-mini';
+  var mini = document.createElement('div'); mini.className = 'emj-mini'; // =w= 形态：左上角常驻小托盘（可点发送）
+  var alertEl = document.createElement('div'); alertEl.className = 'emj-alert'; // =w= 收到提醒小条
   var miniTimer = null;
   function applyMode() {
     btn.textContent = mode === 0 ? 'ovo' : (mode === 1 ? '=w=' : 'TAT');
@@ -40,17 +49,31 @@
     if (opened && mode !== 0) { opened = false; }
     panel.classList.toggle('on', opened && mode === 0);
     burst.style.display = mode === 0 ? '' : 'none';
-    if (mode !== 1) { mini.style.opacity = '0'; setTimeout(function () { if (mode !== 1) mini.style.display = 'none'; }, 320); }
-    else { mini.style.display = 'flex'; }
+    if (mode === 1) {
+      mini.style.display = 'flex';
+      renderTray();
+      alertEl.style.display = 'flex';
+    } else {
+      mini.style.display = 'none';
+      alertEl.style.opacity = '0';
+      setTimeout(function () { if (mode !== 1) alertEl.style.display = 'none'; }, 320);
+    }
     localStorage.setItem('emjMode', String(mode));
+  }
+  function renderTray() {
+    if (!mine.length) { mini.innerHTML = '<span class="emj-tip">去设置选 3 个表情</span>'; return; }
+    mini.innerHTML = mine.map(function (id, i) {
+      var it = items.find(function (x) { return x.id === id; });
+      return it ? '<img class="emj-item" src="' + it.url + '" title="发送表情" onclick="window.__emjSend(' + i + ')">' : '';
+    }).join('');
   }
   function showMini(url, who) {
     clearTimeout(miniTimer);
-    if (!mini.firstChild) { mini.innerHTML = '<img src="' + url + '"><span class="emj-who">' + (who || '') + '</span>'; }
-    else { mini.querySelector('img').src = url; mini.querySelector('.emj-who').textContent = who || ''; }
-    mini.style.display = 'flex';
-    requestAnimationFrame(function () { mini.style.opacity = '1'; });
-    miniTimer = setTimeout(function () { mini.style.opacity = '0'; }, 3400);
+    if (!alertEl.firstChild) { alertEl.innerHTML = '<img src="' + url + '"><span class="emj-who">' + (who || '') + '</span>'; }
+    else { alertEl.querySelector('img').src = url; alertEl.querySelector('.emj-who').textContent = who || ''; }
+    alertEl.style.display = 'flex';
+    requestAnimationFrame(function () { alertEl.style.opacity = '1'; });
+    miniTimer = setTimeout(function () { alertEl.style.opacity = '0'; }, 3400);
   }
   btn.onclick = function () {
     if (btn._blockClick) { btn._blockClick = false; return; }
@@ -74,8 +97,7 @@
   btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   wrap.appendChild(panel); wrap.appendChild(btn);
   var burst = document.createElement('div'); burst.className = 'emj-burst';
-  mini.innerHTML = '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" style="opacity:0"><span class="emj-who">表情提醒</span>';
-  document.body.appendChild(wrap); document.body.appendChild(burst); document.body.appendChild(mini);
+  document.body.appendChild(wrap); document.body.appendChild(burst); document.body.appendChild(mini); document.body.appendChild(alertEl);
   applyMode();
   function disp(n) { return dispMap[n] || n; }
   function renderPanel() {
@@ -116,6 +138,6 @@
   socket.on('connect', function () {
     socket.emit('get_display_names', function (r) { if (r && r.success) dispMap = r.map; });
     if (/\/lobby/.test(location.pathname)) socket.emit('lobby_enter');
-    setTimeout(function () { socket.emit('get_emoji', function (res) { if (res && res.success) { items = res.items || []; mine = (res.mine || []).slice(); renderPanel(); } }); }, 400);
+    setTimeout(function () { socket.emit('get_emoji', function (res) { if (res && res.success) { items = res.items || []; mine = (res.mine || []).slice(); renderPanel(); renderTray(); } }); }, 400);
   });
 })();
