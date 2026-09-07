@@ -57,7 +57,7 @@
       3: [[0,0],[1,-1],[1,0],[1,1],[2,-2],[2,0],[2,2],[3,0],[4,-1],[4,0],[4,1]] };
     function rot(type, rot) { return CELLS[type].map(([dr, dc]) => rot===1?[dc,-dr]:rot===2?[-dr,-dc]:rot===3?[-dc,dr]:[dr,dc]); }
     function cellsOf(p) { return rot(p.type, p.rotation||0).map(([dr,dc]) => ({ r: p.headR+dr, c: p.headC+dc, head: dr===0&&dc===0 })); }
-    let S=null, placed=[], selType=null, target=null, toastEl=null;
+    let S=null, placed=[], selType=null, selRot=0, target=null, toastEl=null;
     function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     function tip(t){ const el=document.getElementById('stage'); if(el) el.textContent=t||''; }
     function toast(m){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;background:rgba(255,255,255,.9);border:1px solid #4a90d9;color:#2c3e50;padding:8px 18px;border-radius:10px;font-size:.86rem;'; document.body.appendChild(toastEl);} toastEl.textContent=m; clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.textContent='';},1800); }
@@ -78,20 +78,24 @@
   </script>
 <script>
 
-    function placeAt(r,c){ if(!selType) return toast('先选一架待摆飞机'); const cells=cellsOf({type:selType,rotation:0,headR:r,headC:c}); if(cells.some(x=>x.r<1||x.r>15||x.c<1||x.c>15)) return toast('超出棋盘'); const own=new Set(); placed.forEach(p=>p.cells.forEach(x=>own.add(x.r+','+x.c))); if(cells.some(x=>own.has(x.r+','+x.c))) return toast('与已放飞机重叠'); placed.push({type:selType,rotation:0,headR:r,headC:c,cells}); render(); }
+    function remCount(t){ const need=S?S.config.slice():[]; for(const p of placed){ const i=need.indexOf(p.type); if(i>=0) need.splice(i,1);} let c=0; for(const v of need) if(v===t)c++; return c; }
+    function placeAt(r,c){ if(!selType) return toast('先选一架待摆飞机'); if(remCount(selType)<=0) return toast('该机型本局已摆完'); const cells=cellsOf({type:selType,rotation:selRot,headR:r,headC:c}); if(cells.some(x=>x.r<1||x.r>15||x.c<1||x.c>15)) return toast('超出棋盘'); const own=new Set(); placed.forEach(p=>p.cells.forEach(x=>own.add(x.r+','+x.c))); if(cells.some(x=>own.has(x.r+','+x.c))) return toast('与已放飞机重叠'); placed.push({type:selType,rotation:selRot,headR:r,headC:c,cells}); selType=null; render(); }
     function removeAt(r,c){ const i=placed.findIndex(p=>p.cells.some(x=>x.r===r&&x.c===c)); if(i>=0){ placed.splice(i,1); render(); } }
-    function submit(){ const payload=placed.map(p=>({type:p.type,rotation:0,headR:p.headR,headC:p.headC})); socket.emit('bomber_place',{planes:payload},(res)=>{ if(res&&!res.success) toast(res.msg||'摆放无效'); }); }
+    function undoLast(){ if(placed.length){ placed.pop(); selType=null; render(); } }
+    function rotLabel(){ return ['上','右','下','左'][selRot]||'上'; }
+    function submit(){ const payload=placed.map(p=>({type:p.type,rotation:p.rotation||0,headR:p.headR,headC:p.headC})); socket.emit('bomber_place',{planes:payload},(res)=>{ if(res&&!res.success) toast(res.msg||'摆放无效'); }); }
     function fireAt(r,c){ if(!target||target===me()) return; socket.emit('bomber_fire',{target,x:c,y:r},(res)=>{ if(res&&!res.success) toast(res.msg||'无法轰炸'); }); }
     function me(){ return S&&S.you; }
     function render(){
       const body=document.getElementById('body'); if(!S||!body) return;
       if(S.phase==='deploy'){
-        const remain=pendingList(); if(!selType&&remain.length) selType=remain[0];
-        body.innerHTML = '<div class="panel"><div class="ptitle">你的棋盘（点格子=机头落点）</div>'+gridTable(placed.flatMap(p=>p.cells),'placeAt')
-          +'<div class="cfgline">本轮飞机构成：机型 '+S.config.slice().sort((a,b)=>a-b).join('、')+'</div>'
-          +'<div class="pile">'+S.config.map(function(t,i){ var v='机型'+t+' ×1'; if(S.config.indexOf(t)!==i) return ''; return '<span class="pl '+(selType===t?'sel':'')+'" onclick="selType='+t+';render()">'+v+'</span>'; }).join('')+'</div>'
-          +'<div class="legend">已放 '+placed.length+'/5 · 待摆 '+remain.length+'　点已放的格子可移除重摆</div>'
-          +'<div class="bar"><button onclick="submit()" '+(placed.length===5?'':'disabled')+'>确认摆放（'+placed.length+'/5）</button></div>'
+        const types=[1,2,3]; const remSum=types.reduce((a,t)=>a+remCount(t),0);
+        if((!selType||remCount(selType)<=0)&&remSum>0) selType=types.find(t=>remCount(t)>0);
+        body.innerHTML = '<div class="panel"><div class="ptitle">你的棋盘（先选飞机→转方向→点格子=机头落点）</div>'+gridTable(placed.flatMap(p=>p.cells),'placeAt')
+          +'<div class="cfgline">本轮构成：机型1 ×'+remCount(1)+'（已放'+placed.filter(p=>p.type===1).length+'）　机型2 ×'+remCount(2)+'（已放'+placed.filter(p=>p.type===2).length+'）　机型3 ×'+remCount(3)+'（已放'+placed.filter(p=>p.type===3).length+'）</div>'
+          +'<div class="pile">'+types.map(function(t){ var c=remCount(t); return '<span class="pl '+(selType===t?'sel':'')+'" style="'+(c<=0?'opacity:.35;pointer-events:none;':'')+'" onclick="selType='+t+';render()">机型'+t+'（剩'+c+'）</span>'; }).join('')+'</div>'
+          +'<div class="bar"><button onclick="selRot=(selRot+1)%4;render()">朝向：'+rotLabel()+'（点我旋转）</button> <button onclick="undoLast()">撤销上一架</button> <button onclick="submit()" '+(placed.length===5?'':'disabled')+'>确认摆放（'+placed.length+'/5）</button></div>'
+          +'<div class="legend">点已放格可移除单架 · 共 '+remSum+' 架待摆</div>'
           +'<div class="tip">其他人已提交：'+Object.keys(S.ready||{}).length+'/'+S.alive.length+'</div></div>';
         return;
       }
