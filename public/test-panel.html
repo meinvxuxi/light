@@ -108,6 +108,8 @@
     <br>
     <button class="btn-trigger" onclick="triggerDrawing('me')">🎨 一键触发全部画猜成就（当前账号）</button>
     <button class="btn-trigger" onclick="triggerDrawing('all')">🎨 给四个测试号各触发全部画猜成就</button>
+    <br>
+    <button class="btn-trigger" onclick="guestAchDemo()">📢 模拟游客稀有成就 → 游客留言板</button>
     <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
       用 test1~test4 登录后一键触发成就，再到荣誉墙查看效果；测试数据只存内存，重启即清空。
     </p>
@@ -204,6 +206,12 @@
         } else {
           log('❌ ' + ((res && res.msg) || '生成失败'));
         }
+      });
+    }
+
+    function guestAchDemo() {
+      socket.emit('test_guest_ach_board', (res) => {
+        log((res && res.success) ? '📢 已推送：' + ((res && res.msg) || '') : '❌ ' + ((res && res.msg) || '失败'));
       });
     }
 

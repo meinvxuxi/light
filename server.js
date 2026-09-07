@@ -399,6 +399,24 @@ function announceAchievement(game, roomId, playerName, achievementId, repeatable
   if (!game || game.mock) return;
   const meta = ACHIEVEMENTS[achievementId];
   if (!meta) return;
+
+  // 游客：不记正式榜；仅当触发稀有/史诗/传说时，系统推送到“游客留言板”
+  if (String(playerName || '').startsWith('游客')) {
+    if (!['rare', 'epic', 'legend'].includes(meta.quality)) return;
+    if (!game.achievementsByPlayer) game.achievementsByPlayer = {};
+    const arr = (game.achievementsByPlayer[playerName] = game.achievementsByPlayer[playerName] || []);
+    if (arr.includes(achievementId)) return;
+    arr.push(achievementId);
+    const gName = GAME_NAME_LABEL[meta.game] || meta.game || '';
+    const qName = ACH_Q_LABEL[meta.quality] || meta.quality;
+    pushBoard('guest', {
+      name: '系统',
+      text: `🏆 游客「${playerName}」在${gName}解锁${qName}成就「${meta.name}」！`,
+      ts: Date.now()
+    });
+    return;
+  }
+
   if (!game.achievementsByPlayer) game.achievementsByPlayer = {};
   if (!game.achievementsByPlayer[playerName]) game.achievementsByPlayer[playerName] = [];
   const byPlayer = game.achievementsByPlayer[playerName];
@@ -468,6 +486,8 @@ const GAME_URL_MAP = {
   light: '/light.html',
   drawing: '/drawing.html'
 };
+const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙' };
+const ACH_Q_LABEL = { common: '普通', rare: '稀有', epic: '史诗', legend: '传说', hidden: '隐藏' };
 
 const yahtzeeGames = {};
 const drawingGames = {}; // 画猜接龙（drawing）对局
@@ -1679,6 +1699,21 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, count: rows.length, rows });
   });
 
+  // 测试助手：模拟“游客达成稀有成就 → 游客留言板系统推送”
+  socket.on('test_guest_ach_board', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（test1~test4）可使用' });
+      return;
+    }
+    pushBoard('guest', {
+      name: '系统',
+      text: `🏆 游客「游客9527」在画猜接龙解锁稀有成就「花菜大满贯」！`,
+      ts: Date.now()
+    });
+    if (cb) cb({ success: true, msg: '已推送到游客留言板（去留言板 → 游客留言查看）' });
+  });
+
   // 测试助手：重置当前测试账号的成就与模拟个人空间（内存，重启也会清空）
   socket.on('test_reset_achievements', (cb) => {
     const me = socketToUser.get(socket.id);
@@ -2349,7 +2384,7 @@ io.on('connection', (socket) => {
     const combo = (a, b) => {
       const key = syncPairKey(a, b);
       const p = syncGetPair(key);
-      return { a, b, key, score: p.score, titles: p.titles, alias: p.alias || '', pendingName: (p.pending && p.pending.name) || '', pendingBy: (p.pending && p.pending.by) || '' };
+      return { a, b, key, score: p.score, titles: p.titles, alias: p.alias || '', aliasHistory: (p.aliasHistory || []).slice(), pendingName: (p.pending && p.pending.name) || '', pendingBy: (p.pending && p.pending.by) || '' };
     };
     const first = others.map(o => combo(name, o));
     const second = [];
@@ -2374,7 +2409,7 @@ io.on('connection', (socket) => {
     if (!isMember) {
       // 访客：只读查看，不进会话、不参与小游戏
       const p = syncGetPair(key);
-      if (cb) cb({ success: true, role: 'viewer', key, score: p.score, titles: p.titles, alias: p.alias || '', pendingName: (p.pending && p.pending.name) || '', pendingBy: (p.pending && p.pending.by) || '' });
+      if (cb) cb({ success: true, role: 'viewer', key, score: p.score, titles: p.titles, alias: p.alias || '', aliasHistory: (p.aliasHistory || []).slice(), pendingName: (p.pending && p.pending.name) || '', pendingBy: (p.pending && p.pending.by) || '' });
       return;
     }
     socket.join('sync:' + key);
@@ -2396,7 +2431,7 @@ io.on('connection', (socket) => {
         paintSendTo(sess, name, 'paint_restore', { role: 'guesser', wordLen: paintWordLen(pt.word), strokes: pt.strokes, deadline: pt.deadline, attemptsTotal: (pt.attempts || []).length });
       }
     }
-    if (cb) cb({ success: true, role: 'member', members: [...sess.members], phase: sess.phase, game: sess.game, score: syncGetPair(key).score, titles: syncGetPair(key).titles, alias: syncGetPair(key).alias || '', pendingName: (syncGetPair(key).pending && syncGetPair(key).pending.name) || '', pendingBy: (syncGetPair(key).pending && syncGetPair(key).pending.by) || '' });
+    if (cb) cb({ success: true, role: 'member', members: [...sess.members], phase: sess.phase, game: sess.game, score: syncGetPair(key).score, titles: syncGetPair(key).titles, alias: syncGetPair(key).alias || '', aliasHistory: (syncGetPair(key).aliasHistory || []).slice(), pendingName: (syncGetPair(key).pending && syncGetPair(key).pending.name) || '', pendingBy: (syncGetPair(key).pending && syncGetPair(key).pending.by) || '' });
   });
 
   // 画作墙：拉取某组合保存的画作（成员与访客都可查看）
@@ -2440,6 +2475,11 @@ io.on('connection', (socket) => {
     if (!p.pending) { if (cb) cb({ success: false, msg: '没有待处理的改名申请' }); return; }
     if (me === p.pending.by) { if (cb) cb({ success: false, msg: '请等待对方同意' }); return; }
     if (agree) {
+      if (p.alias && p.alias !== p.pending.name) {
+        const h = p.aliasHistory || (p.aliasHistory = []);
+        h.push({ name: p.alias, ts: Date.now() });
+        if (h.length > 20) h.shift();
+      }
       p.alias = p.pending.name;
     }
     delete p.pending;
@@ -2836,6 +2876,7 @@ function syncEmitState(pairKey) {
     score: p.score,
     titles: p.titles,
     alias: p.alias || '',
+    aliasHistory: (p.aliasHistory || []).slice(),
     pendingName: (p.pending && p.pending.name) || '',
     pendingBy: (p.pending && p.pending.by) || ''
   });

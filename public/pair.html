@@ -41,6 +41,7 @@
     .mdetail { color: #7f8fa6; font-size: .84rem; }
     .asub { color: #9aa5b1; font-size: .8rem; width: 100%; }
     .aliasbar { font-size: .85rem; color: #6b7a90; padding: 8px 2px; margin-top: 8px; border-top: 1px dashed #e8ecf1; }
+    .alias-hist { font-size: .78rem; color: #9aa5b1; padding: 4px 2px 8px; border-bottom: 1px dashed #f0f2f5; }
     .mtl { color: #e08a2d; font-size: .78rem; background: #fbf4ea; border-radius: 12px; padding: 1px 9px; }
     .present { font-size: .8rem; color: #27ae60; margin-top: 6px; }
     .present.wait { color: #9aa5b1; }
@@ -183,7 +184,7 @@
     setInterval(sendHeartbeat, 10000);
 
     // 当前组合信息（服务器下发的 score/titles/phase/members/ready 均以广播为准）
-    let pairInfo = { score: 0, titles: [], phase: 'idle', members: [], readyGame: null, readyVotes: [], alias: '', pendingName: '', pendingBy: '' };
+    let pairInfo = { score: 0, titles: [], phase: 'idle', members: [], readyGame: null, readyVotes: [], alias: '', aliasHistory: [], pendingName: '', pendingBy: '' };
     let qaMode = false;       // 是否进入问答视图
     let myAnswered = false;
     let lastQOpts = [];       // 当前题的选项（用于展示对方作答）
@@ -227,6 +228,11 @@
         </div>`;
       }
       return `<div class="aliasbar"><span class="go" onclick="aliasAsk()">给组合起个名字</span></div>`;
+    }
+    function aliasHistHtml() {
+      const h = pairInfo.aliasHistory || [];
+      if (!h.length) return '';
+      return `<div class="alias-hist">曾用名：${h.map(x => esc(x.name || x)).join(' → ')}</div>`;
     }
     function aliasAsk() {
       const n = prompt('给这个默契组合起个名字（1~10 字，对方同意后生效）');
@@ -293,7 +299,7 @@
       if (wallMode) { renderWall(); return; }
       const w = document.getElementById('wrap');
       if (!qaMode) {
-        w.innerHTML = metaHtml() + (isMember ? aliasBarHtml() + menuHtml() : viewerHtml());
+        w.innerHTML = metaHtml() + (isMember ? aliasBarHtml() + aliasHistHtml() + menuHtml() : viewerHtml());
       } else {
         w.innerHTML = metaHtml();
       }
@@ -395,7 +401,7 @@
       pairInfo = {
         score: st.score, titles: st.titles || [], phase: st.phase,
         members: st.members || [], readyGame: st.readyGame || null, readyVotes: st.readyVotes || [],
-        alias: st.alias || '', pendingName: st.pendingName || '', pendingBy: st.pendingBy || ''
+        alias: st.alias || '', aliasHistory: st.aliasHistory || [], pendingName: st.pendingName || '', pendingBy: st.pendingBy || ''
       };
       if (st.phase === 'playing') {
         if (st.game === 'paint') {
@@ -835,6 +841,7 @@
             phase: res.phase || 'idle',
             members: res.members || [],
             alias: res.alias || '',
+            aliasHistory: res.aliasHistory || [],
             pendingName: res.pendingName || '',
             pendingBy: res.pendingBy || ''
           });
