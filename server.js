@@ -3092,10 +3092,12 @@ io.on('connection', (socket) => {
     const name = socketToUser.get(socket.id);
     const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'bomber') : null;
     const g = room && bomberGames[room.roomId];
+    console.log('🎯 bomber_place', name, 'phase=', g && g.phase, 'ready=', g && g.ready && g.ready[name]);
     if (!room || !g || g.phase !== 'deploy' || g.ready[name]) { if (cb) cb({ success: false, msg: '当前不能摆放' }); return; }
     if (!g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '你不在本局中' }); return; }
     const norm = (planes || []).map(p => ({ type: Number(p.type), rotation: Number(p.rotation || 0), headR: Number(p.headR), headC: Number(p.headC) }));
     const err = bmbValidate(norm, g.config);
+    console.log('  validate=', err || 'OK', 'config=', g.config);
     if (err) { if (cb) cb({ success: false, msg: err }); return; }
     g.planes[name] = norm.map(p => {
       const cells = bmbCellsOf(p);
@@ -3113,6 +3115,7 @@ io.on('connection', (socket) => {
     const name = socketToUser.get(socket.id);
     const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'bomber') : null;
     const g = room && bomberGames[room.roomId];
+    console.log('💣 bomber_fire', name, '->', target, x, y, 'turn=', g && g.turn, 'phase=', g && g.phase, 'alive=', g && g.alive);
     if (!room || !g || g.phase !== 'battle') { if (cb) cb({ success: false, msg: '对局尚未开始' }); return; }
     const r = Number(y), c = Number(x);
     if (g.turn !== name || !g.alive.includes(name)) { if (cb) cb({ success: false, msg: '还没轮到你' }); return; }
