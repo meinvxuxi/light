@@ -17,10 +17,12 @@
   table.g td { width:20px; height:20px; border:1px solid #dfe4ea; font-size:9px; text-align:center; cursor:pointer; background:#fff; }
   table.g td:hover { background:#eef4fb; }
   table.g td.mine { background:#cfe9d8; }
-  table.g td.mine.head { background:#f0c87a; }
+  table.g td.mine.head { background:#ffb3b3; }
   table.g td.hit { background:#ff6b6b; color:#fff; }
   table.g td.miss { background:#eceff3; }
-  table.g td.wound { background:#ffd166; }
+  table.g td.wound { background:#cfe9d8; }
+  table.g td.ownhit { background:#cdd3da; color:#55606c; font-weight:800; }
+  .barrage { position:fixed; left:50%; bottom:56px; transform:translateX(-50%); z-index:98; font-size:.86rem; color:#2c3e50; background:rgba(255,255,255,.9); border:1px solid #4a90d9; padding:6px 16px; border-radius:12px; pointer-events:none; opacity:0; transition:opacity .2s; }
   .bar { text-align:center; margin:12px 0; }
   .go { color:#4a90d9; cursor:pointer; font-weight:600; }
   .tip { font-size:.8rem; color:#6b7a90; min-height:18px; }
@@ -64,9 +66,10 @@
       for (let r=1;r<=15;r++){ h+='<tr>'; for(let c=1;c<=15;c++){
         const cell=(cells||[]).find(x=>x.r===r&&x.c===c);
         let cls='',txt='';
-        if(missMap && missMap[r+','+c]) cls='miss';
-        else if(hits){ const ht=hits.find(h=>h.y===r&&h.x===c); if(ht){ cls = ht.res==='沉'?'hit':(ht.res==='伤'?'wound':'miss'); txt = ht.res==='沉'?'✕':(ht.res==='伤'?'●':'·'); } }
-        else if(cell){ cls=cell.head?'mine head':'mine'; txt=cell.head?'★':''; }
+        if(cell && cell.hitRes){ cls='ownhit'; txt='✕'; }
+        else if(missMap && missMap[r+','+c]) cls='miss';
+        else if(hits){ const ht=hits.find(h=>h.y===r&&h.x===c); if(ht){ cls = ht.res==='沉'?'hit':(ht.res==='伤'?'wound':'miss'); txt = ht.res==='沉'?'✕':''; } }
+        else if(cell){ cls=cell.head?'mine head':'mine'; }
         h+='<td class="'+cls+'"'+(clickFn?' onclick="'+clickFn+'('+r+','+c+')"':'')+'>'+txt+'</td>';
       } h+='</tr>'; }
       return h+'</table>';
@@ -93,12 +96,13 @@
         return;
       }
       if(S.phase==='battle'){
-        const yourCells=(S.board||[]).flat(); const aliveOpts=(S.alive||[]).filter(function(n){return n!==me();});
+        const yourCells=(S.board||[]).flat().concat((S.meHits||[]).map(function(h){return {r:h.y,c:h.x,hitRes:h.res};}));
+        const aliveOpts=(S.alive||[]).filter(function(n){return n!==me();});
         if(!target||aliveOpts.indexOf(target)<0) target=aliveOpts[0];
-        const targetHits=(S.yourHits||[]).filter(function(h){return h.to===target;});
+        const targetHits=((S.shotsByTarget||{})[target]||[]).slice();
         const missMap={}; targetHits.filter(function(h){return h.res==='空';}).forEach(function(h){missMap[h.y+','+h.x]=1;});
         const myTurn=S.turn===me();
-        body.innerHTML = '<div class="gridwrap"><div class="panel"><div class="ptitle">我的布防</div>'+gridTable(yourCells)+'</div>'
+        body.innerHTML = '<div class="gridwrap"><div class="panel"><div class="ptitle">我的布防（✕=被炸过）</div>'+gridTable(yourCells)+'</div>'
           +'<div class="panel"><div class="ptitle">轰炸 '+(target||'')+' 的棋盘'+(myTurn?'（轮到你）':'（等待对方…）')+'</div>'
           +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" onclick="target=\''+n+'\';render()">'+esc(n)+'</span>';}).join('')+'</div>'
           +gridTable(null,'fireAt',targetHits,missMap)
@@ -109,6 +113,8 @@
       if(S.phase==='over') body.innerHTML='<div class="stage" style="font-size:1.1rem;padding:24px;">🏆 本局胜者：'+esc(S.over?S.over.winner:'')+'</div><div class="bar"><a class="go" href="/lobby.html">返回大厅</a></div>';
     }
     socket.on('bomber_state', function(s){ S=s; if(s.phase==='battle'||s.phase==='over') placed=[]; render(); });
+    var barEl=document.createElement('div'); barEl.className='barrage'; document.body.appendChild(barEl); var barTimer=null;
+    socket.on('bomber_boom', function(d){ if(!d||!d.text) return; barEl.textContent=d.text; barEl.style.opacity='1'; clearTimeout(barTimer); barTimer=setTimeout(function(){ barEl.style.opacity='0'; },2600); });
     socket.on('connect', function(){ setTimeout(function(){ socket.emit('bomber_pull',function(res){ if(res&&res.success){ S=res; render(); } }); },400); });
   
 </script>

@@ -582,17 +582,24 @@ function bmbMakeGame(room, names) {
   return {
     roomId: room.roomId, gameType: 'bomber', playerOrder: names.slice(), alive, turn: names[0],
     config, planes: {}, ready: {}, phase: 'deploy', // deploy -> battle -> over
-    headHit: {}, sunkHead: {}, boards: {}, attacks: {}, // attacks: attacker -> [{to,x,y,res}]
+    headHit: {}, sunkHead: {}, boards: {}, attacks: {}, targetShots: {}, firedCoords: {}, meHits: {},
     stats: {}, hitStreak: {}, lastEmpty: 0,
     startAt: Date.now()
   };
 }
 function bmbBoardView(g, name) { return (g.planes[name] || []).map(p => p.cells || bmbCellsOf(p)); }
 function bmbState(g, name, room) {
+  const shotsByTarget = {};
+  for (const [t, arr] of Object.entries(g.targetShots || {})) {
+    if (t !== name) shotsByTarget[t] = (arr || []).slice();
+  }
   return {
     phase: g.phase, turn: g.turn, alive: g.alive.slice(), config: g.config.slice(), you: name,
     ready: g.ready, board: bmbBoardView(g, name),
-    yourHits: (g.attacks && g.attacks[name]) || [], stats: g.stats[name] || {},
+    yourHits: (g.attacks && g.attacks[name]) || [],
+    shotsByTarget, firedByTarget: g.firedCoords || {},
+    meHits: (g.meHits && g.meHits[name]) || [],
+    stats: g.stats[name] || {},
     over: g.over || null
   };
 }
@@ -602,64 +609,84 @@ function bmbBroadcast(room, g) {
     if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('bomber_state', bmbState(g, n, room));
   });
 }
-// 攻击：target 棋盘判定 + 对全房间同格传播（不反馈C/D）
+function bmbBoom(room, text) { io.to(room.roomId).emit('bomber_boom', { text }); }
 function bmbAttack(g, room, attacker, target, r, c) {
-  const res = { x: c, y: r, res: '空' }; // 反馈：空/伤/沉
-  const my = g.planes[attacker] = g.planes[attacker] || [];
-  const targetPlanes = g.planes[target] || [];
+  const res = { x: c, y: r, res: '空' };
   const key = r + ',' + c;
-  // 打 target
-  const tHit = targetPlanes.map((p, i) => ({ p, i, cell: p.cells.find(cell => cell.r === r && cell.c === c) })).find(o => o.cell);
-  if (tHit) {
-    if (tHit.cell.head) {
+  g.firedCoords[target] = g.firedCoords[target] || [];
+  if (!g.firedCoords[target].includes(key)) g.firedCoords[target].push(key);
+  // 1) 判定对 target 的反馈
+  const tPlanes = g.planes[target] || [];
+  const hitCell = (() => {
+    for (const p of tPlanes) {
+      const cell = (p.cells || []).find(cell => cell.r === r && cell.c === c);
+      if (cell) return { p, cell };
+    }
+    return null;
+  })();
+  if (hitCell) {
+    const headKey = hitCell.p.headKey;
+    const sunk = (g.sunkHead[target] || []).includes(headKey);
+    if (hitCell.cell.head && !sunk) {
       res.res = '沉';
-      if (!(g.sunkHead[target] || []).includes(tHit.p.headKey)) {
-        g.sunkHead[target] = g.sunkHead[target] || [];
-        g.sunkHead[target].push(tHit.p.headKey);
-        (g.stats[attacker] = g.stats[attacker] || { shipsDown: 0, bodyHits: 0, firstHit: null, firstDown: null });
-        g.stats[attacker].shipsDown = (g.stats[attacker].shipsDown || 0) + 1;
-        if (!g.stats[attacker].firstDown) g.stats[attacker].firstDown = (g.attacks[attacker] || []).length + 1;
-      }
+      g.sunkHead[target] = g.sunkHead[target] || [];
+      g.sunkHead[target].push(headKey);
+      (g.stats[attacker] = g.stats[attacker] || {}).shipsDown = (g.stats[attacker].shipsDown || 0) + 1;
+      if (!g.stats[attacker].firstDown) g.stats[attacker].firstDown = (g.attacks[attacker] || []).length + 1;
+      bmbBoom(room, `💥 ${getDisplayName(attacker)} 炸中了 ${getDisplayName(target)} 的机头！`);
     } else {
-      res.res = '伤';
-      (g.stats[attacker] = g.stats[attacker] || { bodyHits: 0 });
-      g.stats[attacker].bodyHits = (g.stats[attacker].bodyHits || 0) + 1;
-      if (!g.stats[attacker].firstHit) g.stats[attacker].firstHit = (g.attacks[attacker] || []).length + 1;
+      res.res = sunk ? '沉' : '伤';
+      if (!sunk) {
+        (g.stats[attacker] = g.stats[attacker] || {}).bodyHits = (g.stats[attacker].bodyHits || 0) + 1;
+        if (!g.stats[attacker].firstHit) g.stats[attacker].firstHit = (g.attacks[attacker] || []).length + 1;
+      }
+    }
+  }
+  // 2) 记录对本格造成的所有“波及伤害”（除攻击者外每个人都有自己棋盘）
+  for (const other of g.playerOrder) {
+    if (other === attacker) continue;
+    const oPlane = (g.planes[other] || []).find(p => (p.cells || []).some(cell => cell.r === r && cell.c === c && cell.head));
+    if (oPlane) {
+      const hk = oPlane.headKey;
+      if (!(g.sunkHead[other] || []).includes(hk)) {
+        g.sunkHead[other] = g.sunkHead[other] || [];
+        g.sunkHead[other].push(hk);
+        if (other !== target) { // 非目标玩家的机头被波及：提示但无“对 target 反馈”影响
+          bmbBoom(room, `💥 波及！${getDisplayName(other)} 的机头也被炸中了`);
+        }
+      }
+    }
+  }
+  // 3) 每个“其他人”的棋盘该格命中视图（显示 X）
+  for (const other of g.playerOrder) {
+    if (other === attacker) continue;
+    const has = (g.planes[other] || []).some(p => (p.cells || []).some(cell => cell.r === r && cell.c === c));
+    if (has) {
+      g.meHits[other] = g.meHits[other] || [];
+      if (!g.meHits[other].some(h => h.x === c && h.y === r)) g.meHits[other].push({ x: c, y: r, res: res.res, by: attacker });
     }
   }
   g.attacks[attacker] = g.attacks[attacker] || [];
   g.attacks[attacker].push({ to: target, x: c, y: r, res: res.res });
+  g.targetShots[target] = g.targetShots[target] || [];
+  if (!g.targetShots[target].some(s => s.x === c && s.y === r)) g.targetShots[target].push({ x: c, y: r, res: res.res, by: attacker });
   if (res.res === '空') { g.lastEmpty = (g.lastEmpty || 0) + 1; } else { g.lastEmpty = 0; }
   if (res.res !== '空') { g.hitStreak[attacker] = (g.hitStreak[attacker] || 0) + 1; } else { g.hitStreak[attacker] = 0; }
-  // 传播：同格伤害所有其他人（不产生反馈）
-  for (const other of g.alive) {
-    if (other === attacker || other === target) continue;
-    const hit = (g.planes[other] || []).find(p => p.cells.some(cell => cell.r === r && cell.c === c && cell.head));
-    if (hit && !(g.sunkHead[other] || []).includes(hit.headKey)) {
-      g.sunkHead[other] = g.sunkHead[other] || [];
-      g.sunkHead[other].push(hit.headKey);
-      (g.stats[attacker] = g.stats[attacker] || {}).propKills = (g.stats[attacker].propKills || 0) + 1;
-    }
-  }
-  // 淘汰判定：对方5架机头全中
-  const targetSunk = (g.sunkHead[target] || []).length;
-  if (targetSunk >= 5) {
+  // 4) 淘汰判定
+  if ((g.sunkHead[target] || []).length >= 5) {
     g.alive = g.alive.filter(n => n !== target);
     g.eliminated = g.eliminated || {};
     g.eliminated[target] = Date.now();
+    bmbBoom(room, `📉 ${getDisplayName(target)} 已全员出局（剩余 ${g.alive.length} 人）`);
   }
-  // 下一回合：下一存活者
-  const idx = g.alive.indexOf(attacker);
-  let next = null;
-  for (let i = 1; i <= g.alive.length; i++) {
-    const n = g.alive[(idx + i) % g.alive.length];
-    if (n && n !== target) { next = n; break; }
-  }
+  // 5) 固定座位轮转：只跳过已淘汰者，不再“跳过被轰炸者”
+  const seq = g.playerOrder.filter(n => g.alive.includes(n));
   if (g.alive.length <= 1) {
     g.phase = 'over';
     g.over = { winner: g.alive[0], alive: g.alive.slice() };
   } else {
-    g.turn = next;
+    const idx = seq.indexOf(attacker);
+    g.turn = seq[(idx + 1) % seq.length];
   }
   bmbBroadcast(room, g);
   return res;
@@ -3041,7 +3068,8 @@ io.on('connection', (socket) => {
     if (g.turn !== name || !g.alive.includes(name)) { if (cb) cb({ success: false, msg: '还没轮到你' }); return; }
     if (target === name || !g.alive.includes(target)) { if (cb) cb({ success: false, msg: '目标无效' }); return; }
     if (r < 1 || r > 15 || c < 1 || c > 15) { if (cb) cb({ success: false, msg: '坐标越界' }); return; }
-    if ((g.attacks[name] || []).some(a => a.to === target && a.x === c && a.y === r)) { if (cb) cb({ success: false, msg: '这个坐标已经打过了' }); return; }
+    const fkey = r + ',' + c;
+    if ((g.firedCoords[target] || []).includes(fkey)) { if (cb) cb({ success: false, msg: '这个位置已被其他人轰炸过' }); return; }
     bmbAttack(g, room, name, target, r, c);
     if (cb) cb({ success: true });
   });
