@@ -49,9 +49,20 @@
     });
     showBurst(it.url, disp(me));
   };
+  var burstTimer = null;
   function showBurst(url, who) {
+    clearTimeout(burstTimer);
     burst.innerHTML = '<div class="emj-card"><img src="' + url + '"><div class="emj-who">' + (who || '') + '</div></div>';
-    burst.classList.remove('on'); void burst.offsetWidth; burst.classList.add('on');
+    burst.style.transition = 'none';
+    burst.style.opacity = '0';
+    requestAnimationFrame(function () {
+      burst.style.transition = 'opacity .22s ease';
+      burst.style.opacity = '1';
+    });
+    burstTimer = setTimeout(function () {
+      burst.style.transition = 'opacity .55s ease';
+      burst.style.opacity = '0';
+    }, 1350);
   }
   socket.on('emoji_burst', function (d) { if (d && d.url && d.from) showBurst(d.url, disp(d.from)); });
   socket.on('connect', function () {
