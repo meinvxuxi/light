@@ -69,6 +69,10 @@
   .ach-pop small { display:block; color:#9aa5b1; font-weight:400; font-size:.75rem; margin-top:3px; }
   .ovach { margin-top:12px; border-top:1px dashed rgba(74,144,217,.35); padding-top:8px; font-size:.8rem; }
   .ovach .ach-row2 { display:flex; justify-content:space-between; align-items:center; padding:3px 2px; color:#6b7a90; }
+  body.dyn-pink .ach-pop { border-color: rgba(240,98,146,.6); background: rgba(255,242,247,.8); }
+  body.dyn-green .ach-pop { border-color: rgba(111,158,99,.6); background: rgba(241,248,238,.8); }
+  body.dyn-gold .ach-pop { border-color: rgba(214,168,67,.6); background: rgba(255,250,238,.82); }
+  body.dyn-red .ach-pop { border-color: rgba(166,64,58,.6); background: rgba(253,243,241,.82); }
 </style>
 </head>
 <body>
@@ -338,19 +342,15 @@ const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avata
   body.dyn-pink .go, body.dyn-pink .go:hover { color: #f06292; }
   body.dyn-pink .pl.sel { border-color: #f06292; color: #c73e79; }
   body.dyn-pink .pill.wait { color: #c73e79; background: rgba(240,98,146,.14); }
-  body.dyn-pink table.g td:hover { background: #ffe9f0; }
   body.dyn-green .go, body.dyn-green .go:hover { color: #6f9e63; }
   body.dyn-green .pl.sel { border-color: #6f9e63; color: #4f8a45; }
   body.dyn-green .pill.wait { color: #4f8a45; background: rgba(111,158,99,.15); }
-  body.dyn-green table.g td:hover { background: #edf5e9; }
   body.dyn-gold .go, body.dyn-gold .go:hover { color: #a8791b; }
   body.dyn-gold .pl.sel { border-color: #a8791b; color: #a8791b; }
   body.dyn-gold .pill.wait { color: #a8791b; background: rgba(214,168,67,.16); }
-  body.dyn-gold table.g td:hover { background: #fdf6e3; }
   body.dyn-red .go, body.dyn-red .go:hover { color: #a6403a; }
   body.dyn-red .pl.sel { border-color: #a6403a; color: #8c332d; }
   body.dyn-red .pill.wait { color: #8c332d; background: rgba(166,64,58,.13); }
-  body.dyn-red table.g td:hover { background: #f9eceb; }
 </style>  <script src="/emoji-widget.js"></script>
 </body>
 </html>

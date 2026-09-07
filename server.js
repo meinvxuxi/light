@@ -823,8 +823,9 @@ function bmbAttack(g, room, attacker, target, r, c) {
   g.emptyStreak[attacker] = isHit ? 0 : (g.emptyStreak[attacker] || 0) + 1;
   // —— 炸飞机成就判定（cj1.md）——
   if (downed.length >= 2) announceAchievement(g, room.roomId, attacker, 'bomber_bounce', false); // 蹦蹦炸弹
-  if (!(g.attacks[attacker] || []).length && downed.includes(target)) {
-    announceAchievement(g, room.roomId, attacker, 'bomber_first', false); // 开门红
+  // 开门红：首次轰炸命中机头——含目标盘直接命中与同格传播炸到别人的机头
+  if (!(g.attacks[attacker] || []).length && downed.length > 0) {
+    announceAchievement(g, room.roomId, attacker, 'bomber_first', false);
   }
   const comboMap = { 2: 'bomber_streak2', 3: 'bomber_streak3', 4: 'bomber_streak4' };
   const hs = g.hitStreak[attacker] || 0;
