@@ -1632,18 +1632,19 @@ io.on('connection', (socket) => {
     const gameData = activeGameOf(room);
     if (gameData && room.gameType === 'drawing') {
       dgBroadcast(room);
-    } else if (gameData) {
+    } else if (gameData && room.gameType === 'yahtzee') {
       socket.emit('game_state', {
         players: gameData.players,
         playerOrder: gameData.playerOrder,
         currentPlayer: gameData.playerOrder[gameData.currentPlayerIndex],
-        phase: gameData.phase, 
+        phase: gameData.phase,
         round: gameData.round,
         allDice: Object.fromEntries(Object.entries(gameData.players).map(([name, p]) => [name, p.dice])),
         allScores: Object.fromEntries(Object.entries(gameData.players).map(([name, p]) => [name, p.scores])),
         allPreviewScores: Object.fromEntries(Object.entries(gameData.players).map(([name, p]) => [name, p.previewScores]))
       });
     }
+    // bomber：状态由 bomber_state/bomber_pull 单独推送（不走快艇格式）
   });
 
   socket.on('take_seat', () => {
