@@ -644,9 +644,10 @@ function bmbInGameNow(name, room) {
   const hb = userLastHeartbeat.get(name);
   return !!sid && sid === sid2 && io.sockets.sockets.has(sid) && !!hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT;
 }
-// 回合轮转到“下一名在游戏页的存活玩家”；所有人都缺席时原地不动（等回来的人）
+// 回合轮转：仅当“当前轮到的人不在游戏页”时才让给下一位在场存活玩家；否则绝不自动跳
 function bmbAdvance(g, room) {
   if (g.phase !== 'battle' || g.alive.length <= 1) return false;
+  if (bmbInGameNow(g.turn, room)) return false;
   const seq = g.playerOrder.filter(n => g.alive.includes(n));
   const idx = seq.indexOf(g.turn);
   for (let k = 1; k <= seq.length; k++) {
@@ -657,6 +658,7 @@ function bmbAdvance(g, room) {
 }
 function bmbAttack(g, room, attacker, target, r, c) {
   const res = { x: c, y: r, res: '空' };
+  (g.stats[attacker] = g.stats[attacker] || {});
   const key = r + ',' + c;
   g.firedCoords[target] = g.firedCoords[target] || [];
   if (!g.firedCoords[target].includes(key)) g.firedCoords[target].push(key);
@@ -669,6 +671,7 @@ function bmbAttack(g, room, attacker, target, r, c) {
     }
     return null;
   })();
+  const downed = []; // 本次被击落机头的玩家（目标 + 波及）
   if (hitCell) {
     const headKey = hitCell.p.headKey;
     const sunk = (g.sunkHead[target] || []).includes(headKey);
@@ -676,9 +679,8 @@ function bmbAttack(g, room, attacker, target, r, c) {
       res.res = '沉';
       g.sunkHead[target] = g.sunkHead[target] || [];
       g.sunkHead[target].push(headKey);
-      (g.stats[attacker] = g.stats[attacker] || {}).shipsDown = (g.stats[attacker].shipsDown || 0) + 1;
+      downed.push(target);
       if (!g.stats[attacker].firstDown) g.stats[attacker].firstDown = (g.attacks[attacker] || []).length + 1;
-      bmbBoom(room, `💥 ${getDisplayName(attacker)} 炸中了 ${getDisplayName(target)} 的机头！`);
     } else {
       res.res = sunk ? '沉' : '伤';
       if (!sunk) {
@@ -687,7 +689,7 @@ function bmbAttack(g, room, attacker, target, r, c) {
       }
     }
   }
-  // 2) 记录对本格造成的所有“波及伤害”（除攻击者外每个人都有自己棋盘）
+  // 2) 同一坐标对所有玩家布局的“波及”：谁的飞机恰好占着这格就一起受击
   for (const other of g.playerOrder) {
     if (other === attacker) continue;
     const oPlane = (g.planes[other] || []).find(p => (p.cells || []).some(cell => cell.r === r && cell.c === c && cell.head));
@@ -696,13 +698,17 @@ function bmbAttack(g, room, attacker, target, r, c) {
       if (!(g.sunkHead[other] || []).includes(hk)) {
         g.sunkHead[other] = g.sunkHead[other] || [];
         g.sunkHead[other].push(hk);
-        if (other !== target) { // 非目标玩家的机头被波及：提示但无“对 target 反馈”影响
-          bmbBoom(room, `💥 波及！${getDisplayName(other)} 的机头也被炸中了`);
-        }
+        if (other !== target) downed.push(other);
       }
     }
   }
-  // 3) 每个“其他人”的棋盘该格命中视图（显示 X）
+  if (downed.length) {
+    (g.stats[attacker] = g.stats[attacker] || {}).shipsDown = (g.stats[attacker].shipsDown || 0) + downed.length;
+    if (!g.stats[attacker].firstDown) g.stats[attacker].firstDown = (g.attacks[attacker] || []).length + 1;
+    const names = g.playerOrder.filter(n => downed.includes(n)).map(n => getDisplayName(n));
+    bmbBoom(room, `💥 ${getDisplayName(attacker)} 一次击落了 ${names.join('、')} 的飞机！`);
+  }
+  // 3) 被波及玩家的“自己棋盘该格”也显示命中痕迹
   for (const other of g.playerOrder) {
     if (other === attacker) continue;
     const has = (g.planes[other] || []).some(p => (p.cells || []).some(cell => cell.r === r && cell.c === c));
@@ -717,14 +723,16 @@ function bmbAttack(g, room, attacker, target, r, c) {
   if (!g.targetShots[target].some(s => s.x === c && s.y === r)) g.targetShots[target].push({ x: c, y: r, res: res.res, by: attacker });
   if (res.res === '空') { g.lastEmpty = (g.lastEmpty || 0) + 1; } else { g.lastEmpty = 0; }
   if (res.res !== '空') { g.hitStreak[attacker] = (g.hitStreak[attacker] || 0) + 1; } else { g.hitStreak[attacker] = 0; }
-  // 4) 淘汰判定
-  if ((g.sunkHead[target] || []).length >= 5) {
-    g.alive = g.alive.filter(n => n !== target);
-    g.elimOrder = g.elimOrder || [];
-    g.elimOrder.push(target);
-    g.eliminated = g.eliminated || {};
-    g.eliminated[target] = Date.now();
-    bmbBoom(room, `📉 ${getDisplayName(target)} 已全员出局（剩余 ${g.alive.length} 人）`);
+  // 4) 淘汰判定：被击落第 5 架飞机的任何玩家都出局（含波及）
+  for (const d of downed) {
+    if (g.alive.includes(d) && (g.sunkHead[d] || []).length >= (g.config || []).length) {
+      g.alive = g.alive.filter(n => n !== d);
+      g.elimOrder = g.elimOrder || [];
+      if (!g.elimOrder.includes(d)) g.elimOrder.push(d);
+      g.eliminated = g.eliminated || {};
+      g.eliminated[d] = Date.now();
+      bmbBoom(room, `📉 ${getDisplayName(d)} 已全员出局（剩余 ${g.alive.length} 人）`);
+    }
   }
   // 5) 固定座位轮转：给下一名在场存活玩家；若都不在场就保持座位等回来
   if (g.alive.length <= 1) {
@@ -736,10 +744,7 @@ function bmbAttack(g, room, attacker, target, r, c) {
     const seq = g.playerOrder.filter(n => g.alive.includes(n));
     const idx = seq.indexOf(attacker);
     g.turn = seq[(idx + 1) % seq.length];
-    if (!bmbAdvance(g, room)) {
-      // 下一家缺席且没人能在场行动：保持现有轮转；稍后某人在场时自动轮转
-      g.turn = seq[(idx + 1) % seq.length];
-    }
+    bmbAdvance(g, room); // 仅当这一位不在游戏页时自动让给在场的下一位
   }
   bmbBroadcast(room, g);
   return res;
@@ -3192,9 +3197,6 @@ io.on('connection', (socket) => {
     if (!g.playerOrder.includes(name) || !g.alive.includes(name)) { if (cb) cb({ success: false, msg: '你已不在本局中' }); return; }
     if (!g.alive.includes(target) || target === name) { if (cb) cb({ success: false, msg: '请选择存活的对手' }); return; }
     if (g.turn !== name) { if (cb) cb({ success: false, msg: '还没轮到你行动' }); return; }
-    if (g.turn !== name || !g.alive.includes(name)) { if (cb) cb({ success: false, msg: '还没轮到你' }); return; }
-    if (target === name || !g.alive.includes(target)) { if (cb) cb({ success: false, msg: '目标无效' }); return; }
-    if (r < 1 || r > 15 || c < 1 || c > 15) { if (cb) cb({ success: false, msg: '坐标越界' }); return; }
     const fkey = r + ',' + c;
     if ((g.firedCoords[target] || []).includes(fkey)) { if (cb) cb({ success: false, msg: '这个位置已被其他人轰炸过' }); return; }
     bmbAttack(g, room, name, target, r, c);

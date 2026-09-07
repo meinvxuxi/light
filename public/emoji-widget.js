@@ -19,18 +19,64 @@
     'body.dyn-pink .emj-burst .emj-card{border-color:rgba(240,98,146,.5)}body.dyn-green .emj-burst .emj-card{border-color:rgba(111,158,99,.5)}body.dyn-gold .emj-burst .emj-card{border-color:rgba(214,168,67,.5)}body.dyn-red .emj-burst .emj-card{border-color:rgba(166,64,58,.5)}',
     '.emj-burst img{width:min(40vw,220px);height:auto;border-radius:10px;display:block}',
     '.emj-burst .emj-who{text-align:center;font-size:.82rem;color:#2c3e50;font-weight:600;margin-top:6px}',
+    '.emj-mini{position:fixed;left:10px;top:10px;z-index:5000;display:none;align-items:center;gap:7px;background:rgba(255,255,255,.6);border:1px solid rgba(74,144,217,.45);border-radius:12px;padding:5px 10px 5px 6px;backdrop-filter:blur(10px);box-shadow:0 4px 16px rgba(31,45,61,.14);pointer-events:none;opacity:0;transition:opacity .3s}',
+    '.emj-mini img{width:46px;height:46px;object-fit:contain;border-radius:8px}',
+    '.emj-mini .emj-who{font-size:.72rem;color:#2c3e50;margin:0}',
     '@keyframes emjpop{0%{opacity:0}10%{opacity:1}80%{opacity:1}100%{opacity:0}}'
   ].join('\n');
   var styleEl = document.createElement('style'); styleEl.textContent = STYLE; document.head.appendChild(styleEl);
   var items = [], mine = [], opened = false, dispMap = {};
+  // 表情浮窗形态：0=右下大面板(ovo)  1=左上小角(=w=)  2=隐藏大表情(TAT)；长按小圆按钮循环
+  var mode = Number(localStorage.getItem('emjMode') || 0); if (mode < 0 || mode > 2) mode = 0;
   var me = sessionStorage.getItem('playerName') || '';
   var wrap = document.createElement('div'); wrap.className = 'emj-wrap';
-  var btn = document.createElement('div'); btn.className = 'emj-btn'; btn.textContent = 'ovo'; btn.title = '表情包';
+  var btn = document.createElement('div'); btn.className = 'emj-btn'; btn.textContent = 'ovo'; btn.title = '表情包：点击展开 · 长按 ovo/=w=/TAT 切换显示形态';
   var panel = document.createElement('div'); panel.className = 'emj-panel';
-  btn.onclick = function () { opened = !opened; renderPanel(); };
+  var mini = document.createElement('div'); mini.className = 'emj-mini';
+  var miniTimer = null;
+  function applyMode() {
+    btn.textContent = mode === 0 ? 'ovo' : (mode === 1 ? '=w=' : 'TAT');
+    btn.style.opacity = mode === 2 ? '.5' : '1';
+    if (opened && mode !== 0) { opened = false; }
+    panel.classList.toggle('on', opened && mode === 0);
+    burst.style.display = mode === 0 ? '' : 'none';
+    if (mode !== 1) { mini.style.opacity = '0'; setTimeout(function () { if (mode !== 1) mini.style.display = 'none'; }, 320); }
+    else { mini.style.display = 'flex'; }
+    localStorage.setItem('emjMode', String(mode));
+  }
+  function showMini(url, who) {
+    clearTimeout(miniTimer);
+    if (!mini.firstChild) { mini.innerHTML = '<img src="' + url + '"><span class="emj-who">' + (who || '') + '</span>'; }
+    else { mini.querySelector('img').src = url; mini.querySelector('.emj-who').textContent = who || ''; }
+    mini.style.display = 'flex';
+    requestAnimationFrame(function () { mini.style.opacity = '1'; });
+    miniTimer = setTimeout(function () { mini.style.opacity = '0'; }, 3400);
+  }
+  btn.onclick = function () {
+    if (btn._blockClick) { btn._blockClick = false; return; }
+    if (mode !== 0) return;
+    opened = !opened; renderPanel();
+  };
+  var holdTimer = null, holding = false;
+  function holdStart(e) {
+    if (e && e.cancelable) { try { e.preventDefault(); } catch (_) {} }
+    holding = true;
+    holdTimer = setTimeout(function () {
+      if (!holding) return;
+      btn._blockClick = true; // 长按切换后吞掉随后的 click，避免误开面板
+      mode = (mode + 1) % 3; applyMode();
+      holdTimer = null;
+    }, 560);
+  }
+  function holdEnd() { holding = false; if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } }
+  btn.addEventListener('pointerdown', holdStart);
+  ['pointerup', 'pointerleave', 'pointercancel', 'lostpointercapture'].forEach(function (ev) { btn.addEventListener(ev, holdEnd); });
+  btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   wrap.appendChild(panel); wrap.appendChild(btn);
   var burst = document.createElement('div'); burst.className = 'emj-burst';
-  document.body.appendChild(wrap); document.body.appendChild(burst);
+  mini.innerHTML = '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" style="opacity:0"><span class="emj-who">表情提醒</span>';
+  document.body.appendChild(wrap); document.body.appendChild(burst); document.body.appendChild(mini);
+  applyMode();
   function disp(n) { return dispMap[n] || n; }
   function renderPanel() {
     panel.classList.toggle('on', opened);
@@ -51,6 +97,8 @@
   };
   var burstTimer = null;
   function showBurst(url, who) {
+    if (mode === 2) return;             // TAT：完全不打扰
+    if (mode === 1) { showMini(url, who); return; } // =w=：只左上角小角提示
     clearTimeout(burstTimer);
     burst.innerHTML = '<div class="emj-card"><img src="' + url + '"><div class="emj-who">' + (who || '') + '</div></div>';
     burst.style.transition = 'none';
