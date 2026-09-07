@@ -153,6 +153,10 @@
     function submit(){ const payload=placed.map(p=>({type:p.type,rotation:p.rotation||0,headR:p.headR,headC:p.headC})); socket.emit('bomber_place',{planes:payload},(res)=>{ if(res&&!res.success) toast(res.msg||'摆放无效'); }); }
     function fireAt(r,c){ if(!target||target===me()) return; socket.emit('bomber_fire',{target:target,x:c,y:r},(res)=>{ if(res&&!res.success) toast(res.msg||'无法轰炸'); }); }
     function bmbCancelVote(){ if(!S) return; const voted=(S.cancelVotes||[]).includes(S.you); const revoke=!!voted; socket.emit('bomber_cancel_vote', { revoke }, function(res){ if(res&&res.success){ if(res.cancelled) return; const v=(res.votes||[]).length; const total=(S&&S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0); toast(revoke?('已撤回取消票（'+v+'/'+total+'）'):('已投票取消（'+v+'/'+total+'）等待其他在线玩家…')); } }); }
+    function bmbReturnLobby(){
+      socket.emit('return_room', function(){});
+      setTimeout(function(){ location.href='/lobby.html'; }, 200);
+    }
     function statusPills(){
       const names=S&&S.order?S.order.slice():[];
       let out=names.map(function(n){
@@ -228,7 +232,7 @@
         const achHtml=achRows?'<div class="ovach"><div style="font-weight:700;color:#2c3e50;margin-bottom:2px;">🎖 本局成就</div>'+achRows+'</div>':'';
         body.innerHTML='<div class="overcard"><div class="wline">🏆 '+esc(dn(winName))+' 获胜！</div>'
           +'<div class="ovrow">'+ov+'</div>'+achHtml+'</div>'
-          +'<div class="bar"><a class="go" href="/lobby.html">返回大厅</a></div>';
+          +'<div class="bar"><a class="go" onclick="bmbReturnLobby()">返回大厅</a></div>';
         return;
       }
     }

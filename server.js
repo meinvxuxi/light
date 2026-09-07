@@ -816,15 +816,18 @@ function bmbAttack(g, room, attacker, target, r, c) {
   }
   g.attacks[attacker] = g.attacks[attacker] || [];
   g.attacks[attacker].push({ to: target, x: c, y: r, res: res.res });
-  // 是否算“有效命中”：目标盘非空，或同格传播击落了任何人的机头（传播不清空连击；单回合多杀也只算 1）
-  const isHit = res.res !== '空' || downed.length > 0;
-  g.lastEmpty = isHit ? 0 : (g.lastEmpty || 0) + 1;
-  g.hitStreak[attacker] = isHit ? (g.hitStreak[attacker] || 0) + 1 : 0;
-  g.emptyStreak[attacker] = isHit ? 0 : (g.emptyStreak[attacker] || 0) + 1;
+  // 连击口径：只以“本次击落了机头（页面弹出 xx 炸毁了 xx 的飞机/机头）”为准。
+  // 单纯打中机身不算；传播只打到已被炸过的格子也不算，二者都会断连击。
+  const destroyedNow = downed.length > 0;
+  const plainHit = res.res !== '空';
+  g.lastEmpty = plainHit ? 0 : (g.lastEmpty || 0) + 1;
+  g.hitStreak[attacker] = destroyedNow ? (g.hitStreak[attacker] || 0) + 1 : 0;
+  g.emptyStreak[attacker] = (destroyedNow || plainHit) ? 0 : (g.emptyStreak[attacker] || 0) + 1;
   // —— 炸飞机成就判定（cj1.md）——
   if (downed.length >= 2) announceAchievement(g, room.roomId, attacker, 'bomber_bounce', false); // 蹦蹦炸弹
   // 开门红：首次轰炸命中机头——含目标盘直接命中与同格传播炸到别人的机头
-  if (!(g.attacks[attacker] || []).length && downed.length > 0) {
+  const wasFirstAttack = (g.attacks[attacker] || []).length === 1; // 已在上面 push，首炸时为 1
+  if (wasFirstAttack && downed.length > 0) {
     announceAchievement(g, room.roomId, attacker, 'bomber_first', false);
   }
   const comboMap = { 2: 'bomber_streak2', 3: 'bomber_streak3', 4: 'bomber_streak4' };
@@ -1948,7 +1951,9 @@ io.on('connection', (socket) => {
       if (!game) continue;
       const finished = room.gameType === 'drawing'
         ? game.stage === 'result'
-        : game.phase === 'finished';
+        : room.gameType === 'bomber'
+          ? game.phase === 'over'
+          : game.phase === 'finished';
       if (!finished) { cleared = false; break; } // 进行中：仅退出页面，对局保留
       if (gameEndTimers[room.roomId]) {
         clearTimeout(gameEndTimers[room.roomId]);
@@ -1956,6 +1961,7 @@ io.on('connection', (socket) => {
       }
       delete yahtzeeGames[room.roomId];
       delete drawingGames[room.roomId];
+      delete bomberGames[room.roomId];
       Object.keys(room.seats).forEach(seatId => {
         if (room.seats[seatId]) room.seats[seatId].ready = false;
       });
