@@ -37,6 +37,7 @@
     <div class="tabs">
       <span class="lb-tab active" id="tabBoard" onclick="switchTab('board')">快艇榜</span>
       <span class="lb-tab" id="tabDrawing" onclick="switchTab('drawing')">花菜榜</span>
+      <span class="lb-tab" id="tabBomber" onclick="switchTab('bomber')">烟火师榜</span>
       <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
     </div>
     <div class="lb-list" id="lbList"><div class="empty">加载中…</div></div>
@@ -46,7 +47,7 @@
   <script>
     const myName = sessionStorage.getItem('playerName');
     if (!myName) { window.location.href = '/index.html'; }
-    let board = [], achBoard = [], drawingBoard = [], curTab = 'board';
+    let board = [], achBoard = [], drawingBoard = [], bomberBoard = [], curTab = 'board';
 
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -131,26 +132,32 @@
       curTab = tab;
       document.getElementById('tabBoard').classList.toggle('active', tab === 'board');
       document.getElementById('tabDrawing').classList.toggle('active', tab === 'drawing');
+      document.getElementById('tabBomber').classList.toggle('active', tab === 'bomber');
       document.getElementById('tabAch').classList.toggle('active', tab === 'ach');
       render();
     }
     function render() {
       const el = document.getElementById('lbList');
       const isScoreBoard = curTab === 'board' || curTab === 'drawing';
-      const rows = curTab === 'board' ? board : (curTab === 'drawing' ? drawingBoard : achBoard);
+      const isBomber = curTab === 'bomber';
+      const rows = curTab === 'board' ? board : (curTab === 'drawing' ? drawingBoard : (curTab === 'bomber' ? bomberBoard : achBoard));
       if (!rows.length) {
         const emptyTxt = curTab === 'board' ? '还没有快艇对局记录，去打一局吧～'
-          : (curTab === 'drawing' ? '还没有花菜对局记录，去打一局画猜接龙吧～' : '还没有成就记录');
+          : (curTab === 'drawing' ? '还没有花菜对局记录，去打一局画猜接龙吧～'
+            : (curTab === 'bomber' ? '还没有烟火师记录，去炸一局飞机吧～' : '还没有成就记录'));
         el.innerHTML = '<div class="empty">' + emptyTxt + '</div>';
         return;
       }
       el.innerHTML = rows.map((r, i) => {
         const rankCls = i < 3 ? 'lb-rank top' : 'lb-rank';
+        const rankTxt = isBomber ? 'S' + (i + 1) : (i + 1);
         const stat = isScoreBoard
           ? `单局最高 ${r.best} 分`
-          : `${r.count} 个成就`;
+          : (isBomber
+            ? `单局炸毁机头 ${r.best} 架`
+            : `${r.count} 个成就`);
         return `<div class="lb-row">
-          <span class="${rankCls}">${i + 1}</span>
+          <span class="${rankCls}">${rankTxt}</span>
           <span class="lb-who">${esc(r.displayName)}</span>
           ${r.title ? `<span class="lb-title">${esc(r.title)}</span>` : ''}
           <span class="lb-stat">${stat}</span>
@@ -163,6 +170,7 @@
           board = res.board || [];
           achBoard = res.achBoard || [];
           drawingBoard = res.drawingBoard || [];
+          bomberBoard = res.bomberBoard || [];
           render();
         } else {
           document.getElementById('lbList').innerHTML = '<div class="err">加载失败，请刷新重试</div>';

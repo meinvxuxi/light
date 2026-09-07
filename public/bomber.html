@@ -39,6 +39,32 @@
   .pill.ready { color:#fff; background:#6f9e63; }
   .pill.wait { color:#2f6fb2; background:rgba(74,144,217,.15); }
   .pill.off { color:#e67e22; background:#fdeede; }
+  .barrage { color:#2f6fb2; background:rgba(255,255,255,.62); border-color:rgba(74,144,217,.5); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); font-weight:600; }
+  body.dyn-pink .barrage { color:#c73e79; background:rgba(255,255,255,.6); border-color:rgba(240,98,146,.55); }
+  body.dyn-green .barrage { color:#4f8a45; background:rgba(255,255,255,.6); border-color:rgba(111,158,99,.55); }
+  body.dyn-gold .barrage { color:#a8791b; background:rgba(255,255,255,.6); border-color:rgba(214,168,67,.55); }
+  body.dyn-red .barrage { color:#8c332d; background:rgba(255,255,255,.6); border-color:rgba(166,64,58,.55); }
+  table.g td.miss:hover, table.g td.hit:hover, table.g td.wound:hover, table.g td.ownhit:hover { background: inherit; }
+  body.dyn-pink table.g td.ownhit::after { color:#e0507f; }
+  body.dyn-green table.g td.ownhit::after { color:#4f8a45; }
+  body.dyn-gold table.g td.ownhit::after { color:#a8791b; }
+  body.dyn-red table.g td.ownhit::after { color:#8c332d; }
+  .overcard { max-width:560px; margin:6px auto; background:rgba(255,255,255,.62); border:1px solid rgba(74,144,217,.35); border-radius:18px; padding:18px 14px 14px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); box-shadow:0 8px 26px rgba(31,45,61,.1); }
+  .overcard .wline { text-align:center; font-size:1.05rem; font-weight:800; margin-bottom:12px; }
+  .ovrow { display:flex; flex-direction:column; gap:6px; }
+  .ovplayer { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:12px; background:rgba(255,255,255,.55); border:1px solid rgba(74,144,217,.18); }
+  .ovplayer.win { border-color:rgba(207,120,50,.5); background:rgba(255,245,230,.65); box-shadow:0 0 0 1px rgba(230,126,34,.25) inset; }
+  body.dyn-pink .ovplayer.win { border-color:rgba(240,98,146,.5); background:rgba(255,239,245,.65); }
+  body.dyn-green .ovplayer.win { border-color:rgba(111,158,99,.55); background:rgba(237,246,233,.65); }
+  body.dyn-gold .ovplayer.win { border-color:rgba(214,168,67,.55); background:rgba(253,246,222,.7); }
+  body.dyn-red .ovplayer.win { border-color:rgba(166,64,58,.55); background:rgba(250,234,233,.7); }
+  .ovrank { width:30px; text-align:center; font-size:1.15rem; flex:none; }
+  .ovname { min-width:70px; font-weight:700; flex:none; }
+  .ovstat { display:flex; flex-wrap:wrap; gap:2px 14px; margin-left:auto; color:#7f8fa6; font-size:.78rem; text-align:right; }
+  body.dyn-pink .overcard { border-color:rgba(240,98,146,.4); }
+  body.dyn-green .overcard { border-color:rgba(111,158,99,.42); }
+  body.dyn-gold .overcard { border-color:rgba(214,168,67,.42); }
+  body.dyn-red .overcard { border-color:rgba(166,64,58,.42); }
 </style>
 </head>
 <body>
@@ -169,12 +195,21 @@
         return;
       }
       if(S.phase==='over'){
-        const rows=(S.over&&S.over.players||[]).slice().sort(function(a,b){return a.rank-b.rank;}).map(function(p){
+        const winName=S.over&&S.over.winner||'';
+        const plist=(S.over&&S.over.players||[]).slice().sort(function(a,b){return a.rank-b.rank;});
+        const icons=['🥇','🥈','🥉','4','5','6','7','8'];
+        const ov=plist.map(function(p){
           const st=p.stats||{};
-          return '<tr><td>'+p.rank+'</td><td>'+esc(dn(p.name))+'</td><td>'+(st.bodyHits||0)+'</td><td>'+(st.shipsDown||0)+'</td><td>'+(st.firstHit||'—')+'</td><td>'+(st.firstDown||'—')+'</td></tr>';
+          const icon=icons[p.rank-1]||p.rank;
+          const win=p.name===winName;
+          return '<div class="ovplayer'+(win?' win':'')+'">'
+            +'<div class="ovrank">'+icon+'</div>'
+            +'<div class="ovname">'+esc(dn(p.name))+(win?' <span class="pill ready">胜者</span>':'')+'</div>'
+            +'<div class="ovstat"><span>机身 '+ (st.bodyHits||0) +'</span><span>机头 '+(st.shipsDown||0)+'</span><span>首中 '+(st.firstHit||'—')+'</span><span>首沉 '+(st.firstDown||'—')+'</span></div>'
+            +'</div>';
         }).join('');
-        body.innerHTML = '<div class="stage" style="font-size:1.1rem;padding-top:20px;">🏆 本局胜者：'+esc(dn(S.over?S.over.winner:''))+'</div>'
-          +'<table style="border-collapse:collapse;margin:10px auto;font-size:.86rem;"><tr style="background:#eef1f5;"><th style="padding:4px 10px;border:1px solid #dfe4ea;">名次</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">玩家</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">炸中机身</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">炸中机头</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">首中步数</th><th style="padding:4px 10px;border:1px solid #dfe4ea;">首沉步数</th></tr>'+rows+'</table>'
+        body.innerHTML='<div class="overcard"><div class="wline">🏆 '+esc(dn(winName))+' 获胜！</div>'
+          +'<div class="ovrow">'+ov+'</div></div>'
           +'<div class="bar"><a class="go" href="/lobby.html">返回大厅</a></div>';
         return;
       }

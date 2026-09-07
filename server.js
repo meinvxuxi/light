@@ -228,6 +228,16 @@ function recordHighScores(totals) {
   }
 }
 
+// ===== 炸飞机「烟火师」榜：单局炸毁机头数（= 单局击落飞机数） =====
+let bomberSparkBoard = new Map(); // 玩家名 -> 单局最高机头炸毁数
+function recordBomberSparks(g) {
+  if (!g) return;
+  for (const n of g.playerOrder) {
+    const v = (g.stats && g.stats[n] && g.stats[n].shipsDown) || 0;
+    if (v > 0 && v > (bomberSparkBoard.get(n) || 0)) bomberSparkBoard.set(n, v);
+  }
+}
+
 // ===== 画猜接龙（花菜）榜与战绩 =====
 let drawingHighBoard = new Map(); // 玩家名 -> 单局最高分
 function recordDrawingHighScores(g) {
@@ -744,9 +754,21 @@ function bmbAttack(g, room, attacker, target, r, c) {
       bmbBoom(room, `📉 ${getDisplayName(d)} 已全员出局（剩余 ${g.alive.length} 人）`);
     }
   }
+  // 4.5) 兜底：任何“机头已炸满 5 架”的存活者都补移除；只剩最后一人即进入结算
+  for (const n of g.alive.slice()) {
+    if ((g.sunkHead[n] || []).length >= (g.config || []).length) {
+      g.alive = g.alive.filter(m => m !== n);
+      g.elimOrder = g.elimOrder || [];
+      if (!g.elimOrder.includes(n)) g.elimOrder.push(n);
+      g.eliminated = g.eliminated || {};
+      g.eliminated[n] = Date.now();
+      bmbBoom(room, `📉 ${getDisplayName(n)} 已全员出局（剩余 ${g.alive.length} 人）`);
+    }
+  }
   // 5) 固定座位轮转：给下一名在场存活玩家；若都不在场就保持座位等回来
   if (g.alive.length <= 1) {
     g.phase = 'over';
+    recordBomberSparks(g); // 烟火师榜：单局机头（击落飞机数）
     const winner = g.alive[0];
     const players = g.playerOrder.map(n => ({ name: n, stats: g.stats[n] || {}, rank: n === winner ? 1 : (g.elimOrder || []).indexOf(n) + 2 }));
     g.over = { winner, players };
@@ -2288,7 +2310,18 @@ io.on('connection', (socket) => {
       .map(n => ({ name: n, displayName: getDisplayName(n), title: playerTitle(n), count: (achRow.get(n) || { count: 0 }).count }))
       .filter(x => x.count > 0)
       .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : 1));
-    if (cb) cb({ success: true, game: '快艇骰子', board: gamesArr, achBoard: achArr, drawingBoard: drawingArr });
+    // 烟火师榜（炸飞机）：单局最高炸毁机头数，平分按名字
+    const bomberArr = [];
+    for (const [name, best] of bomberSparkBoard) {
+      bomberArr.push({
+        name,
+        displayName: OFFICIAL_ACCOUNT_NAMES.includes(name) ? getDisplayName(name) : name,
+        title: playerTitle(name),
+        best
+      });
+    }
+    bomberArr.sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
+    if (cb) cb({ success: true, game: '快艇骰子', board: gamesArr, achBoard: achArr, drawingBoard: drawingArr, bomberBoard: bomberArr });
   });
 
   socket.on('start_game', () => {
