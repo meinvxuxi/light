@@ -57,6 +57,21 @@
     .qa-opt { padding: 10px 14px; border: 1px solid #dfe3e8; border-radius: 10px; margin-bottom: 8px; font-size: .95rem; cursor: pointer; }
     .qa-opt.sel { background: rgba(74,144,217,.14); border-color: #4a90d9; font-weight: 700; }
     .qa-opt.dis { opacity: .55; cursor: default; }
+    .qa-opt.other { border-color: #f0a020; background: rgba(240,160,32,.16); color: #8a5a00; font-weight: 700; opacity: .9; }
+    /* 主题色半透明磨砂弹窗 */
+    .glass-mask { position: fixed; inset: 0; background: rgba(30,40,60,.2); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 99; display: flex; align-items: center; justify-content: center; }
+    .glass-box { background: rgba(255,255,255,.78); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(74,144,217,.45); border-radius: 16px; padding: 20px 22px; max-width: 330px; width: 86%; text-align: center; box-shadow: 0 8px 30px rgba(31,45,61,.18); }
+    body.dyn-pink .glass-box { border-color: rgba(240,98,146,.5); }
+    body.dyn-green .glass-box { border-color: rgba(111,158,99,.5); }
+    body.dyn-gold .glass-box { border-color: rgba(214,168,67,.5); }
+    body.dyn-red .glass-box { border-color: rgba(166,64,58,.5); }
+    .glass-box .vbtn { border-radius: 10px; padding: 10px 24px; font-size: .9rem; font-weight: 700; cursor: pointer; border: 1px solid transparent; margin: 6px 6px 0; }
+    .glass-box .vbtn.ok { color: #2f6fb2; background: rgba(74,144,217,.15); border-color: rgba(74,144,217,.5); }
+    .glass-box .vbtn.no { color: #c62828; background: rgba(231,76,60,.1); border-color: rgba(231,76,60,.4); }
+    body.dyn-pink .glass-box .vbtn.ok { color: #c73e79; background: rgba(240,98,146,.15); border-color: rgba(240,98,146,.5); }
+    body.dyn-green .glass-box .vbtn.ok { color: #4f8a45; background: rgba(111,158,99,.16); border-color: rgba(111,158,99,.5); }
+    body.dyn-gold .glass-box .vbtn.ok { color: #a8791b; background: rgba(214,168,67,.16); border-color: rgba(214,168,67,.5); }
+    body.dyn-red .glass-box .vbtn.ok { color: #8c332d; background: rgba(166,64,58,.15); border-color: rgba(166,64,58,.5); }
     .qa-wait { color: #9aa5b1; font-size: .82rem; text-align: center; margin-top: 6px; }
     .live-box { margin-top: 10px; border-top: 1px dashed #e8ecf1; padding-top: 8px; }
     .live-typing { color: #4a90d9; font-weight: 700; min-height: 20px; font-size: .9rem; margin-bottom: 6px; word-break: break-all; }
@@ -86,6 +101,8 @@
   </div>
   <div class="wrap" id="wrap"><div class="err">加载中…</div></div>
 
+  <div class="glass-mask" id="pfMask" style="display:none;" onclick="if(event.target===this)pfClose()"><div class="glass-box" id="pfBox"></div></div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const myName = sessionStorage.getItem('playerName');
@@ -101,6 +118,18 @@
     let _dm = {};
     function dn(n) { return _dm[n] || n; }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+    // 主题色半透明磨砂弹窗（替代原生 confirm/提示）
+    function pfModal(title, body, actionsHtml) {
+      const m = document.getElementById('pfMask');
+      const b = document.getElementById('pfBox');
+      if (!m || !b) return;
+      b.innerHTML = `<div style="font-weight:700;margin-bottom:8px;">${esc(title)}</div>
+        <div style="color:#6b7a90;font-size:.88rem;line-height:1.6;">${body}</div>
+        <div style="margin-top:6px;">${actionsHtml || ''}</div>`;
+      m.style.display = 'flex';
+    }
+    function pfClose() { document.getElementById('pfMask').style.display = 'none'; }
 
     // ===== 主题引擎（五套） =====
     const THEME_IMG = { p1: '/assets/avatars/p1/beijing.png.jpg', p2: '/assets/avatars/p2/zuixin2.jpg', p3: '/assets/avatars/p3/zuixin3.jpg', p4: '/assets/avatars/p4/beijing4.jpg', pomelo: '/assets/avatars/p3/nene.jpg', agly: '/assets/avatars/p1/agly/aglybj.jpg', lyff: '/assets/avatars/p4/lyff/lyffbj.jpg' };
@@ -232,7 +261,7 @@
     function aliasHistHtml() {
       const h = pairInfo.aliasHistory || [];
       if (!h.length) return '';
-      return `<div class="alias-hist">曾用名：${h.map(x => esc(x.name || x)).join(' → ')}</div>`;
+      return `<div class="alias-hist">曾用名：${h.map(x => esc(x.name || x)).join(' / ')}</div>`;
     }
     function aliasAsk() {
       const n = prompt('给这个默契组合起个名字（1~10 字，对方同意后生效）');
@@ -268,12 +297,12 @@
       return `<div class="lab">双人小游戏</div>
         <div class="g-row">
           <span class="g-name">默契问答</span>
-          <span class="g-desc">同一道题各自作答，相同即加分</span>
+          <span class="g-desc">同一道题各自作答</span>
           ${readyCtrl('qa')}
         </div>
         <div class="g-row">
           <span class="g-name">你画我猜</span>
-          <span class="g-desc">一人画一人猜 · 共用画布</span>
+          <span class="g-desc">一人画一人猜</span>
           ${readyCtrl('paint')}
         </div>
         <div class="g-row">
@@ -416,10 +445,11 @@
         if (qaMode) qaMode = false;
         if (paintOn) paintViewReset();
         if (wasPlaying && isMember) {
-          // 游戏进行中收到 idle：对方退出/掉线导致本局被终止
-          const wEl = document.getElementById('wrap');
-          wEl.innerHTML = metaHtml() + '<div class="empty">对方已退出，游戏已终止</div>';
-          setTimeout(() => { renderRoot(); }, 1000);
+          // 对方退出/取消/掉线导致本局终止
+          if (pSelfCancel) { pSelfCancel = false; renderRoot(); return; }
+          pfModal('对方已取消',
+            '对方退出了这局游戏（可能返回了默契主页），本局已结束。',
+            '<button class="vbtn ok" onclick="pfClose();renderRoot()">知道了</button>');
         } else {
           renderRoot();
         }
@@ -451,7 +481,7 @@
         document.querySelectorAll('#qaOpts .qa-opt').forEach((o, idx) => {
           o.classList.add('dis');
           if (idx === mineIdx) o.classList.add('sel');
-          if (idx === otherIdx) o.style.borderColor = '#f0a020'; // 对方的选择用橙色标出
+          if (idx === otherIdx) o.classList.add('other'); // 对方选择：橙色半透明（若日后有橙色系主题再调）
         });
         const wait = document.getElementById('qaWait');
         if (wait) wait.textContent = `你选了「${opts[mineIdx]}」 · 对方选了「${otherIdx !== undefined && opts[otherIdx] !== undefined ? opts[otherIdx] : '?'}」`;
@@ -495,6 +525,8 @@
     let pAttempts = [];           // 猜过的词（猜者本地/结束后可见）
     let pPaintSeen = [];          // 画者看到的对方尝试词
     let pLiveTyping = '';         // 画者看到的对方实时输入
+    let pNextMine = false;        // 是否已点“下一轮”
+    let pSelfCancel = false;      // 本端主动取消标记
     let pGain = 0;
     let pNewTitle = '';
     let pEnd = null;
@@ -512,7 +544,7 @@
     }
     function paintViewReset() {
       paintClearTimer();
-      paintOn = false; pStage = 'idle'; pRole = null; pWord = null; pWordLen = 0; pStrokes = []; pDeadline = 0; pAttempts = []; pPaintSeen = []; pLiveTyping = ''; pEnd = null; pGain = 0; pNewTitle = '';
+      paintOn = false; pStage = 'idle'; pRole = null; pWord = null; pWordLen = 0; pStrokes = []; pDeadline = 0; pAttempts = []; pPaintSeen = []; pLiveTyping = ''; pEnd = null; pGain = 0; pNewTitle = ''; pNextMine = false; pSelfCancel = false;
       pPeekWord = null;
     }
     function paintMeta() {
@@ -583,8 +615,8 @@
       const isDrawer = pRole === 'drawer';
       const dash = isDrawer ? '' : `<div class="word-here">${paintDashHtml()}</div>`;
       const roleExtra = isDrawer
-        ? `<div class="score-line">你要画：<b>${esc(pWord)}</b>（1~12 字，别让对方看到）</div>`
-        : `<div class="qa-wait">对方能实时看到你的输入和猜词，猜中就结束～</div>`;
+        ? `<div class="score-line">你要画：<b>${esc(pWord)}</b>（1~12 字）</div>`
+        : `<div class="qa-wait">猜中结束</div>`;
       const tools = isDrawer ? paintToolsHtml() : '';
       const guessArea = isDrawer ? '' : `
         <div class="guess-box">
@@ -736,14 +768,29 @@
         <div class="glabel">画者：${esc(dn(pEnd ? pEnd.painter : pairNames[0]))} 的作画（上一步画布可见）</div>
         <div class="glabel">猜词记录（共 ${(pAttempts || []).length} 次）</div>
         ${att || '<div class="empty" style="padding:10px 0;">本轮没有猜测</div>'}
-        <div style="margin-top:14px;">
-          <button class="btn-ok" onclick="paintNext()">下一轮</button>
-          <span class="go" onclick="goBack()" style="margin-left:14px;">返回默契主页</span>
+        <div style="margin-top:14px;" id="pNextArea">${pNextMine
+          ? `<span class="who">已点下一轮，等待对方确认…</span>`
+          : `<button class="btn-ok" onclick="paintNext()">下一轮（需双方确认）</button>`}
+          <span class="go" onclick="paintCancel()" style="margin-left:14px;">返回菜单（取消）</span>
         </div>`;
     }
     function paintNext() {
       socket.emit('paint_next', { pair: pairKey }, () => {});
     }
+    function paintCancel() {
+      pfModal('取消本局？', '现在返回菜单会取消本轮。对方会看到“对方已取消”的提示。',
+        `<button class="vbtn ok" onclick="paintConfirmCancel()">确认取消</button><button class="vbtn no" onclick="pfClose()">暂不</button>`);
+    }
+    function paintConfirmCancel() {
+      pSelfCancel = true;
+      pfClose();
+      socket.emit('paint_abort', { pair: pairKey }, () => {});
+    }
+    socket.on('paint_next_state', (data) => {
+      if (!data || !paintOn || pStage !== 'end') return;
+      pNextMine = (data.ready || []).includes(myName);
+      paintRender();
+    });
     // —— 你画我猜：服务器事件 ——
     function applyPaintRound(data) {
       paintOn = true;
@@ -753,6 +800,7 @@
       pAttempts = [];
       pPaintSeen = [];
       pLiveTyping = '';
+      pNextMine = false;
       pWord = null;
       pEnd = null;
       pGain = 0;
@@ -815,8 +863,13 @@
     function inSessionGame() { return isMember && (qaMode || paintOn); }
     function goBack() {
       if (inSessionGame()) {
-        if (!confirm('现在退出会终止本局游戏，确定退出吗？')) return;
+        pfModal('退出确认', '现在退出会终止本局游戏，确定退出吗？',
+          `<button class="vbtn ok" onclick="pfClose();doLeave()">退出</button><button class="vbtn no" onclick="pfClose()">继续玩</button>`);
+        return;
       }
+      doLeave();
+    }
+    function doLeave() {
       if (isMember) socket.emit('sync_leave', { pair: pairKey });
       window.location.href = '/sync.html';
     }

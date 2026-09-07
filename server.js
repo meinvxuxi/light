@@ -2620,17 +2620,31 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true });
   });
 
-  // 结束画面 → 下一轮（自动交换画者/猜者）
+  // 结束画面 → 需要双方都点“下一轮”才开始（有一方先点就等待并同步状态）
   socket.on('paint_next', ({ pair }, cb) => {
     const name = socketToUser.get(socket.id);
     const key = String(pair || '');
     const sess = syncSessions.get(key);
-    if (!sess || !sess.members.has(name) || sess.game !== 'paint' || sess.paint.stage !== 'end') return;
-    startPaintRound(key);
+    if (!sess || !sess.members.has(name) || sess.game !== 'paint' || !sess.paint || sess.paint.stage !== 'end') {
+      if (cb) cb({ success: false });
+      return;
+    }
+    const pt = sess.paint;
+    pt.nextVotes = pt.nextVotes || {};
+    if (!pt.nextVotes[name]) pt.nextVotes[name] = true;
+    const ready = Object.keys(pt.nextVotes);
+    const [a, b] = sess.players;
+    const both = ready.includes(a) && ready.includes(b);
+    paintSendTo(sess, a, 'paint_next_state', { ready, both });
+    paintSendTo(sess, b, 'paint_next_state', { ready, both });
+    if (both) {
+      pt.nextVotes = {};
+      startPaintRound(key);
+    }
     if (cb) cb({ success: true });
   });
 
-  // 中止你画我猜（回到小游戏菜单）
+  // 中止你画我猜（回到小游戏菜单；另一方收到“对方已取消”）
   socket.on('paint_abort', ({ pair }, cb) => {
     const name = socketToUser.get(socket.id);
     const key = String(pair || '');
@@ -2959,7 +2973,7 @@ function startPaintRound(pairKey) {
   const guesser = painter === a ? b : a;
   sess.phase = 'playing';
   sess.game = 'paint';
-  sess.paint = { painter, guesser, stage: 'word', word: null, strokes: [], attempts: [], deadline: 0, idx: 0 };
+  sess.paint = { painter, guesser, stage: 'word', word: null, strokes: [], attempts: [], deadline: 0, idx: 0, nextVotes: {} };
   paintSendTo(sess, painter, 'paint_round', { role: 'drawer', stage: 'word' });
   paintSendTo(sess, guesser, 'paint_round', { role: 'guesser', stage: 'word' });
 }
