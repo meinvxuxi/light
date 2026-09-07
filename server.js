@@ -816,7 +816,8 @@ function bmbAttack(g, room, attacker, target, r, c) {
   }
   g.attacks[attacker] = g.attacks[attacker] || [];
   g.attacks[attacker].push({ to: target, x: c, y: r, res: res.res });
-  const isHit = res.res !== '空';
+  // 是否算“有效命中”：目标盘非空，或同格传播击落了任何人的机头（传播不清空连击；单回合多杀也只算 1）
+  const isHit = res.res !== '空' || downed.length > 0;
   g.lastEmpty = isHit ? 0 : (g.lastEmpty || 0) + 1;
   g.hitStreak[attacker] = isHit ? (g.hitStreak[attacker] || 0) + 1 : 0;
   g.emptyStreak[attacker] = isHit ? 0 : (g.emptyStreak[attacker] || 0) + 1;
