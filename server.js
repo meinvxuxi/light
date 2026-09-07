@@ -3052,13 +3052,18 @@ io.on('connection', (socket) => {
     if (room && g) bmbBroadcast(room, g);
   });
   // 取消对局：在线者全员同意（离线不计票，离开的人可在房间页“返回游戏”继续玩）
-  socket.on('bomber_cancel_vote', (cb) => {
+  socket.on('bomber_cancel_vote', ({ revoke } = {}, cb) => {
     const name = socketToUser.get(socket.id);
     const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'bomber') : null;
     const g = room && bomberGames[room.roomId];
     if (!room || !g || !g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
-    const members = g.playerOrder; // 本局所有人
-    const onlineNames = members.filter(n => {
+    if (revoke) {
+      g.cancelVotes = (g.cancelVotes || []).filter(n => n !== name);
+      bmbBroadcast(room, g);
+      if (cb) cb({ success: true, votes: g.cancelVotes.slice(), revoked: true });
+      return;
+    }
+    const onlineNames = g.playerOrder.filter(n => {
       const hb = userLastHeartbeat.get(n);
       const sid = room.playerMap.get(n);
       return hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && bomberAtGame.get(n) === sid && io.sockets.sockets.has(sid);

@@ -89,7 +89,7 @@
     function undoLast(){ if(placed.length){ placed.pop(); selType=null; render(); } }
     function rotLabel(){ return ['上','右','下','左'][selRot]||'上'; }
     function submit(){ const payload=placed.map(p=>({type:p.type,rotation:p.rotation||0,headR:p.headR,headC:p.headC})); socket.emit('bomber_place',{planes:payload},(res)=>{ if(res&&!res.success) toast(res.msg||'摆放无效'); }); }
-    function bmbCancelVote(){ socket.emit('bomber_cancel_vote', function(res){ if(res&&res.success){ if(res.cancelled) return; const v=(res.votes||[]).length; const total=(S&&S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0); toast('已投票取消（'+v+'/'+total+'）等待其他在线玩家…'); } }); }
+    function bmbCancelVote(){ if(!S) return; const voted=(S.cancelVotes||[]).includes(S.you); const revoke=!!voted; socket.emit('bomber_cancel_vote', { revoke }, function(res){ if(res&&res.success){ if(res.cancelled) return; const v=(res.votes||[]).length; const total=(S&&S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0); toast(revoke?('已撤回取消票（'+v+'/'+total+'）'):('已投票取消（'+v+'/'+total+'）等待其他在线玩家…')); } }); }
     function statusPills(){
       const names=S&&S.order?S.order.slice():[];
       return names.map(function(n){
@@ -145,6 +145,8 @@
     socket.on('bomber_boom', function(d){ if(!d||!d.text) return; barEl.textContent=d.text; barEl.style.opacity='1'; clearTimeout(barTimer); barTimer=setTimeout(function(){ barEl.style.opacity='0'; },2600); });
     socket.on('bomber_cancel', function(){ location.href='/room.html?game=bomber'; });
     socket.on('connect', function(){ setTimeout(function(){ socket.emit('bomber_enter'); socket.emit('bomber_pull',function(res){ if(res&&res.success){ S=res; render(); } }); },400); });
+    // 兜底轮询：事件偶发收不到也能同步；对局已结束/被取消时自动回房间
+    setInterval(function(){ if(!socket.connected) return; socket.emit('bomber_pull', function(res){ if(res&&!res.success){ location.href='/room.html?game=bomber'; return; } if(res&&res.success){ S=res; render(); } }); }, 2500);
   
 </script>
   <script src="/emoji-widget.js"></script>
