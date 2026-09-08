@@ -75,7 +75,7 @@
   body.dyn-red .ach-pop { border-color: rgba(166,64,58,.6); background: rgba(253,243,241,.82); }
   table.g td.armed { background:rgba(240,147,43,.55); box-shadow:inset 0 0 0 2px rgba(230,126,34,.95); }
   * { -webkit-tap-highlight-color: transparent !important; outline: none !important; }
-  table.g td.miss { background:#d9e1e9; box-shadow: inset 0 0 0 1px rgba(120,140,160,.25); }
+  table.g td.miss { background:#c9d3dc; }
   .planebar { max-width:820px; margin:4px auto 2px; text-align:center; font-size:.8rem; }
   .guide-box { max-width:820px; margin:0 auto 8px; padding:8px 10px; background:rgba(255,255,255,.6); border:1px solid rgba(74,144,217,.3); border-radius:12px; display:flex; gap:16px; flex-wrap:wrap; justify-content:center; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
   .guide-type { text-align:center; font-size:.72rem; color:#6b7a90; }
@@ -206,7 +206,7 @@
       const t=target; const x=c,y=r; armed=null;
         if(S){S.shotsByTarget=S.shotsByTarget||{}; const arr=S.shotsByTarget[t]=S.shotsByTarget[t]||[]; if(!arr.some(function(h){return h.x===x&&h.y===y;})){arr.push({x:x,y:y,res:'pending',by:me()}); render();}}
               // 开火后快速拉一次状态：即使广播偶发迟到也能立刻显示命中颜色
-        (function loopPull(t){ if(!socket.connected || t>=3) return; socket.emit('bomber_pull',function(r){ if(r&&r.success){ S=r; render(); } }); setTimeout(function(){ loopPull(t+1); }, 600); })(0);
+        setTimeout(function(){ (function loopPull(n){ if(!socket.connected || n>=3) return; socket.emit('bomber_pull',function(r){ if(r&&r.success){ S=r; S.shotsByTarget=S.shotsByTarget||{}; var ar=S.shotsByTarget[t]=S.shotsByTarget[t]||[]; var done=ar.some(function(h){return h.x===x&&h.y===y&&h.res!=='pending';}); if(!done && !ar.some(function(h){return h.x===x&&h.y===y;})) ar.push({x:x,y:y,res:'pending',by:me()}); render(); } }); setTimeout(function(){ loopPull(n+1); }, 700); })(0); }, 500);
         socket.emit('bomber_fire',{target:t,x:c,y:r},function(res){
         if(res&&!res.success){ toast(res.msg||'无法轰炸'); if(S){const arr=(S.shotsByTarget&&S.shotsByTarget[t])||[]; S.shotsByTarget[t]=arr.filter(function(h){return !(h.x===x&&h.y===y&&h.res==='pending');}); render();} return; }
         // 本地立即上色：以服务器返回结果直接画上，不等下一次广播/轮询
