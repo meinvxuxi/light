@@ -15,7 +15,7 @@
   .ptitle { font-size:.82rem; color:#9aa5b1; margin-bottom:6px; }
   table.g { border-collapse:collapse; margin:0 auto; }
   table.g td { width:20px; height:20px; border:1px solid #dfe4ea; font-size:9px; text-align:center; background:#fff; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; }
-  table.g td.clickable { cursor:pointer; }
+  table.g td.clickable { cursor:pointer; touch-action:manipulation; -webkit-user-select:none; user-select:none; }
   table.g td.mine { background:#cfe9d8; }
   table.g td.mine.head { background:#ffb3b3; }
   table.g td.pv { background:rgba(74,144,217,.3); border-color:rgba(74,144,217,.8); }
@@ -205,7 +205,7 @@
       const t=target; const x=c,y=r; armed=null;
         if(S){S.shotsByTarget=S.shotsByTarget||{}; const arr=S.shotsByTarget[t]=S.shotsByTarget[t]||[]; if(!arr.some(function(h){return h.x===x&&h.y===y;})){arr.push({x:x,y:y,res:'pending',by:me()}); render();}}
               // 开火后快速拉一次状态：即使广播偶发迟到也能立刻显示命中颜色
-        setTimeout(function(){ if(socket.connected) socket.emit('bomber_pull',function(r){ if(r&&r.success){ S=r; render(); } }); }, 450);
+        (function loopPull(t){ if(!socket.connected || t>=3) return; socket.emit('bomber_pull',function(r){ if(r&&r.success){ S=r; render(); } }); setTimeout(function(){ loopPull(t+1); }, 600); })(0);
         socket.emit('bomber_fire',{target:t,x:c,y:r},function(res){
         if(res&&!res.success){ toast(res.msg||'无法轰炸'); if(S){const arr=(S.shotsByTarget&&S.shotsByTarget[t])||[]; S.shotsByTarget[t]=arr.filter(function(h){return !(h.x===x&&h.y===y&&h.res==='pending');}); render();} return; }
         // 本地立即上色：以服务器返回结果直接画上，不等下一次广播/轮询

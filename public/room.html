@@ -211,7 +211,12 @@
         <option value="4" selected>4人</option>
       </select>
       <span style="color:#6c757d;font-size:0.8rem;">（仅房主可改）</span>
-      <label id="skipOfflineWrap" style="display:none;margin-left:16px;color:#6c757d;font-size:.8rem;"><input type="checkbox" id="skipOfflineCk" onchange="changeSkipOffline()"> 离线自动跳过（炸飞机）</label>
+      <div id="skipOfflineWrap" style="display:none;margin-top:7px;padding:6px 10px;font-size:.8rem;color:#6c757d;background:rgba(74,144,217,.06);border-radius:8px;border:1px dashed rgba(74,144,217,.25);">
+        <label style="cursor:pointer;display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="skipOfflineCk" onchange="changeSkipOffline()">
+          <span>离线自动跳过（炸飞机）<br><small style="color:#9aa5b1;">不勾＝轮到离线玩家就等TA回来；勾上＝自动让给在场下一位</small></span>
+        </label>
+      </div>
     </div>
 
     <div class="controls">
@@ -381,7 +386,7 @@
       serverMaxPlayers = roomState.maxPlayers || 4;
       document.getElementById('maxPlayersSelect').value = serverMaxPlayers;
       const skWrap = document.getElementById('skipOfflineWrap');
-      if (skWrap) skWrap.style.display = (gameName === 'bomber' && roomState.hostName === myName) ? 'inline' : 'none';
+      if (skWrap) skWrap.style.display = (gameName === 'bomber' && roomState.hostName === myName) ? 'block' : 'none';
       const skCk = document.getElementById('skipOfflineCk');
       if (skCk && roomState.hostName === myName) skCk.checked = !!roomState.skipOffline;
 
