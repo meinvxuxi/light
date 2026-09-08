@@ -234,6 +234,7 @@ function recordHighScores(totals) {
     const cur = highScoreBoard.get(name) || 0;
     if (t.total > cur) highScoreBoard.set(name, t.total);
   }
+  saveBoardStats();
 }
 
 // ===== 炸飞机「烟火师」榜：单局炸毁机头数（= 单局击落飞机数） =====
@@ -244,6 +245,7 @@ function recordBomberSparks(g) {
     const v = (g.stats && g.stats[n] && g.stats[n].shipsDown) || 0;
     if (v > 0 && v > (bomberSparkBoard.get(n) || 0)) bomberSparkBoard.set(n, v);
   }
+  saveBoardStats();
 }
 function bomberRankOf(g, n) {
   if (!g.over) return 0;
@@ -268,8 +270,31 @@ function recordBomberGame(g) {
   });
 }
 
+// ===== 排行榜持久化：三个内存榜（快艇/花菜/烟火师）写入 data/boards.json，重启不丢 =====
+const BOARDS_STATS_FILE = path.join(DATA_DIR, 'boards.json');
+function saveBoardStats() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(BOARDS_STATS_FILE, JSON.stringify({
+      yahtzee: Object.fromEntries(highScoreBoard),
+      drawing: Object.fromEntries(drawingHighBoard),
+      bomber: Object.fromEntries(bomberSparkBoard)
+    }, null, 2), 'utf8');
+  } catch (e) { console.error('❌ 排行榜写入失败：', e.message); }
+}
+function loadBoardStats() {
+  try {
+    const o = JSON.parse(fs.readFileSync(BOARDS_STATS_FILE, 'utf8')) || {};
+    if (o.yahtzee) highScoreBoard = new Map(Object.entries(o.yahtzee));
+    if (o.drawing) drawingHighBoard = new Map(Object.entries(o.drawing));
+    if (o.bomber) bomberSparkBoard = new Map(Object.entries(o.bomber));
+    console.log(`📊 排行榜已加载：快艇 ${highScoreBoard.size} 条 / 花菜 ${drawingHighBoard.size} 条 / 烟火师 ${bomberSparkBoard.size} 条`);
+  } catch (e) { /* 无文件/旧版：正常空榜 */ }
+}
+
 // ===== 画猜接龙（花菜）榜与战绩 =====
 let drawingHighBoard = new Map(); // 玩家名 -> 单局最高分
+loadBoardStats();
 function recordDrawingHighScores(g) {
   if (!g) return;
   for (const n of g.order) {
@@ -277,6 +302,7 @@ function recordDrawingHighScores(g) {
     const cur = drawingHighBoard.get(n) || 0;
     if (p > cur) drawingHighBoard.set(n, p);
   }
+  saveBoardStats();
 }
 // 画猜一局（进入 result）→ 写时光墙（只记正式玩家，带 MVP/罪魁票数）+ 花菜榜（所有参与者）
 function recordDrawingGame(g) {
