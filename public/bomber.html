@@ -73,15 +73,26 @@
   body.dyn-green .ach-pop { border-color: rgba(111,158,99,.6); background: rgba(241,248,238,.8); }
   body.dyn-gold .ach-pop { border-color: rgba(214,168,67,.6); background: rgba(255,250,238,.82); }
   body.dyn-red .ach-pop { border-color: rgba(166,64,58,.6); background: rgba(253,243,241,.82); }
+  table.g td.armed { background:rgba(240,147,43,.55); box-shadow:inset 0 0 0 2px rgba(230,126,34,.95); }
+  .planebar { max-width:820px; margin:4px auto 2px; text-align:center; font-size:.8rem; }
+  .guide-box { max-width:820px; margin:0 auto 8px; padding:8px 10px; background:rgba(255,255,255,.6); border:1px solid rgba(74,144,217,.3); border-radius:12px; display:flex; gap:16px; flex-wrap:wrap; justify-content:center; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+  .guide-type { text-align:center; font-size:.72rem; color:#6b7a90; }
+  table.pmini { border-collapse:collapse; margin:4px auto 2px; }
+  table.pmini td { width:12px; height:12px; border:1px solid #e6eaef; }
+  table.pmini td.b { background:#cfe9d8; }
+  table.pmini td.h { background:#ff9c9c; }
 </style>
 </head>
 <body>
   <div class="head">
     <b>💣 炸飞机</b>
+    <a class="go" style="margin-right:14px;" id="bombModeLb" onclick="toggleBombMode()">轰炸：直接</a>
     <a class="go" style="color:#c62828;margin-right:14px;" onclick="bmbCancelVote()" id="cancelLb">取消对局</a>
     <a class="go" href="/lobby.html">返回大厅</a>
   </div>
   <div class="wrap">
+    <div class="planebar"><a class="go" onclick="togglePlaneGuide()">✈️ 查看本局飞机机型 <span id="pgTri">▸</span></a></div>
+    <div id="planeGuide" style="display:none;"></div>
     <div class="stage" id="stage">连接中…</div>
     <div id="body"></div>
   </div>
@@ -100,11 +111,12 @@
     function rot(type, rot) { return CELLS[type].map(([dr, dc]) => rot===1?[dc,-dr]:rot===2?[-dr,-dc]:rot===3?[-dc,dr]:[dr,dc]); }
     function cellsOf(p) { return rot(p.type, p.rotation||0).map(([dr,dc]) => ({ r: p.headR+dr, c: p.headC+dc, head: dr===0&&dc===0 })); }
     let S=null, placed=[], selType=null, selRot=0, preview=null, target=null, toastEl=null, achSummary={};
+    let confirmMode=localStorage.getItem('bmbConfirm')==='1', armed=null;
     function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     function dn(n){ return (S&&S.disp&&S.disp[n])?S.disp[n]:n; }
     function tip(t){ const el=document.getElementById('stage'); if(el) el.textContent=t||''; }
     function toast(m){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;background:rgba(255,255,255,.9);border:1px solid #4a90d9;color:#2c3e50;padding:8px 18px;border-radius:10px;font-size:.86rem;'; document.body.appendChild(toastEl);} toastEl.textContent=m; clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.textContent='';},1800); }
-    function gridTable(cells, clickFn, hits, missMap, ownMarks) {
+    function gridTable(cells, clickFn, hits, missMap, ownMarks, armedKey) {
       let h='<table class="g">';
       for (let r=1;r<=15;r++){ h+='<tr>'; for(let c=1;c<=15;c++){
         const key=r+','+c;
@@ -120,6 +132,8 @@
         } else if(ownMarks && ownMarks[key]) {
           const base=cell?(cell.head?'mine head':'mine'):'';
           cls='ownhit'+(base?' '+base:'');
+        } else if(armedKey && armedKey===key) {
+          cls='armed';
         } else if(cell){ cls=cell.head?'mine head':'mine'; }
         else if(missMap && missMap[key]) cls='miss';
         else if(hits){ const ht=hits.find(h=>h.y===r&&h.x===c); if(ht){ cls = ht.res==='沉'?'hit':(ht.res==='伤'?'wound':'miss'); txt = ht.res==='沉'?'✕':''; } }
@@ -151,7 +165,61 @@
     function undoLast(){ if(preview) return; if(placed.length){ placed.pop(); selType=null; preview=null; render(); } }
     function rotLabel(){ return ['上','右','下','左'][selRot]||'上'; }
     function submit(){ const payload=placed.map(p=>({type:p.type,rotation:p.rotation||0,headR:p.headR,headC:p.headC})); socket.emit('bomber_place',{planes:payload},(res)=>{ if(res&&!res.success) toast(res.msg||'摆放无效'); }); }
-    function fireAt(r,c){ if(!target||target===me()) return; socket.emit('bomber_fire',{target:target,x:c,y:r},(res)=>{ if(res&&!res.success) toast(res.msg||'无法轰炸'); }); }
+    function targetCellTap(r,c){
+      if(!target||target===me()) return;
+      if(confirmMode){
+        if(armed && armed.target===target && armed.r===r && armed.c===c){ armed=null; doFire(r,c); return; }
+        armed={target:target,r:r,c:c}; render(); return;
+      }
+      doFire(r,c);
+    }
+    function doFire(r,c){
+      const t=target; const x=c,y=r; armed=null;
+      socket.emit('bomber_fire',{target:t,x:c,y:r},function(res){
+        if(res&&!res.success){ toast(res.msg||'无法轰炸'); return; }
+        // 本地立即上色：以服务器返回结果直接画上，不等下一次广播/轮询
+        if(res&&res.res&&S){
+          const rr=res.res;
+          if(rr&&rr.x!=null&&rr.y!=null&&rr.res){
+            S.shotsByTarget=S.shotsByTarget||{};
+            const arr=S.shotsByTarget[t]=S.shotsByTarget[t]||[];
+            if(!arr.some(function(h){return h.x===rr.x&&h.y===rr.y;})) arr.push({x:rr.x,y:rr.y,res:rr.res,by:me()});
+            render();
+          }
+        }
+      });
+    }
+    function toggleBombMode(){
+      confirmMode=!confirmMode;
+      localStorage.setItem('bmbConfirm', confirmMode?'1':'0');
+      armed=null;
+      const el=document.getElementById('bombModeLb');
+      if(el) el.textContent='轰炸：'+(confirmMode?'确认（点两次）':'直接');
+      if(S&&S.phase==='battle') render();
+      toast(confirmMode?'已开启确认轰炸：先点目标再点一次同一格确认':'已切换为直接轰炸：点一下就发射');
+    }
+    function pickTarget(n){ target=n; armed=null; render(); }
+    function patternRows(type){
+      const pts=rot(type,0); let minR=0,maxR=0,minC=0,maxC=0;
+      pts.forEach(function(p){ minR=Math.min(minR,p[0]); maxR=Math.max(maxR,p[0]); minC=Math.min(minC,p[1]); maxC=Math.max(maxC,p[1]); });
+      let out=''; for(let rr=minR;rr<=maxR;rr++){ out+='<tr>'; for(let cc=minC;cc<=maxC;cc++){ const hit=pts.find(function(p){return p[0]===rr&&p[1]===cc;}); const hd=hit&&hit[0]===0&&hit[1]===0; out+='<td class="'+(hd?'h':(hit?'b':''))+'"></td>'; } out+='</tr>'; }
+      return out;
+    }
+    function renderPlaneGuide(){
+      const g=document.getElementById('planeGuide'); if(!g) return;
+      const types=[1,2,3];
+      g.innerHTML='<div class="guide-box">'+types.map(function(t){
+        const need=(S&&S.config?S.config.filter(function(v){return v===t;}).length:0);
+        return '<div class="guide-type">机型'+t+' × '+need+'<table class="pmini">'+patternRows(t)+'</table></div>';
+      }).join('')+'</div>';
+    }
+    function togglePlaneGuide(){
+      const g=document.getElementById('planeGuide'); const tri=document.getElementById('pgTri');
+      const show=g.style.display!=='none';
+      g.style.display=show?'none':'';
+      if(tri) tri.textContent=show?'▸':'▾';
+      if(!show) renderPlaneGuide();
+    }
     function bmbCancelVote(){ if(!S) return; const voted=(S.cancelVotes||[]).includes(S.you); const revoke=!!voted; socket.emit('bomber_cancel_vote', { revoke }, function(res){ if(res&&res.success){ if(res.cancelled) return; const v=(res.votes||[]).length; const total=(S&&S.online?Object.keys(S.online).filter(function(n){return S.online[n];}).length:0); toast(revoke?('已撤回取消票（'+v+'/'+total+'）'):('已投票取消（'+v+'/'+total+'）等待其他在线玩家…')); } }); }
     function bmbReturnLobby(){
       socket.emit('return_room', function(){});
@@ -199,9 +267,9 @@
         const missMap={}; targetHits.filter(function(h){return h.res==='空';}).forEach(function(h){missMap[h.y+','+h.x]=1;});
         const myTurn=S.turn===me();
         body.innerHTML = '<div class="gridwrap"><div class="panel"><div class="ptitle">我的布防（✕=被炸过）</div>'+gridTable(yourCells,null,null,null,ownMarks)+'</div>'
-          +'<div class="panel"><div class="ptitle">轰炸 '+(target||'')+' 的棋盘'+(myTurn?'（轮到你）':'（等待对方…）')+'</div>'
-          +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" onclick="target=\''+n+'\';render()">'+esc(dn(n))+'</span>';}).join('')+'</div>'
-          +gridTable(null, myTurn?'fireAt':null, targetHits, missMap)
+          +'<div class="panel"><div class="ptitle">轰炸 '+(target||'')+' 的棋盘'+(myTurn?(confirmMode?'（轮到你·点两下确认）':'（轮到你）'):'（等待对方…）')+'</div>'
+          +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go tgt" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" data-t="'+n+'">'+esc(dn(n))+'</span>';}).join('')+'</div>'
+          +gridTable(null, myTurn?'targetCellTap':null, targetHits, missMap, null, (confirmMode&&armed&&armed.target===target&&myTurn)?(armed.r+','+armed.c):null)
           +'<div class="cfgline">'+targetHits.filter(function(h){return h.res==='沉';}).length+' 沉 / '+targetHits.filter(function(h){return h.res==='伤';}).length+' 伤 / '+targetHits.filter(function(h){return h.res==='空';}).length+' 空</div></div></div>'
           +'<div class="tip" style="text-align:center;">'+statusPills()+'</div>'
           +'<div class="stage" style="margin-top:8px;">存活：'+S.alive.map(function(n){return dn(n);}).join('、')+'　·　当前行动：'+esc(dn(S.turn))+'</div>';
@@ -237,6 +305,8 @@
       }
     }
     socket.on('bomber_state', function(s){ S=s; if(s.phase==='battle'||s.phase==='over') placed=[]; render(); });
+    document.addEventListener('click',function(e){ var el=e.target&&e.target.closest?e.target.closest('.tgt'):null; if(el) pickTarget(el.getAttribute('data-t')); });
+    document.getElementById('bombModeLb').textContent='轰炸：'+(confirmMode?'确认（点两次）':'直接');
     var barEl=document.createElement('div'); barEl.className='barrage'; document.body.appendChild(barEl); var barTimer=null;
     socket.on('bomber_boom', function(d){ if(!d||!d.text) return; barEl.textContent=d.text; barEl.style.opacity='1'; clearTimeout(barTimer); barTimer=setTimeout(function(){ barEl.style.opacity='0'; },2600); });
     var achEl=document.createElement('div'); achEl.className='ach-pop'; document.body.appendChild(achEl); var achTimer=null;

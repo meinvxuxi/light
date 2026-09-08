@@ -509,6 +509,13 @@ function recordAchievement(playerName, achievementId) {
   if (!isTest && PERSIST_ACHIEVEMENTS) saveAchRecords(ACH_FILE, achRecords);
 }
 
+// 记录该成就的历史最佳连击数（描边=连空；世一炸=连击），只更新不改动次数
+function noteBestStreak(name, achievementId, streak) {
+  const list = isTestAccount(name) ? achTestRecords : achRecords;
+  const rec = list.find(r => r.achievementId === achievementId && r.playerName === name);
+  if (rec && (!rec.bestStreak || streak > rec.bestStreak)) rec.bestStreak = streak;
+}
+
 // 统一解锁入口：记录 + 本局去重播报 + 汇总。
 // repeatable=true 表示"同局多次可重复累积次数，但只播报一次"（如每次投出快艇）。
 function announceAchievement(game, roomId, playerName, achievementId, repeatable) {
@@ -832,9 +839,17 @@ function bmbAttack(g, room, attacker, target, r, c) {
   }
   const comboMap = { 2: 'bomber_streak2', 3: 'bomber_streak3', 4: 'bomber_streak4' };
   const hs = g.hitStreak[attacker] || 0;
-  if (hs >= 5) announceAchievement(g, room.roomId, attacker, 'bomber_streak5', false); // 世一炸·5连击+
-  else if (comboMap[hs]) announceAchievement(g, room.roomId, attacker, comboMap[hs], false);
-  if ((g.emptyStreak[attacker] || 0) >= 8) announceAchievement(g, room.roomId, attacker, 'bomber_edge', true); // 描边大师（可重复累计）
+  if (hs >= 5) {
+    // 世一炸·5连击+：每段连击只在“正好第 5 次”记 1 次；6、7…只更新“最佳 N 连击”标注
+    if (hs === 5) announceAchievement(g, room.roomId, attacker, 'bomber_streak5', true);
+    noteBestStreak(attacker, 'bomber_streak5', hs);
+  } else if (comboMap[hs]) {
+    announceAchievement(g, room.roomId, attacker, comboMap[hs], false);
+  }
+  const en = g.emptyStreak[attacker] || 0;
+  // 描边大师：每段连空只在“正好第 8 次”记 1 次；9、10、11…只更新“最佳 N 连空”标注
+  if (en === 8) announceAchievement(g, room.roomId, attacker, 'bomber_edge', true);
+  if (en >= 8) noteBestStreak(attacker, 'bomber_edge', en);
   // 4) 淘汰判定：被击落第 5 架飞机的任何玩家都出局（含波及）
   for (const d of downed) {
     if (g.alive.includes(d) && (g.sunkHead[d] || []).length >= (g.config || []).length) {
@@ -3354,8 +3369,8 @@ io.on('connection', (socket) => {
     if (g.turn !== name) { if (cb) cb({ success: false, msg: '还没轮到你行动' }); return; }
     const fkey = r + ',' + c;
     if ((g.firedCoords[target] || []).includes(fkey)) { if (cb) cb({ success: false, msg: '这个位置已被其他人轰炸过' }); return; }
-    bmbAttack(g, room, name, target, r, c);
-    if (cb) cb({ success: true });
+    const outcome = bmbAttack(g, room, name, target, r, c);
+    if (cb) cb({ success: true, res: outcome });
   });
 
   socket.on('disconnect', () => {
