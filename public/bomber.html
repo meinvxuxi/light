@@ -81,7 +81,35 @@
   table.pmini td { width:12px; height:12px; border:1px solid #e6eaef; }
   table.pmini td.b { background:#cfe9d8; }
   table.pmini td.h { background:#ff9c9c; }
-</style>
+  .tt-pop { background:rgba(255,255,255,.72); border:1px solid rgba(74,144,217,.5); color:#2c3e50; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+  body.dyn-pink .tt-pop { background:rgba(255,244,248,.78); border-color:rgba(240,98,146,.55); }
+  body.dyn-green .tt-pop { background:rgba(241,248,238,.8); border-color:rgba(111,158,99,.55); }
+  body.dyn-gold .tt-pop { background:rgba(255,250,238,.82); border-color:rgba(214,168,67,.55); }
+  body.dyn-red .tt-pop { background:rgba(253,243,241,.82); border-color:rgba(166,64,58,.55); }
+  body.dyn-pink .guide-box { border-color:rgba(240,98,146,.5); background:rgba(255,244,248,.66); }
+  body.dyn-green .guide-box { border-color:rgba(111,158,99,.52); background:rgba(241,248,238,.68); }
+  body.dyn-gold .guide-box { border-color:rgba(214,168,67,.52); background:rgba(255,250,238,.7); }
+  body.dyn-red .guide-box { border-color:rgba(166,64,58,.52); background:rgba(253,243,241,.7); }
+  table.g td:active, table.g td:focus { background: inherit !important; outline:none; }
+  table.g td.pending { background: rgba(74,144,217,.45); animation: bmbpending 1s ease infinite; }
+  body.dyn-pink table.g td.pending { background: rgba(240,98,146,.5); }
+  body.dyn-green table.g td.pending { background: rgba(111,158,99,.55); }
+  body.dyn-gold table.g td.pending { background: rgba(214,168,67,.55); }
+  body.dyn-red table.g td.pending { background: rgba(166,64,58,.5); }
+  @keyframes bmbpending { 0%,100%{opacity:.9} 50%{opacity:.45} }
+  table.g td.armed { background: rgba(74,144,217,.45); box-shadow: inset 0 0 0 2px rgba(74,144,217,.9); }
+  body.dyn-pink table.g td.armed { background: rgba(240,98,146,.5); box-shadow: inset 0 0 0 2px rgba(240,98,146,.9); }
+  body.dyn-green table.g td.armed { background: rgba(111,158,99,.55); box-shadow: inset 0 0 0 2px rgba(111,158,99,.9); }
+  body.dyn-gold table.g td.armed { background: rgba(214,168,67,.55); box-shadow: inset 0 0 0 2px rgba(214,168,67,.9); }
+  body.dyn-red table.g td.armed { background: rgba(166,64,58,.5); box-shadow: inset 0 0 0 2px rgba(166,64,58,.9); }
+  .bmb-mode { margin:2px 0 6px; font-size:.76rem; color:#9aa5b1; }
+  .bm-opt { cursor:pointer; color:#7f8fa6; text-decoration:none; margin:0 8px; }
+  .bm-opt.on { color:#4a90d9; text-decoration:underline; font-weight:700; }
+  body.dyn-pink .bm-opt.on { color:#f06292; }
+  body.dyn-green .bm-opt.on { color:#6f9e63; }
+  body.dyn-gold .bm-opt.on { color:#a8791b; }
+  body.dyn-red .bm-opt.on { color:#a6403a; }
+  </style>
 </head>
 <body>
   <div class="head">
@@ -114,7 +142,7 @@
     function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     function dn(n){ return (S&&S.disp&&S.disp[n])?S.disp[n]:n; }
     function tip(t){ const el=document.getElementById('stage'); if(el) el.textContent=t||''; }
-    function toast(m){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;background:rgba(255,255,255,.72);border:1px solid rgba(74,144,217,.5);color:#2c3e50;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:8px 18px;border-radius:10px;font-size:.86rem;'; document.body.appendChild(toastEl);} toastEl.textContent=m; clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.textContent='';},1800); }
+    function toast(m){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;padding:8px 18px;border-radius:10px;font-size:.86rem;'; toastEl.className='tt-pop'; document.body.appendChild(toastEl);} toastEl.textContent=m; clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.textContent='';},1800); }
     function gridTable(cells, clickFn, hits, missMap, ownMarks, armedKey) {
       let h='<table class="g">';
       for (let r=1;r<=15;r++){ h+='<tr>'; for(let c=1;c<=15;c++){
@@ -175,7 +203,9 @@
     function doFire(r,c){
       const t=target; const x=c,y=r; armed=null;
         if(S){S.shotsByTarget=S.shotsByTarget||{}; const arr=S.shotsByTarget[t]=S.shotsByTarget[t]||[]; if(!arr.some(function(h){return h.x===x&&h.y===y;})){arr.push({x:x,y:y,res:'pending',by:me()}); render();}}
-      socket.emit('bomber_fire',{target:t,x:c,y:r},function(res){
+              // 开火后快速拉一次状态：即使广播偶发迟到也能立刻显示命中颜色
+        setTimeout(function(){ if(socket.connected) socket.emit('bomber_pull',function(r){ if(r&&r.success){ S=r; render(); } }); }, 450);
+        socket.emit('bomber_fire',{target:t,x:c,y:r},function(res){
         if(res&&!res.success){ toast(res.msg||'无法轰炸'); if(S){const arr=(S.shotsByTarget&&S.shotsByTarget[t])||[]; S.shotsByTarget[t]=arr.filter(function(h){return !(h.x===x&&h.y===y&&h.res==='pending');}); render();} return; }
         // 本地立即上色：以服务器返回结果直接画上，不等下一次广播/轮询
         if(res&&res.res&&S){
