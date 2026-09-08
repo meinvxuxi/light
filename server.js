@@ -730,6 +730,7 @@ function bmbInGameNow(name, room) {
 // 回合轮转：仅当“当前轮到的人不在游戏页”时才让给下一位在场存活玩家；否则绝不自动跳
 function bmbAdvance(g, room) {
   if (g.phase !== 'battle' || g.alive.length <= 1) return false;
+  if (!(room && room.skipOffline)) return false; // 默认不跳过离线者；房间设置里勾选后才自动让位
   if (bmbInGameNow(g.turn, room)) return false;
   const seq = g.playerOrder.filter(n => g.alive.includes(n));
   const idx = seq.indexOf(g.turn);
@@ -1235,7 +1236,7 @@ function syncRoomState(room, selfName) {
   const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === selfName)?.[0] || null;
   const nowGame = activeGameOf(room);
   const data = {
-    roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers,
+    roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers, skipOffline: !!room.skipOffline,
     seats: room.seats, spectators: room.spectators, mySeat,
     myReady: mySeat ? room.seats[mySeat].ready : false,
     gameStarted: !!nowGame,
@@ -1256,6 +1257,7 @@ function broadcastRoom(room) {
     roomId: room.roomId,
     hostName: room.hostName,
     maxPlayers: room.maxPlayers,
+    skipOffline: !!room.skipOffline,
     seats: room.seats,
     spectators: room.spectators,
     gameStarted,
@@ -1269,6 +1271,7 @@ function broadcastRoom(room) {
         roomId: room.roomId,
         hostName: room.hostName,
         maxPlayers: room.maxPlayers,
+        skipOffline: !!room.skipOffline,
         seats: room.seats,
         spectators: room.spectators,
         mySeat,
@@ -1920,7 +1923,7 @@ io.on('connection', (socket) => {
     broadcastRoom(room);
   });
 
-  socket.on('change_settings', ({ maxPlayers }, cb) => {
+  socket.on('change_settings', ({ maxPlayers, skipOffline }, cb) => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
     let room = null;
@@ -1931,27 +1934,30 @@ io.on('connection', (socket) => {
       }
     }
     if (!room) return;
-    if (room.gameType === 'drawing') {
+    if (room.gameType === 'drawing' && maxPlayers != null) {
       // 画猜接龙固定四人，不支持改人数
       if (cb) cb({ success: false, msg: '画猜接龙固定 4 人' });
       return;
     }
     if (activeGameOf(room)) return;
 
-    // 人数校验：必须是 2/3/4，且不能小于当前已入座人数（防止三人时改成两人）
-    const seatedCount = Object.values(room.seats).filter(Boolean).length;
-    if (![2, 3, 4].includes(maxPlayers)) {
-      if (cb) cb({ success: false, msg: '人数只能设置为 2 / 3 / 4' });
-      return;
-    }
-    if (maxPlayers < seatedCount) {
-      if (cb) cb({ success: false, msg: `当前已有 ${seatedCount} 人入座，人数不能少于 ${seatedCount} 人` });
-      return;
-    }
+    // 离线是否自动跳过：默认 false（不跳），仅在房间设置勾选后生效
+    if (typeof skipOffline === 'boolean') room.skipOffline = skipOffline;
 
-    room.maxPlayers = maxPlayers;
+    if (maxPlayers != null) {
+      const seatedCount = Object.values(room.seats).filter(Boolean).length;
+      if (![2, 3, 4].includes(maxPlayers)) {
+        if (cb) cb({ success: false, msg: '人数只能设置为 2 / 3 / 4' });
+        return;
+      }
+      if (maxPlayers < seatedCount) {
+        if (cb) cb({ success: false, msg: `当前已有 ${seatedCount} 人入座，人数不能少于 ${seatedCount} 人` });
+        return;
+      }
+      room.maxPlayers = maxPlayers;
+    }
     broadcastRoom(room);
-    if (cb) cb({ success: true, maxPlayers });
+    if (cb) cb({ success: true, maxPlayers: room.maxPlayers, skipOffline: !!room.skipOffline });
   });
 
   // “返回房间”：仅当对局已结算/结束后才清理对局；
