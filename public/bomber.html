@@ -44,7 +44,6 @@
   body.dyn-green .barrage { color:#4f8a45; background:rgba(255,255,255,.6); border-color:rgba(111,158,99,.55); }
   body.dyn-gold .barrage { color:#a8791b; background:rgba(255,255,255,.6); border-color:rgba(214,168,67,.55); }
   body.dyn-red .barrage { color:#8c332d; background:rgba(255,255,255,.6); border-color:rgba(166,64,58,.55); }
-  table.g td.miss:hover, table.g td.hit:hover, table.g td.wound:hover, table.g td.ownhit:hover { background: inherit; }
   body.dyn-pink table.g td.ownhit::after { color:#e0507f; }
   body.dyn-green table.g td.ownhit::after { color:#4f8a45; }
   body.dyn-gold table.g td.ownhit::after { color:#a8791b; }
@@ -92,7 +91,6 @@
   body.dyn-green .guide-box { border-color:rgba(111,158,99,.52); background:rgba(241,248,238,.68); }
   body.dyn-gold .guide-box { border-color:rgba(214,168,67,.52); background:rgba(255,250,238,.7); }
   body.dyn-red .guide-box { border-color:rgba(166,64,58,.52); background:rgba(253,243,241,.7); }
-  table.g td:active, table.g td:focus { background: inherit !important; outline:none; }
   table.g td.pending { background: rgba(74,144,217,.45); animation: bmbpending 1s ease infinite; }
   body.dyn-pink table.g td.pending { background: rgba(240,98,146,.5); }
   body.dyn-green table.g td.pending { background: rgba(111,158,99,.55); }
@@ -120,7 +118,7 @@
     <a class="go" href="/lobby.html">返回大厅</a>
   </div>
   <div class="wrap">
-    <div class="planebar"><a class="go" onclick="togglePlaneGuide()">✈️ 查看本局飞机机型 <span id="pgTri">▸</span></a></div>
+    <div class="planebar"><a class="go" onclick="togglePlaneGuide()">查看本局飞机机型 <span id="pgTri">▸</span></a></div>
     <div id="planeGuide" style="display:none;"></div>
     <div class="stage" id="stage">连接中…</div>
     <div id="body"></div>
