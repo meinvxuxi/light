@@ -147,4 +147,6 @@
 - **2026-09-07 上线说明**：全部代码/素材/日志已 commit & push（git 仓库为更新通道）；正式数据只存 data/（已被 .gitignore 排除，不受代码更新影响）；正式部署需保持 PERSIST_ACHIEVEMENTS / PERSIST_TIMELINE / PERSIST_SYNC / PERSIST_BOARD = true，更新=备份 data → git pull → npm install → 带环境变量重启。
 - **2026-09-07 服务器登记**：用户购入阿里云 Ubuntu 海外轻量服务器并已完成首次部署（IP/路径/命令见 `development/服务器运行手册.md`）；正式数据 `data/` 运行时自动落盘 + 服务器每日 03:15 crontab 自动打包（保留 7 份）+ 建议阿里云磁盘每周快照；历史会话中的"每日自动备份"已确认落地并留档。
 - **2026-09-08 正式服首更**：在阿里云服务器 `/root/light` 首次执行一键更新 `git pull && bash deploy/update.sh`，输出 `✅ 健康检查 ok`，pm2 `light online`（↺7）；服务器数据保留完好，更新前已自动备份 `data/` 至 `/root/backup/before-update-*.tgz`。
+- **2026-09-08 v5.4（UI/结算/成就整理）**：手机端"点击后透明"根因定位——旧 CSS 给已点格子设 `background:inherit`（继承透明背景），hover/手机粘性点按即变透明；已整体删除该规则并全局关闭 tap 高亮；开火后立即显示临时色 + 延迟多次拉取兜底，落空格改明显灰蓝（去描边）。炸飞机"离线自动跳过"改为默认关闭，人数设置下一行提供居中简洁勾选（勾上才自动让位）；结算页改为"房间 4 秒后自动复位可开新局，各人可停留结算页自行离开"；荣誉墙描边大师 / 世一炸·5连击+ 展开明细记录每次是几连空/几连击（新记录起生效）。
+- **2026-09-08 v5.4b（数据整理工具）**：新增 `deploy/repair-bomber-ach.js`——把旧版"同一段连空在 8/9/10… 各记一次"造成的重复计数合并为每段一次（运行前自动备份 `data/`），可全量或按玩家指定目标 count；处理正式 `data/achievements.json` 与测试 `data/test-achievements.json`。
   - 后续每次开发完成后在本节追加一行，并同步「主进程表」状态。
