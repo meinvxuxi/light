@@ -146,7 +146,13 @@
           const recs = byId[id].slice().sort((a, b) => a.firstTime - b.firstTime);
           const rows = recs.map(r => {
             const detail = (r.events && r.events.length)
-              ? r.events.map(t => '· ' + fmtTime(t)).join('<br>')
+              ? r.events.map(t => {
+                  if (t && typeof t === 'object') {
+                    const unit = r.achievementId === 'bomber_edge' ? '连空' : (r.achievementId === 'bomber_streak5' ? '连击' : '');
+                    return '· ' + fmtTime(t.ts) + (t.streak ? '（' + t.streak + unit + '）' : '');
+                  }
+                  return '· ' + fmtTime(t);
+                }).join('<br>')
               : '· 首次：' + fmtTime(r.firstTime) + '<br>· 最近：' + fmtTime(r.lastTime);
             const dId = 'detail-' + id + '-' + r.playerName;
             const tId = 'tri-' + id + '-' + r.playerName;

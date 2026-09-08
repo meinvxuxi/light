@@ -353,7 +353,7 @@
     socket.on('bomber_cancel', function(){ location.href='/room.html?game=bomber'; });
     socket.on('connect', function(){ setTimeout(function(){ socket.emit('bomber_enter'); socket.emit('bomber_pull',function(res){ if(res&&res.success){ S=res; render(); } }); },400); });
     // 兜底轮询：事件偶发收不到也能同步；对局已结束/被取消时自动回房间
-    setInterval(function(){ if(!socket.connected) return; socket.emit('bomber_pull', function(res){ if(res&&!res.success){ location.href='/room.html?game=bomber'; return; } if(res&&res.success){ S=res; render(); } }); }, 2500);
+    setInterval(function(){ if(!socket.connected) return; socket.emit('bomber_pull', function(res){ if(res&&!res.success){ if(!(S&&S.phase==='over')) location.href='/room.html?game=bomber'; return; } if(res&&res.success){ S=res; render(); } }); }, 2500);
   
 </script>
   <script>

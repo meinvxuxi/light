@@ -480,17 +480,19 @@ function saveAchRecords(file, list) {
 }
 
 // 记录一次成就（正式玩家 -> achievements.json；测试账号 -> test-achievements.json）
-function recordAchievement(playerName, achievementId) {
+// streak 可选：描边/世一炸等需要“每次是几连”展示时传入
+function recordAchievement(playerName, achievementId, streak) {
   const isTest = isTestAccount(playerName);
   const file = isTest ? ACH_TEST_FILE : ACH_FILE;
   const list = isTest ? achTestRecords : achRecords;
   const now = Date.now();
+  const ev = (typeof streak === 'number') ? { ts: now, streak, _open: true } : now;
   const rec = list.find(r => r.achievementId === achievementId && r.playerName === playerName);
   if (rec) {
     rec.count++;
     rec.lastTime = now;
     // 历史明细：每次触发时间（旧数据无 events 则忽略，新触发开始累积）
-    if (rec.events) rec.events.push(now);
+    if (rec.events) rec.events.push(ev);
   } else {
     list.push({
       achievementId,
@@ -498,7 +500,7 @@ function recordAchievement(playerName, achievementId) {
       count: 1,
       firstTime: now,
       lastTime: now,
-      events: [now],                 // 荣誉墙"▸ 展开每次触发时间"用
+      events: [ev],                 // 荣誉墙"▸ 展开每次触发时间"用
       highestTier: ACH_QUALITY_NO[ACHIEVEMENTS[achievementId]?.quality] || 1
     });
   }
@@ -509,16 +511,35 @@ function recordAchievement(playerName, achievementId) {
   if (!isTest && PERSIST_ACHIEVEMENTS) saveAchRecords(ACH_FILE, achRecords);
 }
 
-// 记录该成就的历史最佳连击数（描边=连空；世一炸=连击），只更新不改动次数
+// 更新仍在进行的连段：最佳连击 + 把最后一次事件标成当前长度（不增加次数）
 function noteBestStreak(name, achievementId, streak) {
   const list = isTestAccount(name) ? achTestRecords : achRecords;
   const rec = list.find(r => r.achievementId === achievementId && r.playerName === name);
-  if (rec && (!rec.bestStreak || streak > rec.bestStreak)) rec.bestStreak = streak;
+  if (!rec) return;
+  if (!rec.bestStreak || streak > rec.bestStreak) rec.bestStreak = streak;
+  const evs = rec.events;
+  if (!Array.isArray(evs)) return;
+  for (let i = evs.length - 1; i >= 0; i--) {
+    const e = evs[i];
+    if (e && typeof e === 'object' && e._open) { if (streak > e.streak) e.streak = streak; return; }
+    if (typeof e === 'number') return;
+  }
+}
+// 连段中断/对局结束时，把最后一条开放事件标记为已结束
+function closeOpenStreak(name, achievementId) {
+  const list = isTestAccount(name) ? achTestRecords : achRecords;
+  const rec = list.find(r => r.achievementId === achievementId && r.playerName === name);
+  if (!rec || !Array.isArray(rec.events)) return;
+  for (let i = rec.events.length - 1; i >= 0; i--) {
+    const e = rec.events[i];
+    if (e && typeof e === 'object' && e._open) { e._open = false; return; }
+    if (typeof e === 'number') return;
+  }
 }
 
 // 统一解锁入口：记录 + 本局去重播报 + 汇总。
 // repeatable=true 表示"同局多次可重复累积次数，但只播报一次"（如每次投出快艇）。
-function announceAchievement(game, roomId, playerName, achievementId, repeatable) {
+function announceAchievement(game, roomId, playerName, achievementId, repeatable, streak) {
   if (!game || game.mock) return;
   const meta = ACHIEVEMENTS[achievementId];
   if (!meta) return;
@@ -546,7 +567,7 @@ function announceAchievement(game, roomId, playerName, achievementId, repeatable
   const already = byPlayer.includes(achievementId);
 
   if (already && !repeatable) return;          // 一次性成就：本局已拿过就不重复记录
-  recordAchievement(playerName, achievementId); // 每次事件都累积次数
+  recordAchievement(playerName, achievementId, streak); // 每次事件都累积次数
   if (!already) {
     byPlayer.push(achievementId);
     // 时光墙：正式玩家每次"新解锁/再次达成"记录一条成就时刻
@@ -828,9 +849,23 @@ function bmbAttack(g, room, attacker, target, r, c) {
   // 单纯打中机身不算；传播只打到已被炸过的格子也不算，二者都会断连击。
   const destroyedNow = downed.length > 0;
   const plainHit = res.res !== '空';
-  g.lastEmpty = plainHit ? 0 : (g.lastEmpty || 0) + 1;
-  g.hitStreak[attacker] = destroyedNow ? (g.hitStreak[attacker] || 0) + 1 : 0;
-  g.emptyStreak[attacker] = (destroyedNow || plainHit) ? 0 : (g.emptyStreak[attacker] || 0) + 1;
+  const prevHit = g.hitStreak[attacker] || 0;
+  const prevEmpty = g.emptyStreak[attacker] || 0;
+  if (destroyedNow) {
+    g.hitStreak[attacker] = prevHit + 1;
+    g.emptyStreak[attacker] = 0;
+    if (prevEmpty >= 8) closeOpenStreak(attacker, 'bomber_edge');
+  } else {
+    g.hitStreak[attacker] = 0;
+    if (prevHit >= 5) closeOpenStreak(attacker, 'bomber_streak5');
+    if (plainHit) {
+      g.emptyStreak[attacker] = 0;
+      if (prevEmpty >= 8) closeOpenStreak(attacker, 'bomber_edge');
+    } else {
+      g.emptyStreak[attacker] = prevEmpty + 1;
+    }
+  }
+  g.lastEmpty = (destroyedNow || plainHit) ? 0 : (g.lastEmpty || 0) + 1;
   // —— 炸飞机成就判定（cj1.md）——
   if (downed.length >= 2) announceAchievement(g, room.roomId, attacker, 'bomber_bounce', false); // 蹦蹦炸弹
   // 开门红：首次轰炸命中机头——含目标盘直接命中与同格传播炸到别人的机头
@@ -841,15 +876,15 @@ function bmbAttack(g, room, attacker, target, r, c) {
   const comboMap = { 2: 'bomber_streak2', 3: 'bomber_streak3', 4: 'bomber_streak4' };
   const hs = g.hitStreak[attacker] || 0;
   if (hs >= 5) {
-    // 世一炸·5连击+：每段连击只在“正好第 5 次”记 1 次；6、7…只更新“最佳 N 连击”标注
-    if (hs === 5) announceAchievement(g, room.roomId, attacker, 'bomber_streak5', true);
+    // 世一炸·5连击+：每段连击只在“正好第 5 次”记 1 次；6、7…只更新该次事件为更长连击
+    if (hs === 5) announceAchievement(g, room.roomId, attacker, 'bomber_streak5', true, hs);
     noteBestStreak(attacker, 'bomber_streak5', hs);
   } else if (comboMap[hs]) {
-    announceAchievement(g, room.roomId, attacker, comboMap[hs], false);
+    announceAchievement(g, room.roomId, attacker, comboMap[hs], false, hs);
   }
   const en = g.emptyStreak[attacker] || 0;
-  // 描边大师：每段连空只在“正好第 8 次”记 1 次；9、10、11…只更新“最佳 N 连空”标注
-  if (en === 8) announceAchievement(g, room.roomId, attacker, 'bomber_edge', true);
+  // 描边大师：每段连空只在“正好第 8 次”记 1 次；9、10、11…只更新该次事件为更长连空
+  if (en === 8) announceAchievement(g, room.roomId, attacker, 'bomber_edge', true, en);
   if (en >= 8) noteBestStreak(attacker, 'bomber_edge', en);
   // 4) 淘汰判定：被击落第 5 架飞机的任何玩家都出局（含波及）
   for (const d of downed) {
@@ -885,6 +920,17 @@ function bmbAttack(g, room, attacker, target, r, c) {
     recordBomberGame(g); // 时光墙：只记正式玩家整局
     broadcastAchievementSummary(room.roomId, g); // 本局成就汇总（炸飞机也可在弹幕端接入展示）
     if (g.autoT) { clearTimeout(g.autoT); g.autoT = null; }
+    // 对局结束：任何还在“进行中”的连段事件都标记为结束
+    for (const n of g.playerOrder) { closeOpenStreak(n, 'bomber_edge'); closeOpenStreak(n, 'bomber_streak5'); }
+    // 结算后房间复位（约 4 秒）：房间/大厅可立刻开新局，但各人结算页可继续停留查看
+    if (gameEndTimers[room.roomId]) { clearTimeout(gameEndTimers[room.roomId]); }
+    gameEndTimers[room.roomId] = setTimeout(() => {
+      if (bomberGames[room.roomId] === g) delete bomberGames[room.roomId];
+      delete gameEndTimers[room.roomId];
+      Object.keys(room.seats).forEach(seatId => { if (room.seats[seatId]) room.seats[seatId].ready = false; });
+      broadcastRoom(room);
+      console.log(`🔄 炸飞机 ${room.roomId} 已结算，房间已复位可开新局`);
+    }, 4000);
   } else {
     const seq = g.playerOrder.filter(n => g.alive.includes(n));
     const idx = seq.indexOf(attacker);
