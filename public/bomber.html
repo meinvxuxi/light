@@ -86,7 +86,6 @@
 <body>
   <div class="head">
     <b>💣 炸飞机</b>
-    <a class="go" style="margin-right:14px;" id="bombModeLb" onclick="toggleBombMode()">轰炸：直接</a>
     <a class="go" style="color:#c62828;margin-right:14px;" onclick="bmbCancelVote()" id="cancelLb">取消对局</a>
     <a class="go" href="/lobby.html">返回大厅</a>
   </div>
@@ -115,7 +114,7 @@
     function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
     function dn(n){ return (S&&S.disp&&S.disp[n])?S.disp[n]:n; }
     function tip(t){ const el=document.getElementById('stage'); if(el) el.textContent=t||''; }
-    function toast(m){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;background:rgba(255,255,255,.9);border:1px solid #4a90d9;color:#2c3e50;padding:8px 18px;border-radius:10px;font-size:.86rem;'; document.body.appendChild(toastEl);} toastEl.textContent=m; clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.textContent='';},1800); }
+    function toast(m){ if(!toastEl){ toastEl=document.createElement('div'); toastEl.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:99;background:rgba(255,255,255,.72);border:1px solid rgba(74,144,217,.5);color:#2c3e50;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:8px 18px;border-radius:10px;font-size:.86rem;'; document.body.appendChild(toastEl);} toastEl.textContent=m; clearTimeout(toast._t); toast._t=setTimeout(function(){toastEl.textContent='';},1800); }
     function gridTable(cells, clickFn, hits, missMap, ownMarks, armedKey) {
       let h='<table class="g">';
       for (let r=1;r<=15;r++){ h+='<tr>'; for(let c=1;c<=15;c++){
@@ -136,7 +135,7 @@
           cls='armed';
         } else if(cell){ cls=cell.head?'mine head':'mine'; }
         else if(missMap && missMap[key]) cls='miss';
-        else if(hits){ const ht=hits.find(h=>h.y===r&&h.x===c); if(ht){ cls = ht.res==='沉'?'hit':(ht.res==='伤'?'wound':'miss'); txt = ht.res==='沉'?'✕':''; } }
+        else if(hits){ const ht=hits.find(h=>h.y===r&&h.x===c); if(ht){ if(ht.res==='pending'){ cls='pending'; } else { cls = ht.res==='沉'?'hit':(ht.res==='伤'?'wound':'miss'); txt = ht.res==='沉'?'✕':''; } } }
         h+='<td class="'+cls+(clickFn?' clickable':'')+'"'+extra+(clickFn?' onclick="'+clickFn+'('+r+','+c+')"':'')+'>'+txt+'</td>';
       } h+='</tr>'; }
       return h+'</table>';
@@ -175,29 +174,29 @@
     }
     function doFire(r,c){
       const t=target; const x=c,y=r; armed=null;
+        if(S){S.shotsByTarget=S.shotsByTarget||{}; const arr=S.shotsByTarget[t]=S.shotsByTarget[t]||[]; if(!arr.some(function(h){return h.x===x&&h.y===y;})){arr.push({x:x,y:y,res:'pending',by:me()}); render();}}
       socket.emit('bomber_fire',{target:t,x:c,y:r},function(res){
-        if(res&&!res.success){ toast(res.msg||'无法轰炸'); return; }
+        if(res&&!res.success){ toast(res.msg||'无法轰炸'); if(S){const arr=(S.shotsByTarget&&S.shotsByTarget[t])||[]; S.shotsByTarget[t]=arr.filter(function(h){return !(h.x===x&&h.y===y&&h.res==='pending');}); render();} return; }
         // 本地立即上色：以服务器返回结果直接画上，不等下一次广播/轮询
         if(res&&res.res&&S){
           const rr=res.res;
           if(rr&&rr.x!=null&&rr.y!=null&&rr.res){
             S.shotsByTarget=S.shotsByTarget||{};
             const arr=S.shotsByTarget[t]=S.shotsByTarget[t]||[];
-            if(!arr.some(function(h){return h.x===rr.x&&h.y===rr.y;})) arr.push({x:rr.x,y:rr.y,res:rr.res,by:me()});
+            var hIdx=arr.findIndex(function(h){return h.x===rr.x&&h.y===rr.y;}); if(hIdx>=0){arr[hIdx]={x:rr.x,y:rr.y,res:rr.res,by:me()};} else {arr.push({x:rr.x,y:rr.y,res:rr.res,by:me()});}
             render();
           }
         }
       });
     }
-    function toggleBombMode(){
-      confirmMode=!confirmMode;
+    function setBombMode(on){
+      confirmMode=!!on;
       localStorage.setItem('bmbConfirm', confirmMode?'1':'0');
       armed=null;
-      const el=document.getElementById('bombModeLb');
-      if(el) el.textContent='轰炸：'+(confirmMode?'确认（点两次）':'直接');
       if(S&&S.phase==='battle') render();
-      toast(confirmMode?'已开启确认轰炸：先点目标再点一次同一格确认':'已切换为直接轰炸：点一下就发射');
+      toast(confirmMode?'已开启两步确认：先点一格，再点同一格确认轰炸':'已切换为直接轰炸：点一下就发射');
     }
+    function toggleBombMode(){ setBombMode(!confirmMode); }
     function pickTarget(n){ target=n; armed=null; render(); }
     function patternRows(type){
       const pts=rot(type,0); let minR=0,maxR=0,minC=0,maxC=0;
@@ -267,7 +266,8 @@
         const missMap={}; targetHits.filter(function(h){return h.res==='空';}).forEach(function(h){missMap[h.y+','+h.x]=1;});
         const myTurn=S.turn===me();
         body.innerHTML = '<div class="gridwrap"><div class="panel"><div class="ptitle">我的布防（✕=被炸过）</div>'+gridTable(yourCells,null,null,null,ownMarks)+'</div>'
-          +'<div class="panel"><div class="ptitle">轰炸 '+(target||'')+' 的棋盘'+(myTurn?(confirmMode?'（轮到你·点两下确认）':'（轮到你）'):'（等待对方…）')+'</div>'
+          +'<div class="panel"><div class="ptitle">轰炸 '+(target||'')+' 的棋盘'+(myTurn?'（轮到你）':'（等待对方…）')+'</div>'
+          +'<div class="bmb-mode">模式：<a class="bm-opt'+(confirmMode?' on':'')+'" onclick="setBombMode(true)">确认</a><a class="bm-opt'+(confirmMode?'':' on')+'" onclick="setBombMode(false)">直接</a></div>'
           +'<div style="margin:4px 0;">目标：'+aliveOpts.map(function(n){return '<span class="go tgt" style="margin:0 6px;'+(n===target?'color:#c62828;':'')+'" data-t="'+n+'">'+esc(dn(n))+'</span>';}).join('')+'</div>'
           +gridTable(null, myTurn?'targetCellTap':null, targetHits, missMap, null, (confirmMode&&armed&&armed.target===target&&myTurn)?(armed.r+','+armed.c):null)
           +'<div class="cfgline">'+targetHits.filter(function(h){return h.res==='沉';}).length+' 沉 / '+targetHits.filter(function(h){return h.res==='伤';}).length+' 伤 / '+targetHits.filter(function(h){return h.res==='空';}).length+' 空</div></div></div>'
@@ -306,7 +306,6 @@
     }
     socket.on('bomber_state', function(s){ S=s; if(s.phase==='battle'||s.phase==='over') placed=[]; render(); });
     document.addEventListener('click',function(e){ var el=e.target&&e.target.closest?e.target.closest('.tgt'):null; if(el) pickTarget(el.getAttribute('data-t')); });
-    document.getElementById('bombModeLb').textContent='轰炸：'+(confirmMode?'确认（点两次）':'直接');
     var barEl=document.createElement('div'); barEl.className='barrage'; document.body.appendChild(barEl); var barTimer=null;
     socket.on('bomber_boom', function(d){ if(!d||!d.text) return; barEl.textContent=d.text; barEl.style.opacity='1'; clearTimeout(barTimer); barTimer=setTimeout(function(){ barEl.style.opacity='0'; },2600); });
     var achEl=document.createElement('div'); achEl.className='ach-pop'; document.body.appendChild(achEl); var achTimer=null;
