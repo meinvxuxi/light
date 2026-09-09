@@ -19,13 +19,20 @@ td.flag{background:#fff3d9;color:#b8860b;}
 td.mine{background:#f3b6b6;cursor:default;}
 .mine-x{color:#c62828;font-weight:800;}
 .num1{color:#4a90d9}.num2{color:#2e8b57}.num3{color:#c62828}.num4{color:#6a3fbf}.num5{color:#8c332d}.num6{color:#0097a7}.num7{color:#2c3e50}.num8{color:#7f8fa6}
-.emjrow{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:1px;pointer-events:none;}
+.emjrow{position:absolute;left:0;right:0;bottom:0;top:0;display:flex;flex-wrap:wrap;align-content:center;justify-content:center;gap:1px;pointer-events:none;}
+.c1 .emj{width:94%;height:94%;}
+.c2 .emj{width:calc(50% - 2px);height:96%;}
+.c3 .emj{width:48%;height:50%;}
+.c4 .emj{width:49%;height:49%;}
 .emj{border-radius:50%;width:34%;min-width:11px;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:rgba(255,255,255,.72);backdrop-filter:blur(3px);border:1px solid rgba(74,144,217,.55);}
 .emj.open{border-color:rgba(74,144,217,.75);}
 .emj.flagc{border-color:rgba(192,57,43,.75);}
 .emj img{width:92%;height:92%;object-fit:contain;}
 .emjrow.one .emj{width:96%;height:96%;}
 .emjrow.one .emj img{width:98%;height:98%;}
+.emj.arm{opacity:.62;box-shadow:0 0 0 3px rgba(255,255,255,.55);}
+table.g{background:#fff;border:2px solid #7f8ea0;border-radius:6px;}
+table.g td{border:1px solid #8d9bab;}
 .emj .no{font-size:8px;font-weight:800;color:#2c3e50;}
 .float{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;z-index:3;}
 .scoreline{display:flex;flex-wrap:wrap;justify-content:center;gap:5px 10px;margin:8px 0 4px;}
@@ -44,14 +51,35 @@ body.dyn-pink .mode-opt.on{border-color:#f06292;background:rgba(240,98,146,.14);
 body.dyn-green .mode-opt.on{border-color:#6f9e63;background:rgba(111,158,99,.15);color:#4f8a45;}
 body.dyn-gold .mode-opt.on{border-color:#d6a843;background:rgba(214,168,67,.15);color:#a8791b;}
 body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);color:#8c332d;}
+.players{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:10px 0 6px;}
+.tbox{display:flex;align-items:center;gap:10px;padding:7px 12px;border:1px solid rgba(74,144,217,.35);border-radius:16px;background:rgba(255,255,255,.65);backdrop-filter:blur(8px);}
+.tsum{font-weight:800;font-size:1rem;margin:0 4px;color:#2c3e50;text-align:center;}
+.pcard{display:flex;flex-direction:column;align-items:center;min-width:58px;}
+.pface{width:54px;height:54px;border-radius:50%;overflow:hidden;border:2px solid rgba(74,144,217,.5);background:#fff;position:relative;}
+.pface img{width:100%;height:100%;object-fit:contain;}
+.ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#c0c8d1;font-size:1.5rem;font-weight:700;}
+.pname{margin-top:2px;font-weight:700;font-size:.78rem;white-space:nowrap;}
+.pscore{color:#7f8fa6;font-size:.78rem;}
+.pstatus{font-size:.65rem;color:#9aa5b1;}
+.pstatus.sel{color:#2e8b57;}
+.pstatus.off{color:#c0392b;}
+.pdrift{position:absolute;top:-7px;right:-4px;font-weight:800;font-size:.8rem;}
+body.dyn-pink table.g{border-color:#f5a9c0;} body.dyn-pink .mode-opt.on{color:#c73e79;border-color:#f06292;background:rgba(240,98,146,.14);}
+body.dyn-green table.g{border-color:#a9c79e;} body.dyn-green .mode-opt.on{color:#4f8a45;border-color:#6f9e63;background:rgba(111,158,99,.15);}
+body.dyn-gold table.g{border-color:#ecd7a2;} body.dyn-gold .mode-opt.on{color:#a8791b;border-color:#d6a843;background:rgba(214,168,67,.15);}
+body.dyn-red table.g{border-color:#ddb5b2;} body.dyn-red .mode-opt.on{color:#8c332d;border-color:#a6403a;background:rgba(166,64,58,.13);}
+body.dyn-pink .pface{border-color:rgba(240,98,146,.5);}
+body.dyn-green .pface{border-color:rgba(111,158,99,.55);}
+body.dyn-gold .pface{border-color:rgba(214,168,67,.55);}
+body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
 </style>
 </head>
 <body>
   <div class="head"><b>🧨 扫雷</b><span><a id="msCancelLb" onclick="msCancel()">取消对局</a><a onclick="msExit()">返回房间</a></span></div>
   <div class="wrap">
     <div class="info"><span id="msStage">连接中…</span><span id="msMines">雷 26</span><span id="msRound"></span></div>
-    <div id="scoreLine"></div>
     <div id="gridWrap"></div>
+    <div id="scoreLine"></div>
     <div class="modebar" id="modeBar"></div>
     <div class="modebar" id="modeBar2"></div>
     <div class="stage" id="msMsg"></div>
@@ -60,6 +88,14 @@ body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);co
   <script>
   const myName = sessionStorage.getItem('playerName');
   if (!myName) location.href='/index.html';
+  function applyMsTheme(t){
+    if(!t||t==='initial'){ document.body.classList.remove('dyn-pink','dyn-green','dyn-gold','dyn-red'); return; }
+    const c=(t==='agly')?'dyn-gold':((t==='lyff')?'dyn-red':((t==='p3'||t==='pomelo')?'dyn-green':'dyn-pink'));
+    document.body.classList.remove('dyn-pink','dyn-green','dyn-gold','dyn-red');
+    document.body.classList.add(c);
+  }
+  applyMsTheme(localStorage.getItem('myTheme'));
+  socket.on('connect',()=>{ socket.emit('heartbeat', myName, IS_T, true); setTimeout(()=>{ socket.emit('get_profile',r=>{ if(r&&r.success&&r.theme){ localStorage.setItem('myTheme',r.theme); applyMsTheme(r.theme); } }); },200); });
   const socket = io();
   const IS_T = sessionStorage.getItem('isTest') === 'true';
   socket.on('connect', () => socket.emit('heartbeat', myName, IS_T, true));
@@ -96,11 +132,46 @@ body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);co
     if(stack.length){
       const chips=stack.map(x=>{
         const ring=x.op==='open'?'open':'flagc';
-        return '<span class="emj '+ring+'">'+(x.img?'<img src="'+x.img+'">':'<span class="no">'+esc(lab(x.name))+'</span>')+'</span>';
+        const fl=x.last&&x.delta!=null?'<span class="float" style="color:'+(x.delta>0?'#2e8b57':'#c62828')+';">'+(x.delta>0?'+':'')+x.delta+'</span>':'';
+        return '<span class="emj '+ring+'">'+(x.img?'<img src="'+x.img+'">':'<span class="no">'+esc(lab(x.name))+'</span>')+fl+'</span>';
       }).join('');
-      em='<span class="emjrow'+(stack.length===1&&cls==='un'?' one':'')+'">'+chips+'</span>';
+      const lay=(cls==='un')?('c'+Math.min(stack.length,4)):'';
+      em='<span class="emjrow '+lay+'">'+chips+'</span>';
+    }
+    if(confirmMode&&armed&&armed.r===r&&armed.c===c&&cls==='un'&&!((S.picks||{})[myName])){
+      const u=emo(myName,'A');
+      em+='<span class="emjrow one"><span class="emj '+(armed.op==='open'?'open':'flagc')+' arm">'+(u?'<img src="'+u+'">':'')+'</span></span>';
     }
     return '<td class="'+cls+'"'+(cls==='un'?' onclick="tapCell('+r+','+c+')"':'')+'>'+inner+em+'</td>';
+  }
+  function cardHtml(n){
+    const last=(S.last||[]).find(a=>a.name===n);
+    let kind=null;
+    if(S.phase==='result'||S.phase==='over'){
+      if(last) kind=last.ok?'B':'C';
+    } else if((S.submitted||[]).includes(n)||(S.picks&&S.picks[n])) kind='A';
+    const url=kind?emo(n,kind):'';
+    const face=url?'<img src="'+url+'">':'<span class="ph">?</span>';
+    const on=S.online&&S.online[n];
+    const st=on?(kind?(kind==='A'?'已选':'已结算'):'选择中'):'离线';
+    const dft=(last&&last.delta!=null)?'<span class="pdrift" style="color:'+(last.delta>0?'#2e8b57':'#c62828')+';">'+(last.delta>0?'+':'')+last.delta+'</span>':'';
+    return '<div class="pcard"><div class="pface" style="'+(n===S.you?'border-color:#e67e22;':'')+'">'+face+dft+'</div><div class="pname">'+lab(n)+'</div><div class="pscore">'+(S.scores[n]||0)+'分</div><div class="pstatus'+(on?'':' off')+'">'+st+'</div></div>';
+  }
+  function renderPlayers(){
+    const order=S.playerOrder||Object.keys(S.scores||{});
+    let html='<div class="players">';
+    if(S.mode==='team'&&S.teams){
+      ['A','B'].forEach(t=>{
+        const mem=order.filter(n=>S.teams[n]===t);
+        const sum=mem.reduce((a,n)=>a+(S.scores[n]||0),0);
+        const lastT=mem.reduce((a,n)=>{const z=(S.last||[]).find(x=>x.name===n);return z?a+(z.delta||0):a;},0);
+        html+='<div class="tbox"><div class="tsum">'+t+'队<br><span style="color:'+(lastT>0?'#2e8b57':(lastT<0?'#c62828':'#2c3e50'))+';">'+(lastT>0?'+':'')+lastT+'</span><br><b>'+sum+'分</b></div>'+mem.map(cardHtml).join('')+'</div>';
+      });
+    } else {
+      html+=order.map(n=>'<div class="tbox">'+cardHtml(n)+'</div>').join('');
+    }
+    html+='</div>';
+    document.getElementById('scoreLine').innerHTML=html;
   }
   function render(){
     if(!S) return;    document.getElementById('msStage').textContent=phaseText();
@@ -113,13 +184,7 @@ body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);co
     if(cl) cl.textContent='取消对局'+(S.cancelVotes&&S.cancelVotes.length?('（'+S.cancelVotes.length+'/'+oc+'）'):'');
     document.getElementById('msRound').textContent='第'+S.round+'轮';
     document.getElementById('msMines').textContent='雷 剩 '+S.remaining;
-    const order=S.playerOrder||Object.keys(S.scores||{});
-    const ldd={}; (S.last||[]).forEach(a=>{ ldd[a.name]=a.delta; });
-    document.getElementById('scoreLine').innerHTML=order.map(n=>{
-      const me=n===S.you, tt=S.teams&&S.teams[n], on=S.online&&S.online[n];
-      const dft=(ldd[n]!=null)?'<span class="dft" style="color:'+(ldd[n]>0?'#2e8b57':'#c62828')+';">'+(ldd[n]>0?'+':'')+ldd[n]+'</span>':'';
-      return '<span class="p'+(me?' me':'')+'" style="'+(tt&&S.teams[S.you]&&tt===S.teams[S.you]?'border-color:rgba(240,147,43,.75);':'')+'"><span class="odot'+(on?' on':'')+'"></span>'+lab(n)+(tt?' ['+tt+']':'')+'：'+(S.scores[n]||0)+dft+'</span>';
-    }).join('');
+    renderPlayers();
     const mb=document.getElementById('modeBar');
     mb.innerHTML='<span class="mode-opt" onclick="setFlag(false)">点击翻开</span><span class="mode-opt" onclick="setFlag(true)">插旗</span>';
     const opts=mb.querySelectorAll('.mode-opt');

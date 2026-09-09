@@ -1117,6 +1117,7 @@ function bmsView(g, name, room) {
     online,
     revealed, flagged, exploded,
     scores: g.scores, teams: g.teams, myPick: g.picks[name] || null,
+    submitted: g.playerOrder.filter(n => g.picks[n]),
     picks: (g.phase === 'pick' && g.picks[name]) ? g.picks : {}, // 提交后（对自己）才显示大家的 A
     last: g.last || null, over: g.over || null, cancelVotes: (g.cancelVotes || []).slice()
   };
@@ -3689,20 +3690,24 @@ io.on('connection', (socket) => {
     bmsBroadcast(room, g);
     const allPicked = g.playerOrder.every(n => g.picks[n]);
     if (allPicked) {
-      msSettle(g);
-      bmsBroadcast(room, g);
-      if (g.phase === 'over') {
-        if (!gameEndTimers[room.roomId]) {
-          gameEndTimers[room.roomId] = setTimeout(() => {
-            if (minesweeperGames[room.roomId] === g) delete minesweeperGames[room.roomId];
-            if (minesweeperGames[room.roomId] && minesweeperGames[room.roomId].roundTimer) clearTimeout(minesweeperGames[room.roomId].roundTimer);
-            delete gameEndTimers[room.roomId];
-            Object.keys(room.seats).forEach(seatId => { if (room.seats[seatId]) room.seats[seatId].ready = false; });
-            broadcastRoom(room);
-            console.log(`🔄 扫雷 ${room.roomId} 已结算，房间已复位`);
-          }, 5000);
+      // 所有人都选完：停 0.5 秒再统一揭晓
+      setTimeout(() => {
+        if (!minesweeperGames[room.roomId] || minesweeperGames[room.roomId] !== g || g.phase !== 'pick') return;
+        msSettle(g);
+        bmsBroadcast(room, g);
+        if (g.phase === 'over') {
+          if (!gameEndTimers[room.roomId]) {
+            gameEndTimers[room.roomId] = setTimeout(() => {
+              if (minesweeperGames[room.roomId] === g) delete minesweeperGames[room.roomId];
+              if (minesweeperGames[room.roomId] && minesweeperGames[room.roomId].roundTimer) clearTimeout(minesweeperGames[room.roomId].roundTimer);
+              delete gameEndTimers[room.roomId];
+              Object.keys(room.seats).forEach(seatId => { if (room.seats[seatId]) room.seats[seatId].ready = false; });
+              broadcastRoom(room);
+              console.log(`🔄 扫雷 ${room.roomId} 已结算，房间已复位`);
+            }, 5000);
+          }
         }
-      }
+      }, 500);
     }
     if (cb) cb({ success: true });
   });

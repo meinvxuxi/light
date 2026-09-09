@@ -455,8 +455,8 @@
     }
 
     function enterGame() {
-      const urlMap = { yahtzee: '/yahtzee.html', light: '/light.html', drawing: '/drawing.html', bomber: '/bomber.html' };
-      const fallback = { yahtzee: 'yahtzee_001', light: 'light_001', drawing: 'drawing_001', bomber: 'bomber_001' };
+      const urlMap = { yahtzee: '/yahtzee.html', light: '/light.html', drawing: '/drawing.html', bomber: '/bomber.html', minesweeper: '/minesweeper.html' };
+      const fallback = { yahtzee: 'yahtzee_001', light: 'light_001', drawing: 'drawing_001', bomber: 'bomber_001', minesweeper: 'minesweeper_001' };
       const g = (gameName in urlMap) ? gameName : 'yahtzee';
       const rid = roomId || (latestRoom && latestRoom.roomId) || fallback[g];
       window.location.href = urlMap[g] + '?room=' + rid;
