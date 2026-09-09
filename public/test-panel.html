@@ -148,7 +148,7 @@
     <button class="btn-trigger" onclick="seedProfile()">生成模拟战绩</button>
     <button class="btn-info" onclick="window.location.href='/profile.html?name=' + encodeURIComponent(sessionStorage.getItem('playerName'))">查看我的个人空间</button>
     <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
-      点击生成后，个人空间会显示模拟战绩（快艇 2/3/4人 + 花菜专属战绩 + 炸飞机专属战绩），配合上方一键触发成就可预览头衔效果；全部仅存内存，重启即清空，不影响任何正式数据。
+      点击生成后，个人空间会显示模拟战绩（快艇 2/3/4人 + 花菜 + 炸飞机 + 扫雷个人/2v2），配合上方一键触发成就可预览头衔效果；全部仅存内存，重启即清空，不影响任何正式数据。
     </p>
   </div>
 
@@ -253,7 +253,7 @@
     function seedProfile() {
       socket.emit('dev_seed_profile', (res) => {
         if (res && res.success) {
-          log('✅ 已生成模拟战绩（含快艇/花菜/炸飞机），点「查看我的个人空间」预览');
+          log('✅ 已生成模拟战绩（含快艇/花菜/炸飞机/扫雷），点「查看我的个人空间」预览');
         } else {
           log('❌ ' + ((res && res.msg) || '生成失败'));
         }

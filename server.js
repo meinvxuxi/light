@@ -195,6 +195,18 @@ function playerTitle(name) {
 
 // ===== 个人空间战绩统计（依据时光墙比赛记录） =====
 // filter 可选：仅统计满足条件的对局（如指定游戏/模式）
+// 单人局：个人 rank===1 为胜；组队局：本人所在队赢（timeline 带 winners）才算胜
+function timelineWin(e, name) {
+  if (e.mode === 'team' && Array.isArray(e.winners)) return e.winners.includes(name);
+  const my = (e.results || []).find(r => r.name === name);
+  return !!(my && my.rank === 1);
+}
+// 模式排序：个人 2/3/4人 在前；2v2 组队单独一排
+function profileModeRank(mk) {
+  if (mk === '2v2') return 90;
+  const n = parseInt(mk, 10);
+  return Number.isFinite(n) ? n : 99;
+}
 function summarizeProfileStats(name, filter) {
   let games = 0, wins = 0, totalScore = 0, best = 0;
   for (const e of timelineEntries) {
@@ -205,11 +217,11 @@ function summarizeProfileStats(name, filter) {
     games++;
     totalScore += my.score;
     if (my.score > best) best = my.score;
-    if (my.rank === 1) wins++;
+    if (timelineWin(e, name)) wins++;
   }
   return { games, wins, winRate: games ? Math.round(wins / games * 100) : 0, totalScore, best };
 }
-// 某玩家参与的时光墙对局里出现过的游戏，及其各模式（人数）统计
+// 某玩家参与的时光墙对局里出现过的游戏，及其各模式（人数/2v2）统计
 function buildProfileByGame(name) {
   const games = {};   // gameKey -> { 模式key -> {..} }
   const order = [];
@@ -219,19 +231,19 @@ function buildProfileByGame(name) {
     if (!my) continue;
     const gk = e.game || 'other';
     if (!games[gk]) { games[gk] = {}; order.push(gk); }
-    const mk = (e.totalPlayers ? `${e.totalPlayers}人` : '普通');
+    const mk = (e.game === 'minesweeper' && e.mode === 'team') ? '2v2' : (e.totalPlayers ? `${e.totalPlayers}人` : '普通');
     const m = games[gk][mk] || { games: 0, wins: 0, totalScore: 0, best: 0 };
     m.games++;
     m.totalScore += my.score;
     if (my.score > m.best) m.best = my.score;
-    if (my.rank === 1) m.wins++;
+    if (timelineWin(e, name)) m.wins++;
     games[gk][mk] = m;
   }
   return order.map(gk => ({
     game: gk,
     modes: Object.keys(games[gk])
       .map(mode => { const s = games[gk][mode]; return { mode, games: s.games, wins: s.wins, winRate: s.games ? Math.round(s.wins / s.games * 100) : 0, totalScore: s.totalScore, best: s.best }; })
-      .sort((a, b) => { const na = parseInt(a.mode, 10) || Infinity; const nb = parseInt(b.mode, 10) || Infinity; return na - nb; })
+      .sort((a, b) => profileModeRank(a.mode) - profileModeRank(b.mode))
   }));
 }
 
@@ -341,7 +353,8 @@ function recordMinesweeperGame(g, room) {
       ts, type: 'game', game: 'minesweeper', totalPlayers: g.playerOrder.length,
       mode: g.mode,
       players: officials,
-      results: officials.map(n => ({ name: n, score: g.scores[n] || 0, rank: sorted.indexOf(n) + 1 }))
+      winners: Array.isArray(g.over.winnerNames) ? g.over.winnerNames.slice() : undefined,
+      results: officials.map(n => ({ name: n, score: g.scores[n] || 0, rank: sorted.indexOf(n) + 1, teamWin: !!(Array.isArray(g.over.winnerNames) && g.over.winnerNames.includes(n)) }))
     });
   }
   saveBoardStats();
@@ -459,8 +472,16 @@ function seedTestProfile(name) {
       { mode: '2人', games: 1, wins: 0, winRate: 0, totalScore: 2, best: 2 },
       { mode: '4人', games: 2, wins: 1, winRate: 50, totalScore: 7, best: 4 }
     ]
+  }, {
+    game: 'minesweeper',
+    modes: [
+      { mode: '2人', games: 1, wins: 1, winRate: 100, totalScore: 55, best: 55 },
+      { mode: '3人', games: 2, wins: 1, winRate: 50, totalScore: 91, best: 60 },
+      { mode: '4人', games: 2, wins: 1, winRate: 50, totalScore: 64, best: 44 },
+      { mode: '2v2', games: 3, wins: 2, winRate: 67, totalScore: 159, best: 66 }
+    ]
   }];
-  const totals = { games: 10, wins: 4, winRate: 40, totalScore: 1774, best: 336 };
+  const totals = { games: 18, wins: 9, winRate: 50, totalScore: 2143, best: 336 };
   const drawingCareer = { games: 4, wins: 1, winRate: 25, totalScore: 30, best: 13, mvp: 6, culprit: 4 };
   testProfileSeeds.set(name, { totals, byGame, drawingCareer });
   return { totals, byGame, drawingCareer };
