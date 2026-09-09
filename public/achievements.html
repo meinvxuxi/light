@@ -158,9 +158,11 @@
               : '· 首次：' + fmtTime(r.firstTime) + '<br>· 最近：' + fmtTime(r.lastTime);
             const dId = 'detail-' + id + '-' + r.playerName;
             const tId = 'tri-' + id + '-' + r.playerName;
+            const flagTot = (meta[id] && meta[id].group === 'ms_flag') ? ((data.flagTotals || {})[r.playerName] || 0) : null;
             const nameHtml = dn(r.playerName) + (r.isTest ? ' <em class="t-tag">测试</em>' : '')
               + (r.bestStreak && r.achievementId === 'bomber_edge' ? ` <em class="t-tag">最佳 ${r.bestStreak} 连空</em>` : '')
-              + (r.bestStreak && r.achievementId === 'bomber_streak5' ? ` <em class="t-tag">最佳 ${r.bestStreak} 连击</em>` : '');
+              + (r.bestStreak && r.achievementId === 'bomber_streak5' ? ` <em class="t-tag">最佳 ${r.bestStreak} 连击</em>` : '')
+              + (flagTot != null ? ` <em class="t-tag">累计已正确标记 ${flagTot} 雷</em>` : '');
             return `
               <div class="p-row">
                 <span class="p-name">${nameHtml}<em>x${r.count}</em></span>

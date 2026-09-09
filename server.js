@@ -782,6 +782,7 @@ const ACHIEVEMENTS = {
 const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
 // 旗手升级档位（累计正确插旗数）：同组 id 靠品质最高档展示
 const MS_FLAG_LEVELS = [['ms_flag_s1', 1000], ['ms_flag_a', 500], ['ms_flag_b', 100], ['ms_flag_c', 10]];
+const MS_FLAG_NEED = { ms_flag_c: 10, ms_flag_b: 100, ms_flag_a: 500, ms_flag_s1: 1000 };
 // 成就“组”：同一可升级成就在总览/结算里只算一个（如世一炸 = 一个组，4 档分拆展示）
 function achGroupOf(id) { const m = ACHIEVEMENTS[id]; return (m && m.group) || id; }
 function achBaseNameOf(id) { const m = ACHIEVEMENTS[id]; return (m && m.base) || (m && m.name) || id; }
@@ -2716,7 +2717,8 @@ io.on('connection', (socket) => {
         success: true,
         list: achRecords.map(r => ({ ...r })),
         testList: achTestRecords.map(r => ({ ...r })),
-        meta: ACHIEVEMENTS
+        meta: ACHIEVEMENTS,
+        flagTotals: Object.fromEntries(msFlagTotals)
       });
     }
   });
@@ -2733,7 +2735,11 @@ io.on('connection', (socket) => {
       return;
     }
     const already = ACHIEVEMENTS[achievementId].group === 'ms_flag' && achTestRecords.some(r => r.playerName === name && r.achievementId === achievementId);
-    if (!already) recordAchievement(name, achievementId); // 测试者：内存记录，重启即刷新
+    if (!already) {
+      const need = MS_FLAG_NEED[achievementId];
+      if (need) msFlagTotals.set(name, Math.max(msFlagTotals.get(name) || 0, need)); // 演示：直接触发旗手档 = 认为累计已到该档
+      recordAchievement(name, achievementId); // 测试者：内存记录，重启即刷新
+    }
     if (cb) cb({ success: true, name, achievementId, achievementName: ACHIEVEMENTS[achievementId].name, already });
   });
 
@@ -2750,6 +2756,8 @@ io.on('connection', (socket) => {
     list.forEach(n => validIds.forEach(id => {
       // 旗手是可升级成就：每个等级每人最多记录一次，重复点不再累计次数
       if ((ACHIEVEMENTS[id].group === 'ms_flag') && achTestRecords.some(r => r.playerName === n && r.achievementId === id)) return;
+      const need = MS_FLAG_NEED[id];
+      if (need) msFlagTotals.set(n, Math.max(msFlagTotals.get(n) || 0, need)); // 演示：累计雷数随档位同步，荣誉墙可直接看排版
       recordAchievement(n, id);
       rows.push(`${n} → ${ACHIEVEMENTS[id].name}`);
     }));
@@ -4117,6 +4125,7 @@ io.on('connection', (socket) => {
         if (!minesweeperGames[room.roomId] || minesweeperGames[room.roomId] !== g || g.phase !== 'pick') return;
         msSettle(g);
         recordMinesweeperGame(g, room);
+        if (g.phase === 'over') broadcastAchievementSummary(room.roomId, g);
         bmsBroadcast(room, g);
         if (g.phase === 'over') {
           if (!gameEndTimers[room.roomId]) {

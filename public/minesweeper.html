@@ -87,6 +87,15 @@ body.dyn-pink .pface{border-color:rgba(240,98,146,.5);}
 body.dyn-green .pface{border-color:rgba(111,158,99,.55);}
 body.dyn-gold .pface{border-color:rgba(214,168,67,.55);}
 body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
+.ach-pop{position:fixed;left:50%;top:22%;transform:translate(-50%,0);z-index:6000;background:rgba(255,255,255,.82);border:1px solid rgba(74,144,217,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:16px;padding:12px 22px;text-align:center;font-weight:700;font-size:.95rem;color:#2c3e50;box-shadow:0 10px 30px rgba(31,45,61,.2);pointer-events:none;opacity:0;transition:opacity .25s;max-width:86vw;}
+.ach-pop small{display:block;color:#9aa5b1;font-weight:400;font-size:.75rem;margin-top:3px;}
+body.dyn-pink .ach-pop{border-color:rgba(240,98,146,.6);background:rgba(255,242,247,.82);}
+body.dyn-green .ach-pop{border-color:rgba(111,158,99,.6);background:rgba(241,248,238,.82);}
+body.dyn-gold .ach-pop{border-color:rgba(214,168,67,.6);background:rgba(255,250,238,.84);}
+body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,241,.84);}
+.res-ach{margin-top:12px;border-top:1px dashed rgba(74,144,217,.35);padding-top:8px;text-align:left;font-size:.8rem;}
+.res-ach .ra-title{font-weight:700;color:#2c3e50;margin-bottom:4px;}
+.res-ach .ra-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 2px;color:#6b7a90;flex-wrap:wrap;}
 </style>
 </head>
 <body>
@@ -132,6 +141,7 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
   function emo(n,t){ const e=E[n]; return e?e[t]:''; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   let S=null, flagMode=false, _dm={}, lockRound=-1, confirmMode=localStorage.getItem('msConfirm')==='1', armed=null;
+  let overBoardHidden=false, msOverTimer=null, msAchSummary={};
   function dn(n){ return _dm[n]||n; }
   function lab(n){ return String(dn(n)||'').replace(/^游客/,''); }
   function phaseText(){
@@ -208,6 +218,8 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
     document.getElementById('msRound').textContent='第'+S.round+'轮';
     document.getElementById('msMines').textContent='雷 剩 '+S.remaining;
     renderPlayers();
+    // 结算 3 秒后：棋盘与操作条已隐藏，只保留分数板 / 排名 / 本局成就卡片
+    if (S.phase==='over' && overBoardHidden) return;
     const mb=document.getElementById('modeBar');
     if(confirmMode && S.phase==='pick'){
       mb.innerHTML='<span class="mode-opt" style="border:none;background:rgba(255,255,255,.4);cursor:default;color:#6b7a90;">先点格子 → 再点同一格切换 翻开/插旗</span>';
@@ -241,7 +253,24 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
           return '<div class="rrow'+(win?' win':'')+'"><b>'+(i+1)+'</b><span>'+esc(lab(n))+'</span><span class="rs">'+(S.scores[n]||0)+' 分</span></div>';
         }).join('');
       }
-      msg.innerHTML='<div class="res"><div class="res-title">游戏结束</div><div class="res-rows">'+rows+'</div><span class="res-btn" onclick="msExit()">返回房间</span></div>';
+      const qC={common:'#9aa5b1',rare:'#4caf50',epic:'#9c27b0',legend:'#ff9800',hidden:'#d32f2f'};
+      const achRows=Object.keys(msAchSummary||{}).map(p=>{
+        const arr=msAchSummary[p]||[];
+        if(!arr.length) return '';
+        return '<div class="ra-row"><b>'+esc(lab(p))+'</b><span>'
+          +arr.map(a=>'<span style="color:'+(qC[a.quality]||'#2c3e50')+';font-weight:600;">🏅 '+esc(a.name)+'</span>').join('　')
+          +'</span></div>';
+      }).filter(Boolean).join('');
+      const achHtml=achRows?'<div class="res-ach"><div class="ra-title">🎖 本局成就</div>'+achRows+'</div>':'';
+      msg.innerHTML='<div class="res"><div class="res-title">🏁 游戏结束 · 最终结算</div><div class="res-rows">'+rows+'</div>'+achHtml+'<span class="res-btn" onclick="msExit()">返回房间</span></div>';
+      if(!msOverTimer){
+        msOverTimer=setTimeout(()=>{
+          overBoardHidden=true;
+          const gw=document.getElementById('gridWrap'); if(gw) gw.innerHTML='';
+          ['modeBar','modeBar2'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
+          render();
+        },3000);
+      }
     } else if(S.phase==='result'){
       msg.innerHTML='<span style="color:#2f8f46;">点击操作成功＋分 / 踩雷或错旗−5</span>';
     } else msg.innerHTML='';
@@ -275,6 +304,18 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
   function toast(m){ const e=document.getElementById('msMsg'); if(e) e.textContent=m; }
   socket.on('minesweeper_state',s=>{ S=s; render(); });
   socket.on('minesweeper_cancel',()=>location.href='/room.html?game=minesweeper');
+  const msAchEl=document.createElement('div'); msAchEl.className='ach-pop'; document.body.appendChild(msAchEl); let msAchTimer=null;
+  socket.on('achievement_unlocked', function(d){
+    if(!d||!d.name) return;
+    const qLab={common:'普通',rare:'稀有',epic:'史诗',legend:'传说',hidden:'隐藏'};
+    msAchEl.innerHTML='🏅 解锁成就「'+esc(d.name)+'」<small>'+((d.quality&&(qLab[d.quality]||d.quality))||'')+(d.playerName?' · '+esc(dn(d.playerName)):'')+'</small>';
+    msAchEl.style.opacity='1'; clearTimeout(msAchTimer); msAchTimer=setTimeout(function(){ msAchEl.style.opacity='0'; },2600);
+  });
+  socket.on('achievement_summary', function(d){
+    if(!d||!d.players) return;
+    msAchSummary=d.players;
+    if(S&&S.phase==='over') render();
+  });
   socket.on('connect',()=>{ socket.emit('get_display_names',res=>{ if(res&&res.success){_dm=res.map;render();} }); setTimeout(()=>{ socket.emit('minesweeper_enter'); socket.emit('minesweeper_pull',res=>{ if(res&&res.success){S=res;render();} }); },400); });
   socket.emit('get_display_names',res=>{ if(res&&res.success){_dm=res.map;} });
   function msCancel(){ socket.emit('minesweeper_cancel_vote',{}); }
