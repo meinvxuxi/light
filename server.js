@@ -395,6 +395,135 @@ function loadBoardStats() {
   } catch (e) { /* 无文件/旧版：正常空榜 */ }
 }
 
+// ===== 开发者预览：扫雷生态种子（仅测试账号；可一键清除后重造，带 _seedMs 标记） =====
+let msSeedTrack = null; // { best:Map, team:Map, flag:Map } 记录上次种子对榜单的增量，方便清理
+function msPreviewClean() {
+  if (!msSeedTrack) return;
+  msHistory = msHistory.filter(r => !r._seedMs);
+  msTeamHistory = msTeamHistory.filter(r => !r._seedMs);
+  timelineEntries = timelineEntries.filter(e => !e._seedMs);
+  for (const [n, d] of msSeedTrack.best) {
+    const c = msBestBoard.get(n) || 0;
+    if (c - d > 0) msBestBoard.set(n, c - d); else msBestBoard.delete(n);
+  }
+  for (const [k, d] of msSeedTrack.team) {
+    const c = msTeamBest.get(k) || 0;
+    if (c - d > 0) msTeamBest.set(k, c - d); else msTeamBest.delete(k);
+  }
+  for (const [n, d] of msSeedTrack.flag) {
+    const c = msFlagTotals.get(n) || 0;
+    if (c - d > 0) msFlagTotals.set(n, c - d); else msFlagTotals.delete(n);
+  }
+  msSeedTrack = null;
+  saveBoardStats();
+}
+function recalcSeedTotals(byGame) {
+  const t = { games: 0, wins: 0, totalScore: 0, best: 0 };
+  for (const g of byGame) for (const m of (g.modes || [])) {
+    t.games += m.games; t.wins += m.wins; t.totalScore += m.totalScore;
+    if (m.best > t.best) t.best = m.best;
+  }
+  t.winRate = t.games ? Math.round(t.wins / t.games * 100) : 0;
+  return t;
+}
+function msProfileRemoveMine(name) {
+  const seed = testProfileSeeds.get(name);
+  if (!seed || !seed.byGame.some(g => g.game === 'minesweeper')) return;
+  const byGame = seed.byGame.filter(g => g.game !== 'minesweeper');
+  testProfileSeeds.set(name, Object.assign({}, seed, { byGame, totals: recalcSeedTotals(byGame) }));
+}
+function msProfileMergeMine(name, mineModes) {
+  const seed = testProfileSeeds.get(name) || seedTestProfile(name);
+  const byGame = seed.byGame.filter(g => g.game !== 'minesweeper').concat([{ game: 'minesweeper', modes: mineModes }]);
+  testProfileSeeds.set(name, Object.assign({}, seed, { byGame, totals: recalcSeedTotals(byGame) }));
+}
+// 造一批扫雷对局并写进各内存榜；返回当前账号四种模式维度（供个人空间种子）
+function seedMsBoardsInto(profileName) {
+  msPreviewClean();
+  const ts = Date.now();
+  const solo = [
+    { n: 2, sc: [88, 52], fl: [6, 4] },
+    { n: 2, sc: [61, 77], fl: [3, 5] },
+    { n: 3, sc: [90, 55, 20], fl: [7, 4, 2] },
+    { n: 3, sc: [40, 66, 71], fl: [3, 5, 6] },
+    { n: 4, sc: [74, 63, 50, 84], fl: [6, 5, 4, 8] },
+    { n: 4, sc: [95, 20, 45, 60], fl: [9, 2, 3, 5] }
+  ];
+  const team = [
+    { names: ['测试者1', '测试者2'], sc: [72, 60], fl: [6, 4], winTeam: true },
+    { names: ['测试者3', '测试者4'], sc: [55, 80], fl: [5, 7], winTeam: true }
+  ];
+  const track = { best: new Map(), team: new Map(), flag: new Map() };
+  const gamesMeta = []; // {mode, players, scores, winners}
+  let timeOff = 0;
+  solo.forEach(row => {
+    const players = TEST_NAMES.slice(0, row.n);
+    const max = Math.max(...row.sc);
+    const winners = players.filter((_, i) => row.sc[i] === max);
+    gamesMeta.push({ mode: 'solo', n: row.n, players, scores: row.sc, winners });
+    row.sc.forEach((score, i) => {
+      const n = players[i]; const f = row.fl[i] || 0;
+      const oldBest = msBestBoard.get(n) || 0;
+      if (score > oldBest) { msBestBoard.set(n, score); track.best.set(n, (track.best.get(n) || 0) + (score - oldBest)); }
+      msHistory.push({ name: n, score, mode: 'solo', partner: null, ts: ts - timeOff * 60000, flagHits: f, _seedMs: true });
+      const oldF = msFlagTotals.get(n) || 0;
+      msFlagTotals.set(n, oldF + f);
+      track.flag.set(n, (track.flag.get(n) || 0) + f);
+    });
+    timeOff++;
+  });
+  team.forEach(row => {
+    const total = row.sc[0] + row.sc[1];
+    const key = msComboKey(row.names[0], row.names[1]);
+    const oldT = msTeamBest.get(key) || 0;
+    if (total > oldT) { msTeamBest.set(key, total); track.team.set(key, (track.team.get(key) || 0) + (total - oldT)); }
+    msTeamHistory.push({ players: row.names.slice(), total, win: row.winTeam, ts: ts - timeOff * 60000, _seedMs: true });
+    row.names.forEach((n, i) => {
+      const score = row.sc[i]; const f = row.fl[i] || 0;
+      const partner = row.names[1 - i];
+      msHistory.push({ name: n, score, mode: 'team', partner, ts: ts - timeOff * 60000, flagHits: f, _seedMs: true });
+      const oldF = msFlagTotals.get(n) || 0;
+      msFlagTotals.set(n, oldF + f);
+      track.flag.set(n, (track.flag.get(n) || 0) + f);
+    });
+    gamesMeta.push({ mode: 'team', n: 4, players: row.names.slice(), scores: row.sc.slice(), winners: row.winTeam ? row.names.slice() : [] });
+    timeOff++;
+  });
+  // 时光墙：模式 / 胜者 / 个人分都在，个人空间与时光墙都可预览
+  gamesMeta.forEach((gm, i) => {
+    const sorted = gm.players.map((n, idx) => ({ n, s: gm.scores[idx] })).sort((a, b) => b.s - a.s);
+    addTimeline({
+      ts: ts - (timeOff - 1 - i) * 60000, type: 'game', game: 'minesweeper', totalPlayers: gm.n, mode: gm.mode,
+      players: gm.players.slice(),
+      winners: gm.winners.slice(),
+      results: gm.players.map((n, idx) => ({ name: n, score: gm.scores[idx], rank: sorted.findIndex(x => x.n === n) + 1, teamWin: gm.winners.includes(n) })),
+      _test: true, _seedMs: true
+    });
+  });
+  msSeedTrack = track;
+  saveBoardStats();
+  // 个人空间需要按“模式×人数”聚合（含 2v2 组队独立成行）
+  const agg = {};
+  gamesMeta.forEach(gm => {
+    const mk = gm.mode === 'team' ? '2v2' : (gm.n + '人');
+    gm.players.forEach((n, idx) => {
+      const a = (agg[n] = agg[n] || {});
+      const m = (a[mk] = a[mk] || { games: 0, wins: 0, totalScore: 0, best: 0 });
+      m.games++;
+      m.totalScore += gm.scores[idx];
+      if (gm.scores[idx] > m.best) m.best = gm.scores[idx];
+      if (gm.winners.includes(n)) m.wins++;
+    });
+  });
+  const order = ['2人', '3人', '4人', '2v2'];
+  const profileModes = order.map(mk => {
+    const s = agg[profileName] && agg[profileName][mk];
+    return s ? { mode: mk, games: s.games, wins: s.wins, winRate: Math.round(s.wins / s.games * 100), totalScore: s.totalScore, best: s.best }
+      : { mode: mk, games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0 };
+  });
+  return { solo: solo.length, team: team.length, profileModes };
+}
+
 // ===== 画猜接龙（花菜）榜与战绩 =====
 let drawingHighBoard = new Map(); // 玩家名 -> 单局最高分
 let drawingHist = [];             // 花菜分数流水（每局每人）
@@ -2607,6 +2736,30 @@ io.on('connection', (socket) => {
     achTestRecords = [];
     testProfileSeeds.clear();
     if (cb) cb({ success: true, msg: '测试成就 / 模拟战绩已重置' });
+  });
+
+  // 测试助手：扫雷生态一键预览（成绩榜个人/组队 + 流水 + 时光墙 + 当前账号个人战绩；可清除重造）
+  socket.on('dev_seed_ms_preview', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（测试者1~测试者4）可使用' });
+      return;
+    }
+    msProfileRemoveMine(me);
+    const r = seedMsBoardsInto(me);
+    msProfileMergeMine(me, r.profileModes);
+    if (cb) cb({ success: true, solo: r.solo, team: r.team,
+      msg: `扫雷生态预览已生成（${r.solo} 场个人赛 + ${r.team} 场 2v2）：扫雷·个人/组队榜、分数流水、时光墙、个人战绩（2人/3人/4人/2v2）都可以看了` });
+  });
+  socket.on('dev_reset_ms_preview', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（测试者1~测试者4）可使用' });
+      return;
+    }
+    msPreviewClean();
+    msProfileRemoveMine(me);
+    if (cb) cb({ success: true, msg: '扫雷生态预览已清除（榜单流水/时光墙/个人战绩），正式真实数据不受影响' });
   });
 
   // 测试助手：生成几条测试时光墙记录（标记 _test，可一键重置；开发期不落盘）

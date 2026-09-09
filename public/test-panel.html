@@ -152,6 +152,19 @@
     </p>
   </div>
 
+  <!-- 扫雷生态预览 -->
+  <div class="panel">
+    <h3>🚩 扫雷生态预览（仅测试账号；内存，可清除重造）</h3>
+    <button class="btn-trigger" onclick="seedMsPreview()">🚩 一键生成扫雷最佳 + 分数流水 + 个人战绩（4测试号）</button>
+    <button class="btn-reset" onclick="resetMsPreview()">🗑️ 清除扫雷预览</button>
+    <button class="btn-info" onclick="window.location.href='/leaderboard.html'">查看扫雷排行榜</button>
+    <button class="btn-info" onclick="window.location.href='/profile.html?name=' + encodeURIComponent(sessionStorage.getItem('playerName'))">查看我的个人空间</button>
+    <button class="btn-info" onclick="window.location.href='/timeline.html'">查看时光墙</button>
+    <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
+      一键生成 6 场个人赛（2/3/4人）+ 2 场 2v2 的榜单与流水，同时写好当前账号个人战绩（2人/3人/4人/2v2 胜率）；可反复重新生成，清除只删预览标记数据。
+    </p>
+  </div>
+
   <!-- 时光墙测试 -->
   <div class="panel">
     <h3>📜 时光墙（仅测试账号；内存记录，重启即清空）</h3>
@@ -257,6 +270,19 @@
         } else {
           log('❌ ' + ((res && res.msg) || '生成失败'));
         }
+      });
+    }
+
+    function seedMsPreview() {
+      socket.emit('dev_seed_ms_preview', (res) => {
+        if (res && res.success) log('✅ ' + ((res && res.msg) || '扫雷生态预览已生成'));
+        else log('❌ ' + ((res && res.msg) || '生成失败'));
+      });
+    }
+    function resetMsPreview() {
+      socket.emit('dev_reset_ms_preview', (res) => {
+        if (res && res.success) log('✅ ' + ((res && res.msg) || '扫雷生态预览已清除'));
+        else log('❌ ' + ((res && res.msg) || '清除失败'));
       });
     }
 
