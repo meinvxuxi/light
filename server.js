@@ -249,6 +249,11 @@ function recordHighScores(totals) {
 
 // ===== 炸飞机「烟火师」榜：单局炸毁机头数（= 单局击落飞机数） =====
 let bomberSparkBoard = new Map(); // 玩家名 -> 单局最高机头炸毁数
+// ===== 扫雷榜数据（含 个人/组队 + 最佳/分数流水，P3）=====
+let msBestBoard = new Map();     // 玩家名 -> 个人单场最高分
+let msHistory = [];              // 个人分数流水（可重复上榜）
+let msTeamBest = new Map();      // 组合键(玩家A\u0001玩家B) -> 该组合最好合计分
+let msTeamHistory = [];          // 组队合计流水
 function recordBomberSparks(g) {
   if (!g) return;
   for (const n of g.playerOrder) {
@@ -280,6 +285,47 @@ function recordBomberGame(g) {
   });
 }
 
+function msComboKey(a, b) { return a < b ? (a + '\u0001' + b) : (b + '\u0001' + a); }
+function msTeammate(g, n) { return g.playerOrder.find(x => x !== n && g.teams && g.teams[x] === g.teams[n]) || null; }
+function recordMinesweeperGame(g, room) {
+  if (!g || !g.over || g._recorded) return;
+  g._recorded = true;
+  const ts = Date.now();
+  // 个人：每场记录都进流水（可重复上榜），最佳只保留更高
+  for (const n of g.playerOrder) {
+    const score = g.scores[n] || 0;
+    const partner = g.mode === 'team' ? msTeammate(g, n) : null;
+    msHistory.push({ name: n, score, mode: g.mode, partner, ts });
+    if (score > (msBestBoard.get(n) || 0)) msBestBoard.set(n, score);
+  }
+  if (msHistory.length > 300) msHistory = msHistory.slice(-300);
+  // 组队：按队伍记合计分
+  if (g.mode === 'team' && g.teams) {
+    ['A', 'B'].forEach(t => {
+      const mem = g.playerOrder.filter(x => g.teams[x] === t);
+      if (mem.length < 2) return;
+      const [a, b] = mem;
+      const total = (g.scores[a] || 0) + (g.scores[b] || 0);
+      const win = (g.over.winnerNames || []).length && g.over.winnerNames.some(x => g.teams[x] === t);
+      msTeamHistory.push({ players: [a, b], total, win, ts });
+      const key = msComboKey(a, b);
+      if (total > (msTeamBest.get(key) || 0)) msTeamBest.set(key, total);
+    });
+    if (msTeamHistory.length > 300) msTeamHistory = msTeamHistory.slice(-300);
+  }
+  // 时光墙：正式玩家整局（个人分）
+  const officials = g.playerOrder.filter(isOfficialPlayer);
+  if (officials.length) {
+    const sorted = g.playerOrder.slice().sort((x, y) => (g.scores[y] || 0) - (g.scores[x] || 0));
+    addTimeline({
+      ts, type: 'game', game: 'minesweeper', totalPlayers: g.playerOrder.length,
+      mode: g.mode,
+      players: officials,
+      results: officials.map(n => ({ name: n, score: g.scores[n] || 0, rank: sorted.indexOf(n) + 1 }))
+    });
+  }
+  saveBoardStats();
+}
 // ===== 排行榜持久化：三个内存榜（快艇/花菜/烟火师）写入 data/boards.json，重启不丢 =====
 const BOARDS_STATS_FILE = path.join(DATA_DIR, 'boards.json');
 function saveBoardStats() {
@@ -288,7 +334,11 @@ function saveBoardStats() {
     fs.writeFileSync(BOARDS_STATS_FILE, JSON.stringify({
       yahtzee: Object.fromEntries(highScoreBoard),
       drawing: Object.fromEntries(drawingHighBoard),
-      bomber: Object.fromEntries(bomberSparkBoard)
+      bomber: Object.fromEntries(bomberSparkBoard),
+      msBest: Object.fromEntries(msBestBoard),
+      msHistory: msHistory,
+      msTeamBest: Object.fromEntries(msTeamBest),
+      msTeamHistory: msTeamHistory
     }, null, 2), 'utf8');
   } catch (e) { console.error('❌ 排行榜写入失败：', e.message); }
 }
@@ -298,7 +348,11 @@ function loadBoardStats() {
     if (o.yahtzee) highScoreBoard = new Map(Object.entries(o.yahtzee));
     if (o.drawing) drawingHighBoard = new Map(Object.entries(o.drawing));
     if (o.bomber) bomberSparkBoard = new Map(Object.entries(o.bomber));
-    console.log(`📊 排行榜已加载：快艇 ${highScoreBoard.size} 条 / 花菜 ${drawingHighBoard.size} 条 / 烟火师 ${bomberSparkBoard.size} 条`);
+    if (o.msBest) msBestBoard = new Map(Object.entries(o.msBest));
+    if (Array.isArray(o.msHistory)) msHistory = o.msHistory;
+    if (o.msTeamBest) msTeamBest = new Map(Object.entries(o.msTeamBest));
+    if (Array.isArray(o.msTeamHistory)) msTeamHistory = o.msTeamHistory;
+    console.log(`📊 排行榜已加载：快艇 ${highScoreBoard.size} 条 / 花菜 ${drawingHighBoard.size} 条 / 烟火师 ${bomberSparkBoard.size} 条 / 扫雷个人 ${msBestBoard.size} 条 / 扫雷组队 ${msTeamBest.size} 条`);
   } catch (e) { /* 无文件/旧版：正常空榜 */ }
 }
 
@@ -1027,7 +1081,7 @@ function msInit(room, names, teamMode) {
     roomId: room.roomId, playerOrder: order, mode: teamMode ? 'team' : 'solo',
     phase: 'pick', round: 1, mines: bd.mines, counts: bd.counts,
     revealed: new Set(), flagged: new Set(), exploded: new Set(), handledMine: new Set(),
-    picks: {}, scores: {}, teams, over: null, last: null, roundTimer: null, cancelVotes: []
+    picks: {}, scores: {}, teams, over: null, last: null, roundTimer: null, cancelVotes: [], flagHits: {}
   };
 }
 function msRemainingMines(g) { return MS_MINES - g.handledMine.size; }
@@ -1062,7 +1116,7 @@ function msSettle(g) {
     } else {
       if (isMine) {
         if (!g.flagged.has(k)) g.flagged.add(k);
-        if (!g.handledMine.has(k)) g.handledMine.add(k);
+        if (!g.handledMine.has(k)) { g.handledMine.add(k); g.flagHits[n] = (g.flagHits[n] || 0) + 1; }
         ok = true;
         delta = MS_BONUS[flagMineAt[k]] || 1;
       } else {
@@ -2727,7 +2781,16 @@ io.on('connection', (socket) => {
       });
     }
     bomberArr.sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
-    if (cb) cb({ success: true, game: '快艇骰子', board: gamesArr, achBoard: achArr, drawingBoard: drawingArr, bomberBoard: bomberArr });
+    // 扫雷个人榜（最佳=每人最好；分数流水=前20可重复）
+    const msBestArr = [...msBestBoard.entries()].map(([name, best]) => ({ name, displayName: getDisplayName(name), best }))
+      .sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
+    const msHistArr = msHistory.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20);
+    // 扫雷组队榜
+    const msTeamBestArr = [...msTeamBest.entries()].map(([key, total]) => ({ players: key.split('\u0001'), total }))
+      .sort((a, b) => b.total - a.total);
+    const msTeamHistArr = msTeamHistory.slice().sort((a, b) => b.total - a.total || a.ts - b.ts).slice(0, 20);
+    if (cb) cb({ success: true, game: '快艇骰子', board: gamesArr, achBoard: achArr, drawingBoard: drawingArr, bomberBoard: bomberArr,
+      msBestBoard: msBestArr, msHistBoard: msHistArr, msTeamBestBoard: msTeamBestArr, msTeamHistBoard: msTeamHistArr });
   });
 
   socket.on('start_game', () => {
@@ -3694,6 +3757,7 @@ io.on('connection', (socket) => {
       setTimeout(() => {
         if (!minesweeperGames[room.roomId] || minesweeperGames[room.roomId] !== g || g.phase !== 'pick') return;
         msSettle(g);
+        recordMinesweeperGame(g, room);
         bmsBroadcast(room, g);
         if (g.phase === 'over') {
           if (!gameEndTimers[room.roomId]) {
