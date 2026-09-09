@@ -221,6 +221,8 @@
         </select>
       </div>
     </div>
+    <div id="msModeInfo" style="display:none;text-align:center;font-size:.8rem;color:#6b7a90;margin:6px 0;"></div>
+
 
     <div class="controls">
       <button class="btn-primary" id="btnTakeSeat" onclick="takeSeat()">入座</button>
@@ -398,6 +400,9 @@
         msw.style.display = (gameName === 'minesweeper' && roomState.hostName === myName) ? 'block' : 'none';
         msSel.value = roomState.msTeam ? '1' : '0';
       }
+      const msInfo = document.getElementById('msModeInfo');
+      if (msInfo) msInfo.style.display = gameName === 'minesweeper' ? 'block' : 'none';
+      if (msInfo && gameName === 'minesweeper') msInfo.textContent = '当前赛制：' + (roomState.msTeam ? '2v2 组队（需 4 人，队伍随机）' : '个人赛 · ' + (roomState.maxPlayers || 4) + '人');
 
       const seatsDiv = document.getElementById('seats');
       seatsDiv.innerHTML = '';

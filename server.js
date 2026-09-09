@@ -986,11 +986,12 @@ const MS_BONUS = { 1: 6, 2: 3, 3: 2, 4: 1 };
 function msKey(r, c) { return r + ',' + c; }
 // 动态生成：8×8 随机 26 雷，保证所有非雷格周围雷数 >=1（无 0 格）
 function msGenBoard() {
-  for (let t = 0; t < 300; t++) {
+  let relaxed = null;
+  for (let t = 0; t < 2500; t++) {
     const mines = new Set();
     while (mines.size < MS_MINES) mines.add(msKey(1 + Math.floor(Math.random() * MS_SIZE), 1 + Math.floor(Math.random() * MS_SIZE)));
     const counts = {};
-    let ok = true;
+    let ok = true, high = false;
     for (let r = 1; r <= MS_SIZE; r++) {
       for (let c = 1; c <= MS_SIZE; c++) {
         const k = msKey(r, c);
@@ -1001,14 +1002,16 @@ function msGenBoard() {
           if (rr >= 1 && rr <= MS_SIZE && cc >= 1 && cc <= MS_SIZE && mines.has(msKey(rr, cc))) n++;
         }
         if (n === 0) { ok = false; break; }
+        if (n >= 7) high = true;
         counts[k] = n;
       }
       if (!ok) break;
     }
-    if (ok) return { mines, counts };
+    if (!ok) continue;
+    if (!relaxed) relaxed = { mines, counts };
+    if (!high) return { mines, counts }; // 要求：无 0、无 7/8 的"雷不集中"棋盘
   }
-  // 极端兜底：全雷外圈=1 的构造几乎不可能失败，失败则放 64-28 非雷? 简单重试
-  return msGenBoard();
+  return relaxed; // 极端情况兜底：无 0 即可
 }
 function msInit(room, names, teamMode) {
   const bd = msGenBoard();
@@ -1063,7 +1066,8 @@ function msSettle(g) {
         ok = true;
         delta = MS_BONUS[flagMineAt[k]] || 1;
       } else {
-        if (!g.flagged.has(k)) g.flagged.add(k);
+        // 错旗：翻开该格（显示数字），不保留旗子，扣 5
+        if (!g.revealed.has(k)) g.revealed.add(k);
         delta = -5;
       }
     }
@@ -1076,7 +1080,7 @@ function msSettle(g) {
   if (msRemainingMines(g) <= 0) return msFinish(g);
   g.phase = 'result';
   if (g.roundTimer) clearTimeout(g.roundTimer);
-  g.roundTimer = setTimeout(() => { g.round++; g.phase = 'pick'; bmsBroadcastFor(g.roomId); }, 4000);
+  g.roundTimer = setTimeout(() => { g.last = null; g.round++; g.phase = 'pick'; bmsBroadcastFor(g.roomId); }, 4000);
 }
 function msFinish(g) {
   g.phase = 'over';
@@ -1095,25 +1099,32 @@ function msFinish(g) {
   g.over = { mode: g.mode, teams: g.teams, winnerNames, scores: g.scores };
   return g.over;
 }
-function bmsView(g, name) {
+function bmsView(g, name, room) {
   const revealed = [], flagged = [], exploded = [];
   for (const k of g.revealed) { const [r, c] = k.split(',').map(Number); revealed.push({ r, c, num: g.counts[k] }); }
   for (const k of g.flagged) { const [r, c] = k.split(',').map(Number); flagged.push({ r, c }); }
   for (const k of g.exploded) { const [r, c] = k.split(',').map(Number); exploded.push({ r, c }); }
+  const online = {};
+  for (const n of g.playerOrder) {
+    const hb = userLastHeartbeat.get(n);
+    const sid = room && room.playerMap.get(n);
+    online[n] = !!(hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && msAtGame.get(n) === sid && io.sockets.sockets.has(sid));
+  }
   return {
     phase: g.phase, round: g.round, mode: g.mode, you: name,
     playerOrder: g.playerOrder.slice(),
     size: MS_SIZE, mineTotal: MS_MINES, remaining: msRemainingMines(g),
+    online,
     revealed, flagged, exploded,
     scores: g.scores, teams: g.teams, myPick: g.picks[name] || null,
-    picks: g.phase === 'pick' ? g.picks : {}, // 选后即全员可见表情A（待揭晓）
+    picks: (g.phase === 'pick' && g.picks[name]) ? g.picks : {}, // 提交后（对自己）才显示大家的 A
     last: g.last || null, over: g.over || null, cancelVotes: (g.cancelVotes || []).slice()
   };
 }
 function bmsBroadcast(room, g) {
   g.playerOrder.forEach(n => {
     const sid = room.playerMap.get(n);
-    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('minesweeper_state', bmsView(g, n));
+    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('minesweeper_state', bmsView(g, n, room));
   });
 }
 function bmsBroadcastFor(roomId) {
@@ -3660,7 +3671,7 @@ io.on('connection', (socket) => {
     const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'minesweeper') : null;
     const g = room && minesweeperGames[room.roomId];
     if (!room || !g) { if (cb) cb({ success: false }); return; }
-    if (cb) cb({ success: true, ...bmsView(g, name) });
+    if (cb) cb({ success: true, ...bmsView(g, name, room) });
   });
   socket.on('minesweeper_pick', ({ r, c, op }, cb) => {
     const name = socketToUser.get(socket.id);
@@ -3673,6 +3684,7 @@ io.on('connection', (socket) => {
     if (op !== 'open' && op !== 'flag') { if (cb) cb({ success: false, msg: '操作类型无效' }); return; }
     const k = msKey(rr, cc);
     if (g.revealed.has(k) || g.flagged.has(k) || g.exploded.has(k)) { if (cb) cb({ success: false, msg: '该格子不可操作' }); return; }
+    if (g.picks[name]) { if (cb) cb({ success: false, msg: '本轮已提交，不能再修改' }); return; }
     g.picks[name] = { r: rr, c: cc, op };
     bmsBroadcast(room, g);
     const allPicked = g.playerOrder.every(n => g.picks[n]);

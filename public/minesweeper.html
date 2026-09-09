@@ -24,11 +24,16 @@ td.mine{background:#f3b6b6;cursor:default;}
 .emj.open{border-color:rgba(74,144,217,.75);}
 .emj.flagc{border-color:rgba(192,57,43,.75);}
 .emj img{width:92%;height:92%;object-fit:contain;}
+.emjrow.one .emj{width:96%;height:96%;}
+.emjrow.one .emj img{width:98%;height:98%;}
 .emj .no{font-size:8px;font-weight:800;color:#2c3e50;}
 .float{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;z-index:3;}
 .scoreline{display:flex;flex-wrap:wrap;justify-content:center;gap:5px 10px;margin:8px 0 4px;}
-.p{font-size:.82rem;padding:3px 10px;border-radius:14px;background:rgba(255,255,255,.72);border:1px solid rgba(74,144,217,.25);}
+.p{font-size:.82rem;padding:3px 10px;border-radius:14px;background:rgba(255,255,255,.72);border:1px solid rgba(74,144,217,.25);position:relative;}
 .p.me{border-color:#4a90d9;font-weight:800;}
+.p .dft{position:absolute;top:-12px;right:4px;font-size:11px;font-weight:800;}
+.p .odot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:3px;background:#d7dde3;vertical-align:middle;}
+.p .odot.on{background:#6f9e63;}
 .modebar{display:flex;justify-content:center;gap:10px;margin:8px 0;}
 .mode-opt{padding:5px 14px;border-radius:10px;border:1px solid #dfe3e8;background:#fff;cursor:pointer;font-size:.82rem;}
 .mode-opt.on{border-color:#4a90d9;background:rgba(74,144,217,.14);color:#2f6fb2;font-weight:700;}
@@ -42,12 +47,13 @@ body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);co
 </style>
 </head>
 <body>
-  <div class="head"><b>🧨 扫雷</b><span><a onclick="msCancel()">取消对局</a><a onclick="msExit()">返回房间</a></span></div>
+  <div class="head"><b>🧨 扫雷</b><span><a id="msCancelLb" onclick="msCancel()">取消对局</a><a onclick="msExit()">返回房间</a></span></div>
   <div class="wrap">
     <div class="info"><span id="msStage">连接中…</span><span id="msMines">雷 26</span><span id="msRound"></span></div>
     <div id="scoreLine"></div>
     <div id="gridWrap"></div>
     <div class="modebar" id="modeBar"></div>
+    <div class="modebar" id="modeBar2"></div>
     <div class="stage" id="msMsg"></div>
   </div>
   <script src="/socket.io/socket.io.js"></script>
@@ -66,8 +72,9 @@ body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);co
   };
   function emo(n,t){ const e=E[n]; return e?e[t]:''; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  let S=null, flagMode=false, _dm={};
+  let S=null, flagMode=false, _dm={}, lockRound=-1, confirmMode=localStorage.getItem('msConfirm')==='1', armed=null;
   function dn(n){ return _dm[n]||n; }
+  function lab(n){ return String(dn(n)||'').replace(/^游客/,''); }
   function phaseText(){
     if(!S) return '等待对局…';
     const done=Object.keys(S.picks||{}).length;
@@ -89,28 +96,41 @@ body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);co
     if(stack.length){
       const chips=stack.map(x=>{
         const ring=x.op==='open'?'open':'flagc';
-        const f=x.last&&x.delta!=null?'<span class="float" style="color:'+(x.delta>0?'#2e8b57':'#c62828')+';">'+(x.delta>0?'+':'')+x.delta+'</span>':'';
-        return '<span class="emj '+ring+'">'+(x.img?'<img src="'+x.img+'">':'<span class="no">'+esc(dn(x.name))+'</span>')+f+'</span>';
+        return '<span class="emj '+ring+'">'+(x.img?'<img src="'+x.img+'">':'<span class="no">'+esc(lab(x.name))+'</span>')+'</span>';
       }).join('');
-      em='<span class="emjrow">'+chips+'</span>';
+      em='<span class="emjrow'+(stack.length===1&&cls==='un'?' one':'')+'">'+chips+'</span>';
     }
     return '<td class="'+cls+'"'+(cls==='un'?' onclick="tapCell('+r+','+c+')"':'')+'>'+inner+em+'</td>';
   }
   function render(){
-    if(!S) return;
-    document.getElementById('msStage').textContent=phaseText();
+    if(!S) return;    document.getElementById('msStage').textContent=phaseText();
+    const msEl=document.getElementById('msStage');
+    const missing=(S.playerOrder||[]).filter(n=>!(S.picks||{})[n]);
+    const offs=missing.filter(n=>!(S.online&&S.online[n])).map(n=>lab(n));
+    if(S.phase==='pick'&&offs.length) msEl.textContent+=(' · 等 '+offs.join('、')+' 上线提交');
+    const oc=Object.values(S.online||{}).filter(Boolean).length;
+    const cl=document.getElementById('msCancelLb');
+    if(cl) cl.textContent='取消对局'+(S.cancelVotes&&S.cancelVotes.length?('（'+S.cancelVotes.length+'/'+oc+'）'):'');
     document.getElementById('msRound').textContent='第'+S.round+'轮';
     document.getElementById('msMines').textContent='雷 剩 '+S.remaining;
     const order=S.playerOrder||Object.keys(S.scores||{});
+    const ldd={}; (S.last||[]).forEach(a=>{ ldd[a.name]=a.delta; });
     document.getElementById('scoreLine').innerHTML=order.map(n=>{
-      const me=n===S.you, tt=S.teams&&S.teams[n];
-      return '<span class="p'+(me?' me':'')+'" style="'+(tt&&S.teams[S.you]&&tt===S.teams[S.you]?'border-color:rgba(240,147,43,.75);':'')+'">'+(tt?'['+tt+'] ':'')+esc(dn(n))+'：'+(S.scores[n]||0)+'</span>';
+      const me=n===S.you, tt=S.teams&&S.teams[n], on=S.online&&S.online[n];
+      const dft=(ldd[n]!=null)?'<span class="dft" style="color:'+(ldd[n]>0?'#2e8b57':'#c62828')+';">'+(ldd[n]>0?'+':'')+ldd[n]+'</span>':'';
+      return '<span class="p'+(me?' me':'')+'" style="'+(tt&&S.teams[S.you]&&tt===S.teams[S.you]?'border-color:rgba(240,147,43,.75);':'')+'"><span class="odot'+(on?' on':'')+'"></span>'+lab(n)+(tt?' ['+tt+']':'')+'：'+(S.scores[n]||0)+dft+'</span>';
     }).join('');
     const mb=document.getElementById('modeBar');
-    mb.innerHTML='<span class="mode-opt'+(S.phase==='pick'?'':' mode-off')+'" onclick="toggleMode(false)">点击翻开</span><span class="mode-opt'+(S.phase==='pick'?'':' mode-off')+'" onclick="toggleMode(true)">插旗</span>';
+    mb.innerHTML='<span class="mode-opt" onclick="setFlag(false)">点击翻开</span><span class="mode-opt" onclick="setFlag(true)">插旗</span>';
     const opts=mb.querySelectorAll('.mode-opt');
     opts[0].classList.toggle('on',!flagMode);
     opts[1].classList.toggle('on',flagMode);
+    const mb2=document.getElementById('modeBar2');
+    mb2.innerHTML='<span class="mode-opt" onclick="setConfirm(false)">直接</span><span class="mode-opt" onclick="setConfirm(true)">两步确认</span>'
+      +((confirmMode&&armed)?'<span class="mode-opt on" onclick="submitPick()">✓ 提交（'+armed.r+','+armed.c+'）</span><span class="mode-opt" onclick="armed=null;render()">取消选择</span>':'');
+    const o2=mb2.querySelectorAll('.mode-opt');
+    if(o2[0]) o2[0].classList.toggle('on',!confirmMode);
+    if(o2[1]) o2[1].classList.toggle('on',confirmMode);
     const msg=document.getElementById('msMsg');
     if(S.phase==='over'&&S.over){
       const wn=S.over.winnerNames||[];
@@ -122,15 +142,35 @@ body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);co
     for(let r=1;r<=S.size;r++){ g+='<tr>'; for(let c=1;c<=S.size;c++) g+=cellHtml(r,c,S.size); g+='</tr>'; }
     document.getElementById('gridWrap').innerHTML=g+'</table>';
   }
-  function toggleMode(f){ if(S&&S.phase!=='pick') return; flagMode=f; render(); }
-  function tapCell(r,c){ if(!S||S.phase!=='pick') return; socket.emit('minesweeper_pick',{r,c,op:flagMode?'flag':'open'},res=>{ if(res&&!res.success&&res.msg) toast(res.msg); }); }
+  function setFlag(f){ if(S&&S.phase!=='pick') return; flagMode=f; if(armed&&confirmMode) armed.op=flagMode?'flag':'open'; render(); }
+  function setConfirm(f){ confirmMode=!!f; localStorage.setItem('msConfirm', confirmMode?'1':'0'); armed=null; render(); }
+  function toggleMode(f){ setFlag(f); }
+  function directSend(r,c){
+    const op=flagMode?'flag':'open';
+    if(S){ S.picks=S.picks||{}; S.picks[myName]={r,c,op}; lockRound=S.round; render(); }
+    socket.emit('minesweeper_pick',{r,c,op},res=>{ if(res&&!res.success&&res.msg){ if(S&&S.picks) delete S.picks[myName]; toast(res.msg); render(); } else { lockRound=S&&S.round; } });
+  }
+  function tapCell(r,c){
+    if(!S||S.phase!=='pick') return;
+    if(lockRound===S.round){ toast('本轮已提交，等揭晓'); return; }
+    if(!confirmMode){ directSend(r,c); return; }
+    if(armed&&armed.r===r&&armed.c===c){ armed.op=armed.op==='open'?'flag':'open'; }
+    else armed={r,c,op:flagMode?'flag':'open'};
+    render();
+  }
+  function submitPick(){
+    if(!S||S.phase!=='pick'||!armed) return;
+    const a=armed; armed=null;
+    S.picks=S.picks||{}; S.picks[myName]={r:a.r,c:a.c,op:a.op}; lockRound=S.round; render();
+    socket.emit('minesweeper_pick',{r:a.r,c:a.c,op:a.op},res=>{ if(res&&!res.success&&res.msg){ if(S&&S.picks) delete S.picks[myName]; toast(res.msg); render(); } else { lockRound=S.round; } });
+  }
   function toast(m){ const e=document.getElementById('msMsg'); if(e) e.textContent=m; }
   socket.on('minesweeper_state',s=>{ S=s; render(); });
   socket.on('minesweeper_cancel',()=>location.href='/room.html?game=minesweeper');
   socket.on('connect',()=>{ socket.emit('get_display_names',res=>{ if(res&&res.success){_dm=res.map;render();} }); setTimeout(()=>{ socket.emit('minesweeper_enter'); socket.emit('minesweeper_pull',res=>{ if(res&&res.success){S=res;render();} }); },400); });
   socket.emit('get_display_names',res=>{ if(res&&res.success){_dm=res.map;} });
   function msCancel(){ socket.emit('minesweeper_cancel_vote',{}); }
-  function msExit(){ location.href='/room.html?game=minesweeper'; }
+  function msExit(){ const q=new URLSearchParams(location.search); location.href='/room.html?game=minesweeper'+(q.get('room')?'&room='+q.get('room'):''); }
   setInterval(()=>{ if(!socket.connected) return; socket.emit('minesweeper_pull',res=>{ if(res&&res.success){ S=res; render(); } }); },2200);
   </script>
 </body>
