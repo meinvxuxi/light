@@ -12,7 +12,8 @@
     .back { color: #4a90d9; text-decoration: none; font-size: .88rem; }
     .back:hover { text-decoration: underline; }
     .wrap { max-width: 620px; margin: 0 auto; padding: 16px 4px 60px; }
-    .lb-bar { display: flex; align-items: flex-end; gap: 10px; width: 100%; }
+    .lb-hl { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .headbar .seg { margin-bottom: 0; }
     .tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 18px; border-bottom: 1px solid #e8ecf1; padding: 0 2px 8px; scrollbar-width: none; -ms-overflow-style: none; }
     .tabs::-webkit-scrollbar { display: none; }
     .lb-tab { flex: 0 0 auto; color: #6b7a90; font-size: .92rem; cursor: pointer; padding: 2px 2px 4px; border-bottom: 2px solid transparent; user-select: none; white-space: nowrap; }
@@ -40,23 +41,23 @@
 </head>
 <body>
   <div class="headbar">
-    <span class="title">排行榜</span>
-    <a class="back" href="/lobby.html">返回大厅</a>
-  </div>
-  <div class="wrap">
-    <div class="lb-bar">
+    <div class="lb-hl">
       <div class="seg" id="subMode">
         <span class="on" id="subBest" onclick="setMode('best')">最佳</span>
         <span id="subScore" onclick="setMode('score')">分数</span>
       </div>
-      <div class="tabs" id="gameTabs">
-        <span class="lb-tab active" id="tabBoard" onclick="switchTab('board')">快艇榜</span>
-        <span class="lb-tab" id="tabDrawing" onclick="switchTab('drawing')">花菜榜</span>
-        <span class="lb-tab" id="tabBomber" onclick="switchTab('bomber')">烟火师榜</span>
-        <span class="lb-tab" id="tabMsP" onclick="switchTab('msP')">扫雷·个人</span>
-        <span class="lb-tab" id="tabMsT" onclick="switchTab('msT')">扫雷·组队</span>
-        <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
-      </div>
+      <span class="title">排行榜</span>
+    </div>
+    <a class="back" href="/lobby.html">返回大厅</a>
+  </div>
+  <div class="wrap">
+    <div class="tabs" id="gameTabs">
+      <span class="lb-tab active" id="tabBoard" onclick="switchTab('board')">快艇榜</span>
+      <span class="lb-tab" id="tabDrawing" onclick="switchTab('drawing')">花菜榜</span>
+      <span class="lb-tab" id="tabBomber" onclick="switchTab('bomber')">烟火师榜</span>
+      <span class="lb-tab" id="tabMsP" onclick="switchTab('msP')">扫雷·个人</span>
+      <span class="lb-tab" id="tabMsT" onclick="switchTab('msT')">扫雷·组队</span>
+      <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
     </div>
     <div class="lb-list" id="lbList"><div class="empty">加载中…</div></div>
   </div>
