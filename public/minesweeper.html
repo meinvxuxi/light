@@ -24,7 +24,8 @@ td.mine{background:#f3b6b6;cursor:default;}
 .c2 .emj{width:44%;height:auto;aspect-ratio:1/1;}
 .c3 .emj{width:46%;height:auto;aspect-ratio:1/1;}
 .c4 .emj{width:48%;height:auto;aspect-ratio:1/1;}
-.emj{border-radius:50%;width:34%;min-width:11px;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:rgba(255,255,255,.72);backdrop-filter:blur(3px);border:1px solid rgba(74,144,217,.55);}
+.emj{border-radius:50%;width:34%;min-width:11px;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.72);backdrop-filter:blur(3px);border:1px solid rgba(74,144,217,.55);position:relative;overflow:visible;}
+.emj img{width:92%;height:92%;object-fit:contain;border-radius:50%;}
 .emj.open{border-color:rgba(74,144,217,.75);}
 .emj.flagc{border-color:rgba(192,57,43,.75);}
 .emj img{width:92%;height:92%;object-fit:contain;}
@@ -65,6 +66,19 @@ body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);co
 .pstatus.sel{color:#2e8b57;}
 .pstatus.off{color:#c0392b;}
 .pdrift{position:absolute;top:-7px;right:-4px;font-weight:800;font-size:.8rem;}
+.res{max-width:420px;margin:8px auto;background:rgba(255,255,255,.78);backdrop-filter:blur(12px);border:1px solid rgba(74,144,217,.4);border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 10px 28px rgba(31,45,61,.12);}
+.res-title{font-size:1rem;font-weight:800;color:#2c3e50;margin-bottom:10px;}
+.res-rows{display:flex;flex-direction:column;gap:6px;text-align:left;}
+.rrow{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.6);border:1px solid rgba(74,144,217,.2);}
+.rrow.win{background:rgba(255,240,205,.8);border-color:rgba(230,126,34,.45);}
+.rrow b{color:#2c3e50;} .rrow .rs{color:#7f8fa6;font-size:.8rem;}
+.res-btn{margin-top:12px;display:inline-block;padding:7px 18px;border-radius:10px;background:#4a90d9;color:#fff;font-size:.85rem;cursor:pointer;}
+body.dyn-pink .res{border-color:rgba(240,98,146,.45);background:rgba(255,244,248,.8);}
+body.dyn-green .res{border-color:rgba(111,158,99,.5);background:rgba(241,248,238,.8);}
+body.dyn-gold .res{border-color:rgba(214,168,67,.5);background:rgba(255,250,238,.82);}
+body.dyn-red .res{border-color:rgba(166,64,58,.5);background:rgba(253,243,241,.82);}
+body.dyn-pink .res-btn{background:#f06292;} body.dyn-green .res-btn{background:#6f9e63;} body.dyn-gold .res-btn{background:#d6a843;} body.dyn-red .res-btn{background:#a6403a;}
+body.dyn-pink .rrow.win{background:rgba(255,229,238,.85);} body.dyn-green .rrow.win{background:rgba(237,246,233,.85);} body.dyn-gold .rrow.win{background:rgba(253,246,222,.9);} body.dyn-red .rrow.win{background:rgba(250,234,233,.9);}
 body.dyn-pink table.g{border-color:#f5a9c0;} body.dyn-pink .mode-opt.on{color:#c73e79;border-color:#f06292;background:rgba(240,98,146,.14);}
 body.dyn-green table.g{border-color:#a9c79e;} body.dyn-green .mode-opt.on{color:#4f8a45;border-color:#6f9e63;background:rgba(111,158,99,.15);}
 body.dyn-gold table.g{border-color:#ecd7a2;} body.dyn-gold .mode-opt.on{color:#a8791b;border-color:#d6a843;background:rgba(214,168,67,.15);}
@@ -195,10 +209,14 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
     document.getElementById('msMines').textContent='雷 剩 '+S.remaining;
     renderPlayers();
     const mb=document.getElementById('modeBar');
-    mb.innerHTML='<span class="mode-opt" onclick="setFlag(false)">点击翻开</span><span class="mode-opt" onclick="setFlag(true)">插旗</span>';
-    const opts=mb.querySelectorAll('.mode-opt');
-    opts[0].classList.toggle('on',!flagMode);
-    opts[1].classList.toggle('on',flagMode);
+    if(confirmMode && S.phase==='pick'){
+      mb.innerHTML='<span class="mode-opt" style="border:none;background:rgba(255,255,255,.4);cursor:default;color:#6b7a90;">先点格子 → 再点同一格切换 翻开/插旗</span>';
+    } else {
+      mb.innerHTML='<span class="mode-opt" onclick="setFlag(false)">点击翻开</span><span class="mode-opt" onclick="setFlag(true)">插旗</span>';
+      const opts=mb.querySelectorAll('.mode-opt');
+      opts[0].classList.toggle('on',!flagMode);
+      opts[1].classList.toggle('on',flagMode);
+    }
     const mb2=document.getElementById('modeBar2');
     mb2.innerHTML='<span class="mode-opt" onclick="setConfirm(false)">直接</span><span class="mode-opt" onclick="setConfirm(true)">两步确认</span>'
       +((confirmMode&&armed)?'<span class="mode-opt on" onclick="submitPick()">✓ '+((armed.op==='open')?'翻开':'插旗')+'（'+armed.r+','+armed.c+'）</span><span class="mode-opt" onclick="armed=null;render()">取消</span>':'');
@@ -207,8 +225,23 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
     if(o2[1]) o2[1].classList.toggle('on',confirmMode);
     const msg=document.getElementById('msMsg');
     if(S.phase==='over'&&S.over){
-      const wn=S.over.winnerNames||[];
-      msg.innerHTML=(wn.length?('🏁 '+wn.map(n=>esc(dn(n))).join('、')+' 获胜！'):'🤝 平局')+'<span class="reset" onclick="msExit()">返回房间</span>';
+      const order=S.playerOrder||Object.keys(S.scores||{});
+      let rows;
+      if(S.mode==='team'&&S.teams){
+        rows=['A','B'].map(t=>{
+          const mem=order.filter(n=>S.teams[n]===t);
+          const sum=mem.reduce((a,n)=>a+(S.scores[n]||0),0);
+          const win=(S.over.winnerNames||[]).length&&mem.some(n=>S.over.winnerNames.includes(n));
+          return '<div class="rrow'+(win?' win':'')+'"><b>'+t+' 队</b><span>'+mem.map(n=>lab(n)).join(' / ')+'</span><span class="rs">'+sum+' 分</span></div>';
+        }).join('');
+      } else {
+        const sorted=order.slice().sort((a,b)=>(S.scores[b]||0)-(S.scores[a]||0));
+        rows=sorted.map((n,i)=>{
+          const win=(S.over.winnerNames||[]).includes(n);
+          return '<div class="rrow'+(win?' win':'')+'"><b>'+(i+1)+'</b><span>'+esc(lab(n))+'</span><span class="rs">'+(S.scores[n]||0)+' 分</span></div>';
+        }).join('');
+      }
+      msg.innerHTML='<div class="res"><div class="res-title">游戏结束</div><div class="res-rows">'+rows+'</div><span class="res-btn" onclick="msExit()">返回房间</span></div>';
     } else if(S.phase==='result'){
       msg.innerHTML='<span style="color:#2f8f46;">点击操作成功＋分 / 踩雷或错旗−5</span>';
     } else msg.innerHTML='';
@@ -228,8 +261,9 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
     if(!S||S.phase!=='pick') return;
     if(lockRound===S.round){ toast('本轮已提交，等揭晓'); return; }
     if(!confirmMode){ directSend(r,c); return; }
-    if(armed&&armed.r===r&&armed.c===c){ armed.op=armed.op==='open'?'flag':'open'; }
-    else armed={r,c,op:flagMode?'flag':'open'};
+    if(!armed){ armed={r,c,op:'open'}; }
+    else if(armed.r===r&&armed.c===c){ armed.op=armed.op==='open'?'flag':'open'; }
+    else armed={r,c,op:'open'};
     render();
   }
   function submitPick(){
@@ -247,5 +281,6 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
   function msExit(){ const q=new URLSearchParams(location.search); location.href='/room.html?game=minesweeper'+(q.get('room')?'&room='+q.get('room'):''); }
   setInterval(()=>{ if(!socket.connected) return; socket.emit('minesweeper_pull',res=>{ if(res&&res.success){ S=res; render(); } }); },2200);
   </script>
+  <script src='/emoji-widget.js'></script>
 </body>
 </html>
