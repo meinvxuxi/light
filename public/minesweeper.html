@@ -20,10 +20,10 @@ td.mine{background:#f3b6b6;cursor:default;}
 .mine-x{color:#c62828;font-weight:800;}
 .num1{color:#4a90d9}.num2{color:#2e8b57}.num3{color:#c62828}.num4{color:#6a3fbf}.num5{color:#8c332d}.num6{color:#0097a7}.num7{color:#2c3e50}.num8{color:#7f8fa6}
 .emjrow{position:absolute;left:0;right:0;bottom:0;top:0;display:flex;flex-wrap:wrap;align-content:center;justify-content:center;gap:1px;pointer-events:none;}
-.c1 .emj{width:94%;height:94%;}
-.c2 .emj{width:calc(50% - 2px);height:96%;}
-.c3 .emj{width:48%;height:50%;}
-.c4 .emj{width:49%;height:49%;}
+.c1 .emj{width:92%;height:auto;aspect-ratio:1/1;}
+.c2 .emj{width:44%;height:auto;aspect-ratio:1/1;}
+.c3 .emj{width:46%;height:auto;aspect-ratio:1/1;}
+.c4 .emj{width:48%;height:auto;aspect-ratio:1/1;}
 .emj{border-radius:50%;width:34%;min-width:11px;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:rgba(255,255,255,.72);backdrop-filter:blur(3px);border:1px solid rgba(74,144,217,.55);}
 .emj.open{border-color:rgba(74,144,217,.75);}
 .emj.flagc{border-color:rgba(192,57,43,.75);}
@@ -34,7 +34,8 @@ td.mine{background:#f3b6b6;cursor:default;}
 table.g{background:#fff;border:2px solid #7f8ea0;border-radius:6px;}
 table.g td{border:1px solid #8d9bab;}
 .emj .no{font-size:8px;font-weight:800;color:#2c3e50;}
-.float{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;z-index:3;}
+.float{position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:900;z-index:5;text-shadow:0 1px 0 #fff,0 -1px 0 #fff,1px 0 0 #fff,-1px 0 0 #fff;animation:msfloat 1s ease forwards;}
+@keyframes msfloat{0%{opacity:0;transform:translateX(-50%) translateY(4px);}20%{opacity:1;}100%{opacity:1;transform:translateX(-50%) translateY(-2px);}}
 .scoreline{display:flex;flex-wrap:wrap;justify-content:center;gap:5px 10px;margin:8px 0 4px;}
 .p{font-size:.82rem;padding:3px 10px;border-radius:14px;background:rgba(255,255,255,.72);border:1px solid rgba(74,144,217,.25);position:relative;}
 .p.me{border-color:#4a90d9;font-weight:800;}
@@ -88,11 +89,17 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
   <script>
   const myName = sessionStorage.getItem('playerName');
   if (!myName) location.href='/index.html';
+  const MS_IMG = { p1:'/assets/avatars/p1/beijing.png.jpg', p2:'/assets/avatars/p2/zuixin2.jpg', p3:'/assets/avatars/p3/zuixin3.jpg', p4:'/assets/avatars/p4/beijing4.jpg', pomelo:'/assets/avatars/p3/nene.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const MS_MOB = { p4:'/assets/avatars/p4/zuixin4.jpg', pomelo:'/assets/avatars/p3/nene2.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const MS_ALPHA = { p1:.82, p2:.75, p3:.75, p4:.82, pomelo:.6, agly:.82, lyff:.8 };
   function applyMsTheme(t){
-    if(!t||t==='initial'){ document.body.classList.remove('dyn-pink','dyn-green','dyn-gold','dyn-red'); return; }
-    const c=(t==='agly')?'dyn-gold':((t==='lyff')?'dyn-red':((t==='p3'||t==='pomelo')?'dyn-green':'dyn-pink'));
+    const mobile = window.matchMedia('(max-width: 768px)').matches;
     document.body.classList.remove('dyn-pink','dyn-green','dyn-gold','dyn-red');
+    if(!t||t==='initial'){ document.body.style.backgroundImage=''; document.body.style.backgroundSize=''; document.body.style.backgroundAttachment=''; document.body.style.backgroundPosition=''; return; }
+    const c=(t==='agly')?'dyn-gold':((t==='lyff')?'dyn-red':((t==='p3'||t==='pomelo')?'dyn-green':'dyn-pink'));
     document.body.classList.add(c);
+    const img=(mobile&&MS_MOB[t])?MS_MOB[t]:(MS_IMG[t]||'');
+    if(img){ const a=MS_ALPHA[t]||0.82; document.body.style.backgroundImage='linear-gradient(rgba(255,255,255,'+a+'),rgba(255,255,255,'+a+')),url(\''+img+'\')'; document.body.style.backgroundSize='cover'; document.body.style.backgroundAttachment=mobile?'scroll':'fixed'; document.body.style.backgroundPosition='center'; }
   }
   applyMsTheme(localStorage.getItem('myTheme'));
   const socket = io();
@@ -137,12 +144,12 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
         const fl=x.last&&x.delta!=null?'<span class="float" style="color:'+(x.delta>0?'#2e8b57':'#c62828')+';">'+(x.delta>0?'+':'')+x.delta+'</span>':'';
         return '<span class="emj '+ring+'">'+(x.img?'<img src="'+x.img+'">':'<span class="no">'+esc(lab(x.name))+'</span>')+fl+'</span>';
       }).join('');
-      const lay=(cls==='un')?('c'+Math.min(stack.length,4)):'';
+      const lay=(cls==='un'||S.phase!=='pick')?('c'+Math.min(stack.length,4)):'';
       em='<span class="emjrow '+lay+'">'+chips+'</span>';
     }
     if(confirmMode&&armed&&armed.r===r&&armed.c===c&&cls==='un'&&!((S.picks||{})[myName])){
       const u=emo(myName,'A');
-      em+='<span class="emjrow one"><span class="emj '+(armed.op==='open'?'open':'flagc')+' arm">'+(u?'<img src="'+u+'">':'')+'</span></span>';
+      em+='<span class="emjrow c1"><span class="emj '+(armed.op==='open'?'open':'flagc')+' arm">'+(u?'<img src="'+u+'">':'')+'</span></span>';
     }
     return '<td class="'+cls+'"'+(cls==='un'?' onclick="tapCell('+r+','+c+')"':'')+'>'+inner+em+'</td>';
   }
@@ -194,7 +201,7 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
     opts[1].classList.toggle('on',flagMode);
     const mb2=document.getElementById('modeBar2');
     mb2.innerHTML='<span class="mode-opt" onclick="setConfirm(false)">直接</span><span class="mode-opt" onclick="setConfirm(true)">两步确认</span>'
-      +((confirmMode&&armed)?'<span class="mode-opt on" onclick="submitPick()">✓ 提交（'+armed.r+','+armed.c+'）</span><span class="mode-opt" onclick="armed=null;render()">取消选择</span>':'');
+      +((confirmMode&&armed)?'<span class="mode-opt on" onclick="submitPick()">✓ '+((armed.op==='open')?'翻开':'插旗')+'（'+armed.r+','+armed.c+'）</span><span class="mode-opt" onclick="armed=null;render()">取消</span>':'');
     const o2=mb2.querySelectorAll('.mode-opt');
     if(o2[0]) o2[0].classList.toggle('on',!confirmMode);
     if(o2[1]) o2[1].classList.toggle('on',confirmMode);
