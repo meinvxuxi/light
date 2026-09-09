@@ -180,7 +180,10 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function cardHtml(n){
     const last=(S.last||[]).find(a=>a.name===n);
     let kind=null;
-    if(S.phase==='result'||S.phase==='over'){
+    if(S.phase==='over'&&S.over){
+      // 结算视角：第一名/胜队用“加分”B 表情，其余用“扣分/输”C 表情
+      kind=(S.over.winnerNames||[]).includes(n)?'B':'C';
+    } else if(S.phase==='result'){
       if(last) kind=last.ok?'B':'C';
     } else if((S.submitted||[]).includes(n)||(S.picks&&S.picks[n])) kind='A';
     const url=kind?emo(n,kind):'';
@@ -191,14 +194,19 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     return '<div class="pcard"><div class="pface" style="'+(n===S.you?'border-color:#e67e22;':'')+'">'+face+dft+'</div><div class="pname">'+lab(n)+'</div><div class="pscore">'+(S.scores[n]||0)+'分</div><div class="pstatus'+(on?'':' off')+'">'+st+'</div></div>';
   }
   function renderPlayers(){
-    const order=S.playerOrder||Object.keys(S.scores||{});
+    const base=S.playerOrder||Object.keys(S.scores||{});
+    const scoreOf=n=>S.scores[n]||0;
+    let order=base.slice();
+    if(S.phase==='over'&&S.over) order.sort((a,b)=>scoreOf(b)-scoreOf(a)||(a<b?-1:1));
     let html='<div class="players">';
     if(S.mode==='team'&&S.teams){
-      ['A','B'].forEach(t=>{
+      const tsum=t=>order.filter(n=>S.teams[n]===t).reduce((a,n)=>a+scoreOf(n),0);
+      const sortedT=['A','B'].map(t=>({t,sum:tsum(t)})).sort((x,y)=>y.sum-x.sum);
+      sortedT.forEach(x=>{
+        const t=x.t;
         const mem=order.filter(n=>S.teams[n]===t);
-        const sum=mem.reduce((a,n)=>a+(S.scores[n]||0),0);
-        const lastT=mem.reduce((a,n)=>{const z=(S.last||[]).find(x=>x.name===n);return z?a+(z.delta||0):a;},0);
-        html+='<div class="tbox"><div class="tsum">'+t+'队<br><span style="color:'+(lastT>0?'#2e8b57':(lastT<0?'#c62828':'#2c3e50'))+';">'+(lastT>0?'+':'')+lastT+'</span><br><b>'+sum+'分</b></div>'+mem.map(cardHtml).join('')+'</div>';
+        const lastT=mem.reduce((a,n)=>{const z=(S.last||[]).find(y=>y.name===n);return z?a+(z.delta||0):a;},0);
+        html+='<div class="tbox"><div class="tsum">'+t+'队<br><span style="color:'+(lastT>0?'#2e8b57':(lastT<0?'#c62828':'#2c3e50'))+';">'+(lastT>0?'+':'')+lastT+'</span><br><b>'+x.sum+'分</b></div>'+mem.map(cardHtml).join('')+'</div>';
       });
     } else {
       html+=order.map(n=>'<div class="tbox">'+cardHtml(n)+'</div>').join('');
@@ -240,11 +248,12 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       const order=S.playerOrder||Object.keys(S.scores||{});
       let rows;
       if(S.mode==='team'&&S.teams){
-        rows=['A','B'].map(t=>{
+        const tsum=t=>order.filter(n=>S.teams[n]===t).reduce((a,n)=>a+(S.scores[n]||0),0);
+        rows=['A','B'].map(t=>({t,sum:tsum(t)})).sort((x,y)=>y.sum-x.sum).map(x=>{
+          const t=x.t;
           const mem=order.filter(n=>S.teams[n]===t);
-          const sum=mem.reduce((a,n)=>a+(S.scores[n]||0),0);
           const win=(S.over.winnerNames||[]).length&&mem.some(n=>S.over.winnerNames.includes(n));
-          return '<div class="rrow'+(win?' win':'')+'"><b>'+t+' 队</b><span>'+mem.map(n=>lab(n)).join(' / ')+'</span><span class="rs">'+sum+' 分</span></div>';
+          return '<div class="rrow'+(win?' win':'')+'"><b>'+t+' 队</b><span>'+mem.map(n=>lab(n)).join(' / ')+'</span><span class="rs">'+x.sum+' 分</span></div>';
         }).join('');
       } else {
         const sorted=order.slice().sort((a,b)=>(S.scores[b]||0)-(S.scores[a]||0));
@@ -258,11 +267,11 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
         const arr=msAchSummary[p]||[];
         if(!arr.length) return '';
         return '<div class="ra-row"><b>'+esc(lab(p))+'</b><span>'
-          +arr.map(a=>'<span style="color:'+(qC[a.quality]||'#2c3e50')+';font-weight:600;">🏅 '+esc(a.name)+'</span>').join('　')
+          +arr.map(a=>'<span style="color:'+(qC[a.quality]||'#2c3e50')+';font-weight:600;">'+esc(a.name)+'</span>').join('　')
           +'</span></div>';
       }).filter(Boolean).join('');
-      const achHtml=achRows?'<div class="res-ach"><div class="ra-title">🎖 本局成就</div>'+achRows+'</div>':'';
-      msg.innerHTML='<div class="res"><div class="res-title">🏁 游戏结束 · 最终结算</div><div class="res-rows">'+rows+'</div>'+achHtml+'<span class="res-btn" onclick="msExit()">返回房间</span></div>';
+      const achHtml=achRows?'<div class="res-ach"><div class="ra-title">本局成就</div>'+achRows+'</div>':'';
+      msg.innerHTML='<div class="res"><div class="res-title">游戏结束 · 最终结算</div><div class="res-rows">'+rows+'</div>'+achHtml+'<span class="res-btn" onclick="msExit()">返回房间</span></div>';
       if(!msOverTimer){
         msOverTimer=setTimeout(()=>{
           overBoardHidden=true;
