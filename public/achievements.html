@@ -119,7 +119,7 @@
         box.classList.toggle('over', over);
         if (over && !box.getAttribute('data-seeded')) {
           const one = inner.innerHTML;
-          inner.innerHTML = one + ' ' + one; // 滚完一轮先留一个空格，再接续下一轮
+          inner.innerHTML = one + ' ' + one + ' '; // 首尾各留空格：滚完一轮有间隔，且循环位置无缝对齐
           box.setAttribute('data-seeded', '1');
         }
       });
