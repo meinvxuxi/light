@@ -109,8 +109,17 @@
         <option value="bomber_streak4">世一炸·4连击（史诗）</option>
         <option value="bomber_streak5">世一炸·5连击+（传说）</option>
       </optgroup>
-      <optgroup label="更多游戏">
-        <option value="" disabled>暂无成就</option>
+      <optgroup label="扫雷（队友啊/年锦/另辟蹊径仅2v2触发）">
+        <option value="ms_god">神の扫雷（普通）</option>
+        <option value="ms_reverse">反向默契（普通）</option>
+        <option value="ms_mate">队友啊！队友（普通·2v2）</option>
+        <option value="ms_pepper">年锦来椒人（普通·2v2）</option>
+        <option value="ms_own">另辟蹊径（稀有·2v2）</option>
+        <option value="ms_penta">五连绝世（隐藏）</option>
+        <option value="ms_flag_c">C牌旗手（普通）</option>
+        <option value="ms_flag_b">B牌旗手（稀有）</option>
+        <option value="ms_flag_a">A牌旗手（稀有）</option>
+        <option value="ms_flag_s1">S1旗手（史诗）</option>
       </optgroup>
     </select>
     <button class="btn-trigger" onclick="triggerAchievement()">触发</button>
@@ -121,6 +130,9 @@
     <br>
     <button class="btn-trigger" onclick="triggerBomber('me')">💣 一键触发全部炸飞机成就（当前账号）</button>
     <button class="btn-trigger" onclick="triggerBomber('all')">💣 给四个测试号各触发全部炸飞机成就</button>
+    <br>
+    <button class="btn-trigger" onclick="triggerMs('me')">🚩 一键触发全部扫雷成就（当前账号）</button>
+    <button class="btn-trigger" onclick="triggerMs('all')">🚩 给四个测试号各触发全部扫雷成就</button>
     <br>
     <button class="btn-trigger" onclick="guestAchDemo()">📢 模拟游客稀有成就 → 游客留言板</button>
     <br>
@@ -220,6 +232,18 @@
       socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
         if (res && res.success) {
           log(`✅ 已批量触发 ${res.count} 条炸飞机成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
+        } else {
+          log('❌ ' + ((res && res.msg) || '触发失败'));
+        }
+      });
+    }
+
+    function triggerMs(scope) {
+      const ids = ['ms_god', 'ms_reverse', 'ms_mate', 'ms_pepper', 'ms_own', 'ms_penta', 'ms_flag_c', 'ms_flag_b', 'ms_flag_a', 'ms_flag_s1'];
+      const targets = scope === 'all' ? ['测试者1', '测试者2', '测试者3', '测试者4'] : undefined;
+      socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
+        if (res && res.success) {
+          log(`✅ 已批量触发 ${res.count} 条扫雷成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
         } else {
           log('❌ ' + ((res && res.msg) || '触发失败'));
         }

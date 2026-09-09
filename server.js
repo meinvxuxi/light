@@ -259,6 +259,7 @@ let msBestBoard = new Map();     // 玩家名 -> 个人单场最高分
 let msHistory = [];              // 个人分数流水（可重复上榜）
 let msTeamBest = new Map();      // 组合键(玩家A\u0001玩家B) -> 该组合最好合计分
 let msTeamHistory = [];          // 组队合计流水
+let msFlagTotals = new Map();    // 玩家名 -> 累计正确插旗数（旗手 C/B/A/S1 成就）
 function recordBomberSparks(g) {
   if (!g) return;
   const ts = Date.now();
@@ -306,6 +307,17 @@ function recordMinesweeperGame(g, room) {
     msHistory.push({ name: n, score, mode: g.mode, partner, ts });
     if (score > (msBestBoard.get(n) || 0)) msBestBoard.set(n, score);
   }
+  // 旗手累计：每局每人正确插旗数汇入终身累计，跨档才解锁（避免反复播报低档）
+  for (const n of g.playerOrder) {
+    const hits = g.flagHits[n] || 0;
+    if (!hits) continue;
+    const prev = msFlagTotals.get(n) || 0;
+    const total = prev + hits;
+    msFlagTotals.set(n, total);
+    for (const [id, th] of MS_FLAG_LEVELS) {
+      if (prev < th && total >= th) announceAchievement(g, g.roomId, n, id);
+    }
+  }
   if (msHistory.length > 300) msHistory = msHistory.slice(-300);
   // 组队：按队伍记合计分
   if (g.mode === 'team' && g.teams) {
@@ -347,6 +359,7 @@ function saveBoardStats() {
       msHistory: msHistory,
       msTeamBest: Object.fromEntries(msTeamBest),
       msTeamHistory: msTeamHistory,
+      msFlagTotals: Object.fromEntries(msFlagTotals),
       yHist: highHist, dHist: drawingHist, bHist: bomberHist
     }, null, 2), 'utf8');
   } catch (e) { console.error('❌ 排行榜写入失败：', e.message); }
@@ -361,6 +374,7 @@ function loadBoardStats() {
     if (Array.isArray(o.msHistory)) msHistory = o.msHistory;
     if (o.msTeamBest) msTeamBest = new Map(Object.entries(o.msTeamBest));
     if (Array.isArray(o.msTeamHistory)) msTeamHistory = o.msTeamHistory;
+    if (o.msFlagTotals) msFlagTotals = new Map(Object.entries(o.msFlagTotals));
     if (Array.isArray(o.yHist)) highHist = o.yHist;
     if (Array.isArray(o.dHist)) drawingHist = o.dHist;
     if (Array.isArray(o.bHist)) bomberHist = o.bHist;
@@ -543,9 +557,23 @@ const ACHIEVEMENTS = {
   bomber_streak2:   { name: '世一炸·2连击',      quality: 'common', game: 'bomber', base: '世一炸', group: 'bomber_streak' },
   bomber_streak3:   { name: '世一炸·3连击',      quality: 'rare',   game: 'bomber', base: '世一炸', group: 'bomber_streak' },
   bomber_streak4:   { name: '世一炸·4连击',      quality: 'epic',   game: 'bomber', base: '世一炸', group: 'bomber_streak' },
-  bomber_streak5:   { name: '世一炸·5连击+',     quality: 'legend', game: 'bomber', base: '世一炸', group: 'bomber_streak' }
+  bomber_streak5:   { name: '世一炸·5连击+',     quality: 'legend', game: 'bomber', base: '世一炸', group: 'bomber_streak' },
+  // ===== 扫雷（minesweeper）成就：规格见 minesweeper.md §十八 =====
+  // 仅 2v2 可触发：ms_mate（需队友同格）、ms_pepper（组队获胜且个人高于队友≥30）、ms_own（组队局全程不撞任何人）
+  ms_god:      { name: '神の扫雷',      quality: 'common', game: 'minesweeper' },
+  ms_reverse:  { name: '反向默契',      quality: 'common', game: 'minesweeper' },
+  ms_mate:     { name: '队友啊！队友',  quality: 'common', game: 'minesweeper' },
+  ms_pepper:   { name: '年锦来椒人',    quality: 'common', game: 'minesweeper' },
+  ms_own:      { name: '另辟蹊径',      quality: 'rare',   game: 'minesweeper' },
+  ms_penta:    { name: '五连绝世',      quality: 'hidden', game: 'minesweeper' },
+  ms_flag_c:   { name: 'C牌旗手',       quality: 'common', game: 'minesweeper', base: '旗手', group: 'ms_flag' },
+  ms_flag_b:   { name: 'B牌旗手',       quality: 'rare',   game: 'minesweeper', base: '旗手', group: 'ms_flag' },
+  ms_flag_a:   { name: 'A牌旗手',       quality: 'rare',   game: 'minesweeper', base: '旗手', group: 'ms_flag' },
+  ms_flag_s1:  { name: 'S1旗手',        quality: 'epic',   game: 'minesweeper', base: '旗手', group: 'ms_flag' }
 };
 const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
+// 旗手升级档位（累计正确插旗数）：同组 id 靠品质最高档展示
+const MS_FLAG_LEVELS = [['ms_flag_s1', 1000], ['ms_flag_a', 500], ['ms_flag_b', 100], ['ms_flag_c', 10]];
 // 成就“组”：同一可升级成就在总览/结算里只算一个（如世一炸 = 一个组，4 档分拆展示）
 function achGroupOf(id) { const m = ACHIEVEMENTS[id]; return (m && m.group) || id; }
 function achBaseNameOf(id) { const m = ACHIEVEMENTS[id]; return (m && m.base) || (m && m.name) || id; }
@@ -1093,11 +1121,13 @@ function msInit(room, names, teamMode) {
     teams = {};
     order.forEach(n => teams[n] = arr.indexOf(n) % 2 === 0 ? 'A' : 'B');
   }
+  const achCtx = {};
+  order.forEach(n => { achCtx[n] = { rev: 0, mate: 0, pen: 0, noPen: true, share: false }; });
   return {
     roomId: room.roomId, playerOrder: order, mode: teamMode ? 'team' : 'solo',
     phase: 'pick', round: 1, mines: bd.mines, counts: bd.counts,
     revealed: new Set(), flagged: new Set(), exploded: new Set(), handledMine: new Set(),
-    picks: {}, scores: {}, teams, over: null, last: null, roundTimer: null, cancelVotes: [], flagHits: {}
+    picks: {}, scores: {}, teams, over: null, last: null, roundTimer: null, cancelVotes: [], flagHits: {}, achCtx
   };
 }
 function msRemainingMines(g) { return MS_MINES - g.handledMine.size; }
@@ -1117,6 +1147,8 @@ function msSettle(g) {
   }
   const deltas = {};
   const results = [];
+  const cnt = {};
+  for (const a of actions) cnt[a.key] = (cnt[a.key] || 0) + 1;
   for (const a of actions) {
     const n = a.name; const k = a.key; const isMine = g.mines.has(k);
     let delta = 0, ok = false;
@@ -1145,6 +1177,24 @@ function msSettle(g) {
     g.scores[n] = (g.scores[n] || 0) + delta;
     results.push({ name: n, r: a.r, c: a.c, op: a.op, ok, delta });
   }
+  // —— 每轮揭晓后刷新成就上下文（撞格 / 队友同格 / 连续扣分 / 全程无扣分）——
+  for (const n of g.playerOrder) {
+    const act = actions.find(x => x.name === n);
+    if (!act) continue;
+    const st = (g.achCtx[n] = g.achCtx[n] || { rev: 0, mate: 0, pen: 0, noPen: true, share: false });
+    const d = deltas[n] || 0;
+    if (d < 0) { st.noPen = false; st.pen++; } else { st.pen = 0; }
+    if (st.pen >= 5) announceAchievement(g, g.roomId, n, 'ms_penta'); // 五连绝世（隐藏）
+    const shared = (cnt[act.key] || 0) > 1;
+    if (shared) { st.rev++; st.share = true; } else { st.rev = 0; }
+    if (st.rev >= 3) announceAchievement(g, g.roomId, n, 'ms_reverse'); // 连续三轮与他人撞格
+    const mate = (g.mode === 'team') ? msTeammate(g, n) : null;
+    if (mate) {
+      const ma = actions.find(x => x.name === mate);
+      if (ma && ma.key === act.key) { st.mate++; if (st.mate >= 2) announceAchievement(g, g.roomId, n, 'ms_mate'); }
+      else st.mate = 0;
+    } else { st.mate = 0; }
+  }
   g.last = results;
   g.picks = {};
   if (msRemainingMines(g) <= 0) return msFinish(g);
@@ -1167,6 +1217,22 @@ function msFinish(g) {
     else winnerNames = [];
   }
   g.over = { mode: g.mode, teams: g.teams, winnerNames, scores: g.scores };
+  // —— 对局结束成就（逐轮上下文已就绪；范围规则见 minesweeper.md）——
+  if (g.achCtx) {
+    for (const n of g.playerOrder) {
+      const st = g.achCtx[n];
+      if (!st) continue;
+      if (st.noPen) announceAchievement(g, g.roomId, n, 'ms_god'); // 单局自己从未扣分
+      if (g.mode === 'team') {
+        if (!st.share) announceAchievement(g, g.roomId, n, 'ms_own'); // 2v2 限定：全程没和任何人（含队友）撞格
+        const mate = msTeammate(g, n);
+        if (mate && winnerNames.length && winnerNames.includes(n)) {
+          const diff = (g.scores[n] || 0) - (g.scores[mate] || 0);
+          if (diff >= 30) announceAchievement(g, g.roomId, n, 'ms_pepper'); // 队伍获胜且个人比队友高 ≥30
+        }
+      }
+    }
+  }
   return g.over;
 }
 function bmsView(g, name, room) {
