@@ -45,6 +45,10 @@
   </div>
   <div class="wrap">
     <div class="lb-bar">
+      <div class="seg" id="subMode">
+        <span class="on" id="subBest" onclick="setMode('best')">最佳</span>
+        <span id="subScore" onclick="setMode('score')">分数</span>
+      </div>
       <div class="tabs" id="gameTabs">
         <span class="lb-tab active" id="tabBoard" onclick="switchTab('board')">快艇榜</span>
         <span class="lb-tab" id="tabDrawing" onclick="switchTab('drawing')">花菜榜</span>
@@ -52,10 +56,6 @@
         <span class="lb-tab" id="tabMsP" onclick="switchTab('msP')">扫雷·个人</span>
         <span class="lb-tab" id="tabMsT" onclick="switchTab('msT')">扫雷·组队</span>
         <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
-      </div>
-      <div class="seg" id="subMode">
-        <span class="on" id="subBest" onclick="setMode('best')">最佳</span>
-        <span id="subScore" onclick="setMode('score')">分数</span>
       </div>
     </div>
     <div class="lb-list" id="lbList"><div class="empty">加载中…</div></div>
