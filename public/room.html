@@ -214,6 +214,12 @@
       <div id="skipOfflineWrap" style="display:none;text-align:center;margin-top:8px;font-size:.8rem;color:#6c757d;">
         <label style="cursor:pointer;"><input type="checkbox" id="skipOfflineCk" onchange="changeSkipOffline()"> 离线自动跳过</label>
       </div>
+      <div id="msModeWrap" style="display:none;text-align:center;margin-top:8px;font-size:.8rem;color:#6c757d;">
+        赛制：<select id="msModeSel" onchange="changeMsMode()">
+          <option value="0">个人赛</option>
+          <option value="1">2v2 组队（需 4 人）</option>
+        </select>
+      </div>
     </div>
 
     <div class="controls">
@@ -257,7 +263,7 @@
 
     const params = new URLSearchParams(window.location.search);
     const gameName = params.get('game') || 'yahtzee';
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷' };
     const isDrawing = gameName === 'drawing'; // 画猜接龙固定 4 人，无人数设置
     document.getElementById('roomTitle').textContent = (GAME_LABEL[gameName] || '游戏') + ' · 房间';
 
@@ -386,6 +392,12 @@
       if (skWrap) skWrap.style.display = (gameName === 'bomber' && roomState.hostName === myName) ? 'block' : 'none';
       const skCk = document.getElementById('skipOfflineCk');
       if (skCk && roomState.hostName === myName) skCk.checked = !!roomState.skipOffline;
+      const msw = document.getElementById('msModeWrap');
+      const msSel = document.getElementById('msModeSel');
+      if (msw && msSel) {
+        msw.style.display = (gameName === 'minesweeper' && roomState.hostName === myName) ? 'block' : 'none';
+        msSel.value = roomState.msTeam ? '1' : '0';
+      }
 
       const seatsDiv = document.getElementById('seats');
       seatsDiv.innerHTML = '';
@@ -531,6 +543,19 @@
       }, 1000);
     }
 
+    function changeMsMode() {
+      const v = document.getElementById('msModeSel').value === '1';
+      const max = v ? 4 : (parseInt((document.getElementById('maxPlayersSelect') || {}).value || '2') || 2);
+      if (v) {
+        const el = document.getElementById('maxPlayersSelect');
+        if (el) el.value = '4';
+        serverMaxPlayers = 4;
+      }
+      socket.emit('change_settings', { maxPlayers: max, msTeam: v }, (res) => {
+        if (res && res.success === false && res.msg) showToast('设置：' + res.msg);
+      });
+    }
+
     function changeSkipOffline() {
       const on = document.getElementById('skipOfflineCk') && document.getElementById('skipOfflineCk').checked;
       const max = parseInt((document.getElementById('maxPlayersSelect') || {}).value || '4') || serverMaxPlayers;
@@ -558,6 +583,10 @@
       }
       if (!allReady) {
         showToast('😤 有玩家未准备 (#`O′)，等大家都点"✅ 准备"再开始');
+        return;
+      }
+      if (gameName === 'minesweeper' && latestRoom && latestRoom.msTeam && playerCount < 4) {
+        showToast('2v2 组队需要 4 名玩家');
         return;
       }
 

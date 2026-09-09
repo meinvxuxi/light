@@ -106,6 +106,16 @@ const GAME_ROOMS = {
     spectators: [],
     playerMap: new Map(),
     leaveTimers: {}
+  },
+  minesweeper: {
+    roomId: 'minesweeper_001',
+    gameType: 'minesweeper',
+    hostName: null,
+    maxPlayers: 4,
+    seats: { 1: null, 2: null, 3: null, 4: null },
+    spectators: [],
+    playerMap: new Map(),
+    leaveTimers: {}
   }
 };
 
@@ -655,9 +665,10 @@ const GAME_URL_MAP = {
   yahtzee: '/yahtzee.html',
   light: '/light.html',
   drawing: '/drawing.html',
-  bomber: '/bomber.html'
+  bomber: '/bomber.html',
+  minesweeper: '/minesweeper.html'
 };
-const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机' };
+const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷' };
 const ACH_Q_LABEL = { common: '普通', rare: '稀有', epic: '史诗', legend: '传说', hidden: '隐藏' };
 
 const yahtzeeGames = {};
@@ -966,6 +977,157 @@ function bmbAttack(g, room, attacker, target, r, c) {
   bmbBroadcast(room, g);
   return res;
 }
+// ======================== 扫雷（minesweeper）核心 ========================
+const minesweeperGames = {}; // roomId -> 对局
+const msAtGame = new Map();   // playerName -> 当前正打开扫雷游戏页的 socket.id
+const MS_SIZE = 8;
+const MS_MINES = 26;
+const MS_BONUS = { 1: 6, 2: 3, 3: 2, 4: 1 };
+function msKey(r, c) { return r + ',' + c; }
+// 动态生成：8×8 随机 26 雷，保证所有非雷格周围雷数 >=1（无 0 格）
+function msGenBoard() {
+  for (let t = 0; t < 300; t++) {
+    const mines = new Set();
+    while (mines.size < MS_MINES) mines.add(msKey(1 + Math.floor(Math.random() * MS_SIZE), 1 + Math.floor(Math.random() * MS_SIZE)));
+    const counts = {};
+    let ok = true;
+    for (let r = 1; r <= MS_SIZE; r++) {
+      for (let c = 1; c <= MS_SIZE; c++) {
+        const k = msKey(r, c);
+        if (mines.has(k)) { counts[k] = -1; continue; }
+        let n = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          const rr = r + dr, cc = c + dc;
+          if (rr >= 1 && rr <= MS_SIZE && cc >= 1 && cc <= MS_SIZE && mines.has(msKey(rr, cc))) n++;
+        }
+        if (n === 0) { ok = false; break; }
+        counts[k] = n;
+      }
+      if (!ok) break;
+    }
+    if (ok) return { mines, counts };
+  }
+  // 极端兜底：全雷外圈=1 的构造几乎不可能失败，失败则放 64-28 非雷? 简单重试
+  return msGenBoard();
+}
+function msInit(room, names, teamMode) {
+  const bd = msGenBoard();
+  const order = names.slice();
+  let teams = null;
+  if (teamMode) {
+    const arr = order.slice();
+    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    teams = {};
+    order.forEach(n => teams[n] = arr.indexOf(n) % 2 === 0 ? 'A' : 'B');
+  }
+  return {
+    roomId: room.roomId, playerOrder: order, mode: teamMode ? 'team' : 'solo',
+    phase: 'pick', round: 1, mines: bd.mines, counts: bd.counts,
+    revealed: new Set(), flagged: new Set(), exploded: new Set(), handledMine: new Set(),
+    picks: {}, scores: {}, teams, over: null, last: null, roundTimer: null, cancelVotes: []
+  };
+}
+function msRemainingMines(g) { return MS_MINES - g.handledMine.size; }
+function msSettle(g) {
+  const actions = [];      // {name,key,r,c,op}
+  const openSafeAt = {}, flagMineAt = {};
+  for (const n of g.playerOrder) {
+    const p = g.picks[n]; if (!p) continue;
+    const k = msKey(p.r, p.c);
+    actions.push({ name: n, r: p.r, c: p.c, key: k, op: p.op });
+    const isMine = g.mines.has(k);
+    if (p.op === 'open') {
+      if (!isMine) openSafeAt[k] = (openSafeAt[k] || 0) + 1;
+    } else {
+      if (isMine) flagMineAt[k] = (flagMineAt[k] || 0) + 1;
+    }
+  }
+  const deltas = {};
+  const results = [];
+  for (const a of actions) {
+    const n = a.name; const k = a.key; const isMine = g.mines.has(k);
+    let delta = 0, ok = false;
+    if (a.op === 'open') {
+      if (isMine) {
+        if (!g.exploded.has(k)) { g.exploded.add(k); g.handledMine.add(k); }
+        delta = -5;
+      } else {
+        if (!g.revealed.has(k)) g.revealed.add(k);
+        ok = true;
+        delta = MS_BONUS[openSafeAt[k]] || 1;
+      }
+    } else {
+      if (isMine) {
+        if (!g.flagged.has(k)) g.flagged.add(k);
+        if (!g.handledMine.has(k)) g.handledMine.add(k);
+        ok = true;
+        delta = MS_BONUS[flagMineAt[k]] || 1;
+      } else {
+        if (!g.flagged.has(k)) g.flagged.add(k);
+        delta = -5;
+      }
+    }
+    deltas[n] = (deltas[n] || 0) + delta;
+    g.scores[n] = (g.scores[n] || 0) + delta;
+    results.push({ name: n, r: a.r, c: a.c, op: a.op, ok, delta });
+  }
+  g.last = results;
+  g.picks = {};
+  if (msRemainingMines(g) <= 0) return msFinish(g);
+  g.phase = 'result';
+  if (g.roundTimer) clearTimeout(g.roundTimer);
+  g.roundTimer = setTimeout(() => { g.round++; g.phase = 'pick'; bmsBroadcastFor(g.roomId); }, 4000);
+}
+function msFinish(g) {
+  g.phase = 'over';
+  const order = g.playerOrder.slice();
+  let winnerNames = [];
+  if (g.mode === 'solo') {
+    const best = Math.max(...order.map(n => g.scores[n] || 0));
+    winnerNames = order.filter(n => (g.scores[n] || 0) === best);
+  } else {
+    const sum = nm => order.filter(x => g.teams[x] === nm).reduce((a, x) => a + (g.scores[x] || 0), 0);
+    const sa = sum('A'), sb = sum('B');
+    const winTeam = sa > sb ? 'A' : (sb > sa ? 'B' : '');
+    if (winTeam) winnerNames = order.filter(x => g.teams[x] === winTeam);
+    else winnerNames = [];
+  }
+  g.over = { mode: g.mode, teams: g.teams, winnerNames, scores: g.scores };
+  return g.over;
+}
+function bmsView(g, name) {
+  const revealed = [], flagged = [], exploded = [];
+  for (const k of g.revealed) { const [r, c] = k.split(',').map(Number); revealed.push({ r, c, num: g.counts[k] }); }
+  for (const k of g.flagged) { const [r, c] = k.split(',').map(Number); flagged.push({ r, c }); }
+  for (const k of g.exploded) { const [r, c] = k.split(',').map(Number); exploded.push({ r, c }); }
+  return {
+    phase: g.phase, round: g.round, mode: g.mode, you: name,
+    playerOrder: g.playerOrder.slice(),
+    size: MS_SIZE, mineTotal: MS_MINES, remaining: msRemainingMines(g),
+    revealed, flagged, exploded,
+    scores: g.scores, teams: g.teams, myPick: g.picks[name] || null,
+    picks: g.phase === 'pick' ? g.picks : {}, // 选后即全员可见表情A（待揭晓）
+    last: g.last || null, over: g.over || null, cancelVotes: (g.cancelVotes || []).slice()
+  };
+}
+function bmsBroadcast(room, g) {
+  g.playerOrder.forEach(n => {
+    const sid = room.playerMap.get(n);
+    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('minesweeper_state', bmsView(g, n));
+  });
+}
+function bmsBroadcastFor(roomId) {
+  const room = GAME_ROOMS.minesweeper;
+  const g = minesweeperGames[roomId];
+  if (room && g && g.roomId === roomId) bmsBroadcast(room, g);
+}
+function bmsCancel(room, g, deleteNow) {
+  if (g.roundTimer) clearTimeout(g.roundTimer);
+  delete minesweeperGames[room.roomId];
+  io.to(room.roomId).emit('minesweeper_cancel');
+  Object.keys(room.seats).forEach(sid => { if (room.seats[sid]) room.seats[sid].ready = false; });
+  broadcastRoom(room);
+}
 const drawingAtGame = new Map(); // playerName -> 当前正打开“画猜接龙游戏页”的 socket.id（用于判定谁真正在对局内）
 const lobbyViewers = new Map(); // playerName -> 正在大厅页的 socket.id（表情包跨页互发用）
 const bomberAtGame = new Map(); // playerName -> 正在炸飞机游戏页的 socket.id（离开/返回与取消判定）
@@ -974,6 +1136,7 @@ function activeGameOf(room) {
   if (!room) return null;
   if (room.gameType === 'drawing') return drawingGames[room.roomId] || null;
   if (room.gameType === 'bomber') return bomberGames[room.roomId] || null;
+  if (room.gameType === 'minesweeper') return minesweeperGames[room.roomId] || null;
   return yahtzeeGames[room.roomId] || null;
 }
 
@@ -1308,7 +1471,7 @@ function syncRoomState(room, selfName) {
   const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === selfName)?.[0] || null;
   const nowGame = activeGameOf(room);
   const data = {
-    roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers, skipOffline: !!room.skipOffline,
+    roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers, skipOffline: !!room.skipOffline, msTeam: !!room.msTeam,
     seats: room.seats, spectators: room.spectators, mySeat,
     myReady: mySeat ? room.seats[mySeat].ready : false,
     gameStarted: !!nowGame,
@@ -1329,7 +1492,7 @@ function broadcastRoom(room) {
     roomId: room.roomId,
     hostName: room.hostName,
     maxPlayers: room.maxPlayers,
-    skipOffline: !!room.skipOffline,
+    skipOffline: !!room.skipOffline, msTeam: !!room.msTeam,
     seats: room.seats,
     spectators: room.spectators,
     gameStarted,
@@ -1343,7 +1506,7 @@ function broadcastRoom(room) {
         roomId: room.roomId,
         hostName: room.hostName,
         maxPlayers: room.maxPlayers,
-        skipOffline: !!room.skipOffline,
+        skipOffline: !!room.skipOffline, msTeam: !!room.msTeam,
         seats: room.seats,
         spectators: room.spectators,
         mySeat,
@@ -1379,6 +1542,12 @@ function resetRoom(room) {
     delete bomberGames[room.roomId];
     console.log(`🔄 房间 ${room.roomId} 的炸飞机已清除`);
   }
+  if (minesweeperGames[room.roomId]) {
+    const mg = minesweeperGames[room.roomId];
+    if (mg.roundTimer) clearTimeout(mg.roundTimer);
+    delete minesweeperGames[room.roomId];
+    console.log(`🔄 房间 ${room.roomId} 的扫雷已清除`);
+  }
   if (gameEndTimers[room.roomId]) {
     clearTimeout(gameEndTimers[room.roomId]);
     delete gameEndTimers[room.roomId];
@@ -1409,6 +1578,20 @@ function removeOfflinePlayer(room, playerName, force) {
   }
   // 炸飞机：对局进行中同样“离线只标记不除名”，座位/对局保留，可重进继续
   if (room.gameType === 'bomber' && bomberGames[room.roomId]) {
+    if (room.leaveTimers[playerName]) {
+      clearTimeout(room.leaveTimers[playerName]);
+      delete room.leaveTimers[playerName];
+    }
+    const allOff = [...room.playerMap.keys()].every(n => {
+      const hb = userLastHeartbeat.get(n);
+      return !hb || (Date.now() - hb) > HEARTBEAT_TIMEOUT;
+    });
+    if (allOff) resetRoom(room);
+    else broadcastRoom(room);
+    return;
+  }
+  // 扫雷：同熟人局规则——离线不除名、原地等待，可重连继续
+  if (room.gameType === 'minesweeper' && minesweeperGames[room.roomId]) {
     if (room.leaveTimers[playerName]) {
       clearTimeout(room.leaveTimers[playerName]);
       delete room.leaveTimers[playerName];
@@ -1995,7 +2178,7 @@ io.on('connection', (socket) => {
     broadcastRoom(room);
   });
 
-  socket.on('change_settings', ({ maxPlayers, skipOffline }, cb) => {
+  socket.on('change_settings', ({ maxPlayers, skipOffline, msTeam }, cb) => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
     let room = null;
@@ -2015,6 +2198,8 @@ io.on('connection', (socket) => {
 
     // 离线是否自动跳过：默认 false（不跳），仅在房间设置勾选后生效
     if (typeof skipOffline === 'boolean') room.skipOffline = skipOffline;
+    // 扫雷赛制：个人赛/2v2
+    if (typeof msTeam === 'boolean') room.msTeam = msTeam;
 
     if (maxPlayers != null) {
       const seatedCount = Object.values(room.seats).filter(Boolean).length;
@@ -2044,7 +2229,7 @@ io.on('connection', (socket) => {
       if (!game) continue;
       const finished = room.gameType === 'drawing'
         ? game.stage === 'result'
-        : room.gameType === 'bomber'
+        : (room.gameType === 'bomber' || room.gameType === 'minesweeper')
           ? game.phase === 'over'
           : game.phase === 'finished';
       if (!finished) { cleared = false; break; } // 进行中：仅退出页面，对局保留
@@ -2055,6 +2240,10 @@ io.on('connection', (socket) => {
       delete yahtzeeGames[room.roomId];
       delete drawingGames[room.roomId];
       delete bomberGames[room.roomId];
+      if (minesweeperGames[room.roomId]) {
+        if (minesweeperGames[room.roomId].roundTimer) clearTimeout(minesweeperGames[room.roomId].roundTimer);
+        delete minesweeperGames[room.roomId];
+      }
       Object.keys(room.seats).forEach(seatId => {
         if (room.seats[seatId]) room.seats[seatId].ready = false;
       });
@@ -2549,6 +2738,7 @@ io.on('connection', (socket) => {
     const players = Object.values(room.seats).filter(Boolean);
     const needPlayers = room.gameType === 'drawing' ? 4 : 2; // 画猜接龙为四人版；其余默认至少 2 人
     if (players.length < needPlayers || !players.every(p => p.ready)) return;
+    if (room.gameType === 'minesweeper' && room.msTeam && players.length < 4) return; // 2v2 固定 4 人
     if (room.gameType === 'yahtzee') {
       const playerNames = players.map(p => p.name);
       initYahtzeeGame(room.roomId, playerNames);
@@ -2558,12 +2748,17 @@ io.on('connection', (socket) => {
     } else if (room.gameType === 'bomber') {
       const playerNames = players.map(p => p.name);
       bomberGames[room.roomId] = bmbMakeGame(room, playerNames);
+    } else if (room.gameType === 'minesweeper') {
+      const playerNames = players.map(p => p.name);
+      minesweeperGames[room.roomId] = msInit(room, playerNames, room.msTeam === true);
     }
     broadcastRoom(room);
     if (room.gameType === 'drawing') {
       dgBroadcast(room);
     } else if (room.gameType === 'bomber') {
       bmbBroadcast(room, bomberGames[room.roomId]);
+    } else if (room.gameType === 'minesweeper') {
+      bmsBroadcast(room, minesweeperGames[room.roomId]);
     } else {
       broadcastYahtzeeState(room.roomId);
     }
@@ -3451,6 +3646,83 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, res: outcome });
   });
 
+  // ========== 扫雷（minesweeper）事件 ==========
+  socket.on('minesweeper_enter', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    msAtGame.set(name, socket.id);
+    const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'minesweeper') : null;
+    const g = room && minesweeperGames[room.roomId];
+    if (room && g) bmsBroadcast(room, g);
+  });
+  socket.on('minesweeper_pull', (cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'minesweeper') : null;
+    const g = room && minesweeperGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false }); return; }
+    if (cb) cb({ success: true, ...bmsView(g, name) });
+  });
+  socket.on('minesweeper_pick', ({ r, c, op }, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? Object.values(GAME_ROOMS).find(rr => rr.playerMap.has(name) && rr.gameType === 'minesweeper') : null;
+    const g = room && minesweeperGames[room.roomId];
+    if (!room || !g || g.phase !== 'pick') { if (cb) cb({ success: false, msg: '当前不能选择格子' }); return; }
+    if (!g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '你不在本局中' }); return; }
+    const rr = Number(r), cc = Number(c);
+    if (!Number.isInteger(rr) || !Number.isInteger(cc) || rr < 1 || rr > MS_SIZE || cc < 1 || cc > MS_SIZE) { if (cb) cb({ success: false, msg: '格子无效' }); return; }
+    if (op !== 'open' && op !== 'flag') { if (cb) cb({ success: false, msg: '操作类型无效' }); return; }
+    const k = msKey(rr, cc);
+    if (g.revealed.has(k) || g.flagged.has(k) || g.exploded.has(k)) { if (cb) cb({ success: false, msg: '该格子不可操作' }); return; }
+    g.picks[name] = { r: rr, c: cc, op };
+    bmsBroadcast(room, g);
+    const allPicked = g.playerOrder.every(n => g.picks[n]);
+    if (allPicked) {
+      msSettle(g);
+      bmsBroadcast(room, g);
+      if (g.phase === 'over') {
+        if (!gameEndTimers[room.roomId]) {
+          gameEndTimers[room.roomId] = setTimeout(() => {
+            if (minesweeperGames[room.roomId] === g) delete minesweeperGames[room.roomId];
+            if (minesweeperGames[room.roomId] && minesweeperGames[room.roomId].roundTimer) clearTimeout(minesweeperGames[room.roomId].roundTimer);
+            delete gameEndTimers[room.roomId];
+            Object.keys(room.seats).forEach(seatId => { if (room.seats[seatId]) room.seats[seatId].ready = false; });
+            broadcastRoom(room);
+            console.log(`🔄 扫雷 ${room.roomId} 已结算，房间已复位`);
+          }, 5000);
+        }
+      }
+    }
+    if (cb) cb({ success: true });
+  });
+  // 取消对局：沿用熟人局全员同意（可撤回），只统计真正在场玩家
+  socket.on('minesweeper_cancel_vote', ({ revoke } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? Object.values(GAME_ROOMS).find(rr => rr.playerMap.has(name) && rr.gameType === 'minesweeper') : null;
+    const g = room && minesweeperGames[room.roomId];
+    if (!room || !g || !g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const onlineNames = g.playerOrder.filter(n => {
+      const sid = room.playerMap.get(n);
+      const sid2 = msAtGame.get(n);
+      const hb = userLastHeartbeat.get(n);
+      return sid && sid === sid2 && io.sockets.sockets.has(sid) && hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT;
+    });
+    if (revoke) {
+      g.cancelVotes = (g.cancelVotes || []).filter(n => n !== name);
+      bmsBroadcast(room, g);
+      if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+      return;
+    }
+    g.cancelVotes = g.cancelVotes || [];
+    if (!g.cancelVotes.includes(name)) g.cancelVotes.push(name);
+    if (onlineNames.length && g.cancelVotes.length >= onlineNames.length) {
+      bmsCancel(room, g);
+      if (cb) cb({ success: true, cancelled: true });
+      return;
+    }
+    bmsBroadcast(room, g);
+    if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+  });
+
   socket.on('disconnect', () => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
@@ -3461,6 +3733,7 @@ io.on('connection', (socket) => {
     if (lobbyViewers.get(name) === socket.id) lobbyViewers.delete(name);
     // 离开炸飞机游戏页
     if (bomberAtGame.get(name) === socket.id) bomberAtGame.delete(name);
+    if (msAtGame.get(name) === socket.id) msAtGame.delete(name);
 
     // 默契空间：离开会话（断线兜底）
     const syncKey = socketSyncKey.get(socket.id);

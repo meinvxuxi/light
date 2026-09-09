@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>扫雷</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-serif;padding:10px;}
+.head{max-width:560px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;font-size:.9rem;}
+.head a{color:#4a90d9;cursor:pointer;font-weight:600;margin-left:10px;}
+.wrap{max-width:560px;margin:0 auto;}
+.info{display:flex;justify-content:space-between;gap:8px;margin:8px 0 6px;font-size:.85rem;color:#6b7a90;flex-wrap:wrap;}
+table.g{border-collapse:collapse;margin:0 auto;}
+table.g td{width:10vw;max-width:50px;height:10vw;max-height:50px;min-width:32px;min-height:32px;border:1px solid #c7ced6;text-align:center;vertical-align:middle;font-size:.9rem;position:relative;}
+td.un{background:#cdd5de;cursor:pointer;}
+td.rev{background:#fff;cursor:default;}
+td.flag{background:#fff3d9;color:#b8860b;}
+td.mine{background:#f3b6b6;cursor:default;}
+.mine-x{color:#c62828;font-weight:800;}
+.num1{color:#4a90d9}.num2{color:#2e8b57}.num3{color:#c62828}.num4{color:#6a3fbf}.num5{color:#8c332d}.num6{color:#0097a7}.num7{color:#2c3e50}.num8{color:#7f8fa6}
+.emjrow{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:1px;pointer-events:none;}
+.emj{border-radius:50%;width:34%;min-width:11px;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:rgba(255,255,255,.72);backdrop-filter:blur(3px);border:1px solid rgba(74,144,217,.55);}
+.emj.open{border-color:rgba(74,144,217,.75);}
+.emj.flagc{border-color:rgba(192,57,43,.75);}
+.emj img{width:92%;height:92%;object-fit:contain;}
+.emj .no{font-size:8px;font-weight:800;color:#2c3e50;}
+.float{position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;z-index:3;}
+.scoreline{display:flex;flex-wrap:wrap;justify-content:center;gap:5px 10px;margin:8px 0 4px;}
+.p{font-size:.82rem;padding:3px 10px;border-radius:14px;background:rgba(255,255,255,.72);border:1px solid rgba(74,144,217,.25);}
+.p.me{border-color:#4a90d9;font-weight:800;}
+.modebar{display:flex;justify-content:center;gap:10px;margin:8px 0;}
+.mode-opt{padding:5px 14px;border-radius:10px;border:1px solid #dfe3e8;background:#fff;cursor:pointer;font-size:.82rem;}
+.mode-opt.on{border-color:#4a90d9;background:rgba(74,144,217,.14);color:#2f6fb2;font-weight:700;}
+.stage{text-align:center;color:#6b7a90;font-size:.88rem;margin:4px 0;min-height:20px;}
+.go{color:#4a90d9;cursor:pointer;font-weight:600;}
+.reset{color:#9aa5b1;font-size:.78rem;cursor:pointer;margin-left:8px;}
+body.dyn-pink .mode-opt.on{border-color:#f06292;background:rgba(240,98,146,.14);color:#c73e79;}
+body.dyn-green .mode-opt.on{border-color:#6f9e63;background:rgba(111,158,99,.15);color:#4f8a45;}
+body.dyn-gold .mode-opt.on{border-color:#d6a843;background:rgba(214,168,67,.15);color:#a8791b;}
+body.dyn-red .mode-opt.on{border-color:#a6403a;background:rgba(166,64,58,.13);color:#8c332d;}
+</style>
+</head>
+<body>
+  <div class="head"><b>🧨 扫雷</b><span><a onclick="msCancel()">取消对局</a><a onclick="msExit()">返回房间</a></span></div>
+  <div class="wrap">
+    <div class="info"><span id="msStage">连接中…</span><span id="msMines">雷 26</span><span id="msRound"></span></div>
+    <div id="scoreLine"></div>
+    <div id="gridWrap"></div>
+    <div class="modebar" id="modeBar"></div>
+    <div class="stage" id="msMsg"></div>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  const myName = sessionStorage.getItem('playerName');
+  if (!myName) location.href='/index.html';
+  const socket = io();
+  const IS_T = sessionStorage.getItem('isTest') === 'true';
+  socket.on('connect', () => socket.emit('heartbeat', myName, IS_T, true));
+  setInterval(() => socket.emit('heartbeat', myName, IS_T, true), 10000);
+  const E = {
+    '玩家1': { A:'/assets/avatars/p1/bqb1/'+encodeURIComponent('绯绯狐-不要小瞧我和小浣熊的羁绊啊！.png'), B:'/assets/avatars/p1/bqb1/'+encodeURIComponent('绯绯狐-对的对的.png'), C:'/assets/avatars/p1/bqb1/'+encodeURIComponent('绯绯狐-不对不对.png') },
+    '玩家2': { A:'/assets/avatars/p2/dan2.png', B:'/assets/avatars/p2/dan3.png', C:'/assets/avatars/p2/dan5.png' },
+    '玩家3': { A:'/assets/avatars/p3/bqb3/'+encodeURIComponent('千夏-烧烤.png'), B:'/assets/avatars/p3/bqb3/'+encodeURIComponent('千夏-好耶！.png'), C:'/assets/avatars/p3/bqb3/'+encodeURIComponent('千夏-TAT！.png') },
+    '玩家4': { A:'/assets/avatars/p4/bqb4/'+encodeURIComponent('塔神-阅读.png'), B:'/assets/avatars/p4/bqb4/'+encodeURIComponent('塔神-完美之神.png'), C:'/assets/avatars/p4/bqb4/'+encodeURIComponent('塔神-感叹.png') }
+  };
+  function emo(n,t){ const e=E[n]; return e?e[t]:''; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  let S=null, flagMode=false, _dm={};
+  function dn(n){ return _dm[n]||n; }
+  function phaseText(){
+    if(!S) return '等待对局…';
+    const done=Object.keys(S.picks||{}).length;
+    if(S.phase==='over') return '游戏结束';
+    return S.phase==='result' ? '本轮揭晓，即将进入下一轮…' : (done?('第'+S.round+'轮：已提交 '+done+'/'+(S.playerOrder||[]).length):('第'+S.round+'轮：请选择格子'));
+  }
+  function cellHtml(r,c,size){
+    const revealed={},flagged={},exploded={};
+    (S.revealed||[]).forEach(x=>revealed[x.r+','+x.c]=x.num);
+    (S.flagged||[]).forEach(x=>flagged[x.r+','+x.c]=1);
+    (S.exploded||[]).forEach(x=>exploded[x.r+','+x.c]=1);
+    const k=r+','+c; let cls='un', inner='', em='';
+    if(exploded[k]){ cls='mine'; inner='<span class="mine-x">✕</span>'; }
+    else if(flagged[k]){ cls='flag'; inner='🚩'; }
+    else if(revealed[k]!=null){ cls='rev'; inner='<span class="num'+revealed[k]+'">'+revealed[k]+'</span>'; }
+    const stack=[];
+    (S.picks||{}); Object.keys(S.picks||{}).forEach(nm=>{ const p=S.picks[nm]; if(p.r===r&&p.c===c) stack.push({name:nm,op:p.op,img:emo(nm,'A'),last:false,delta:null}); });
+    (S.last||[]).forEach(a=>{ if(a.r===r&&a.c===c) stack.push({name:a.name,op:a.op,img:emo(a.name,a.ok?'B':'C'),last:true,delta:a.delta}); });
+    if(stack.length){
+      const chips=stack.map(x=>{
+        const ring=x.op==='open'?'open':'flagc';
+        const f=x.last&&x.delta!=null?'<span class="float" style="color:'+(x.delta>0?'#2e8b57':'#c62828')+';">'+(x.delta>0?'+':'')+x.delta+'</span>':'';
+        return '<span class="emj '+ring+'">'+(x.img?'<img src="'+x.img+'">':'<span class="no">'+esc(dn(x.name))+'</span>')+f+'</span>';
+      }).join('');
+      em='<span class="emjrow">'+chips+'</span>';
+    }
+    return '<td class="'+cls+'"'+(cls==='un'?' onclick="tapCell('+r+','+c+')"':'')+'>'+inner+em+'</td>';
+  }
+  function render(){
+    if(!S) return;
+    document.getElementById('msStage').textContent=phaseText();
+    document.getElementById('msRound').textContent='第'+S.round+'轮';
+    document.getElementById('msMines').textContent='雷 剩 '+S.remaining;
+    const order=S.playerOrder||Object.keys(S.scores||{});
+    document.getElementById('scoreLine').innerHTML=order.map(n=>{
+      const me=n===S.you, tt=S.teams&&S.teams[n];
+      return '<span class="p'+(me?' me':'')+'" style="'+(tt&&S.teams[S.you]&&tt===S.teams[S.you]?'border-color:rgba(240,147,43,.75);':'')+'">'+(tt?'['+tt+'] ':'')+esc(dn(n))+'：'+(S.scores[n]||0)+'</span>';
+    }).join('');
+    const mb=document.getElementById('modeBar');
+    mb.innerHTML='<span class="mode-opt'+(S.phase==='pick'?'':' mode-off')+'" onclick="toggleMode(false)">点击翻开</span><span class="mode-opt'+(S.phase==='pick'?'':' mode-off')+'" onclick="toggleMode(true)">插旗</span>';
+    const opts=mb.querySelectorAll('.mode-opt');
+    opts[0].classList.toggle('on',!flagMode);
+    opts[1].classList.toggle('on',flagMode);
+    const msg=document.getElementById('msMsg');
+    if(S.phase==='over'&&S.over){
+      const wn=S.over.winnerNames||[];
+      msg.innerHTML=(wn.length?('🏁 '+wn.map(n=>esc(dn(n))).join('、')+' 获胜！'):'🤝 平局')+'<span class="reset" onclick="msExit()">返回房间</span>';
+    } else if(S.phase==='result'){
+      msg.innerHTML='<span style="color:#2f8f46;">点击操作成功＋分 / 踩雷或错旗−5</span>';
+    } else msg.innerHTML='';
+    let g='<table class="g">';
+    for(let r=1;r<=S.size;r++){ g+='<tr>'; for(let c=1;c<=S.size;c++) g+=cellHtml(r,c,S.size); g+='</tr>'; }
+    document.getElementById('gridWrap').innerHTML=g+'</table>';
+  }
+  function toggleMode(f){ if(S&&S.phase!=='pick') return; flagMode=f; render(); }
+  function tapCell(r,c){ if(!S||S.phase!=='pick') return; socket.emit('minesweeper_pick',{r,c,op:flagMode?'flag':'open'},res=>{ if(res&&!res.success&&res.msg) toast(res.msg); }); }
+  function toast(m){ const e=document.getElementById('msMsg'); if(e) e.textContent=m; }
+  socket.on('minesweeper_state',s=>{ S=s; render(); });
+  socket.on('minesweeper_cancel',()=>location.href='/room.html?game=minesweeper');
+  socket.on('connect',()=>{ socket.emit('get_display_names',res=>{ if(res&&res.success){_dm=res.map;render();} }); setTimeout(()=>{ socket.emit('minesweeper_enter'); socket.emit('minesweeper_pull',res=>{ if(res&&res.success){S=res;render();} }); },400); });
+  socket.emit('get_display_names',res=>{ if(res&&res.success){_dm=res.map;} });
+  function msCancel(){ socket.emit('minesweeper_cancel_vote',{}); }
+  function msExit(){ location.href='/room.html?game=minesweeper'; }
+  setInterval(()=>{ if(!socket.connected) return; socket.emit('minesweeper_pull',res=>{ if(res&&res.success){ S=res; render(); } }); },2200);
+  </script>
+</body>
+</html>
