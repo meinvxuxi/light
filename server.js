@@ -237,18 +237,23 @@ function buildProfileByGame(name) {
 
 // ===== 快艇排行榜：单局最高分（正式/测试/游客的真实对局都会记录；开发期内存，重启清空） =====
 let highScoreBoard = new Map(); // 玩家名 -> 单局最高总分
+let highHist = [];               // 分数榜流水（每场每人，可重复）
 function recordHighScores(totals) {
   if (!totals) return;
+  const ts = Date.now();
   for (const [name, t] of Object.entries(totals)) {
     if (!t || typeof t.total !== 'number') continue;
     const cur = highScoreBoard.get(name) || 0;
     if (t.total > cur) highScoreBoard.set(name, t.total);
+    highHist.push({ name, total: t.total, ts });
   }
+  if (highHist.length > 300) highHist = highHist.slice(-300);
   saveBoardStats();
 }
 
 // ===== 炸飞机「烟火师」榜：单局炸毁机头数（= 单局击落飞机数） =====
 let bomberSparkBoard = new Map(); // 玩家名 -> 单局最高机头炸毁数
+let bomberHist = [];              // 烟火师分数流水（每局每人）
 // ===== 扫雷榜数据（含 个人/组队 + 最佳/分数流水，P3）=====
 let msBestBoard = new Map();     // 玩家名 -> 个人单场最高分
 let msHistory = [];              // 个人分数流水（可重复上榜）
@@ -256,10 +261,13 @@ let msTeamBest = new Map();      // 组合键(玩家A\u0001玩家B) -> 该组合
 let msTeamHistory = [];          // 组队合计流水
 function recordBomberSparks(g) {
   if (!g) return;
+  const ts = Date.now();
   for (const n of g.playerOrder) {
     const v = (g.stats && g.stats[n] && g.stats[n].shipsDown) || 0;
     if (v > 0 && v > (bomberSparkBoard.get(n) || 0)) bomberSparkBoard.set(n, v);
+    if (v > 0) bomberHist.push({ name: n, score: v, ts });
   }
+  if (bomberHist.length > 300) bomberHist = bomberHist.slice(-300);
   saveBoardStats();
 }
 function bomberRankOf(g, n) {
@@ -338,7 +346,8 @@ function saveBoardStats() {
       msBest: Object.fromEntries(msBestBoard),
       msHistory: msHistory,
       msTeamBest: Object.fromEntries(msTeamBest),
-      msTeamHistory: msTeamHistory
+      msTeamHistory: msTeamHistory,
+      yHist: highHist, dHist: drawingHist, bHist: bomberHist
     }, null, 2), 'utf8');
   } catch (e) { console.error('❌ 排行榜写入失败：', e.message); }
 }
@@ -352,20 +361,27 @@ function loadBoardStats() {
     if (Array.isArray(o.msHistory)) msHistory = o.msHistory;
     if (o.msTeamBest) msTeamBest = new Map(Object.entries(o.msTeamBest));
     if (Array.isArray(o.msTeamHistory)) msTeamHistory = o.msTeamHistory;
+    if (Array.isArray(o.yHist)) highHist = o.yHist;
+    if (Array.isArray(o.dHist)) drawingHist = o.dHist;
+    if (Array.isArray(o.bHist)) bomberHist = o.bHist;
     console.log(`📊 排行榜已加载：快艇 ${highScoreBoard.size} 条 / 花菜 ${drawingHighBoard.size} 条 / 烟火师 ${bomberSparkBoard.size} 条 / 扫雷个人 ${msBestBoard.size} 条 / 扫雷组队 ${msTeamBest.size} 条`);
   } catch (e) { /* 无文件/旧版：正常空榜 */ }
 }
 
 // ===== 画猜接龙（花菜）榜与战绩 =====
 let drawingHighBoard = new Map(); // 玩家名 -> 单局最高分
+let drawingHist = [];             // 花菜分数流水（每局每人）
 loadBoardStats();
 function recordDrawingHighScores(g) {
   if (!g) return;
+  const ts = Date.now();
   for (const n of g.order) {
     const p = g.points[n] || 0;
     const cur = drawingHighBoard.get(n) || 0;
     if (p > cur) drawingHighBoard.set(n, p);
+    drawingHist.push({ name: n, score: p, ts });
   }
+  if (drawingHist.length > 300) drawingHist = drawingHist.slice(-300);
   saveBoardStats();
 }
 // 画猜一局（进入 result）→ 写时光墙（只记正式玩家，带 MVP/罪魁票数）+ 花菜榜（所有参与者）
