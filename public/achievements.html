@@ -32,11 +32,11 @@
     .q-common { background: #eef0f3; color: #9e9e9e; }
     .q-hidden { background: #fdeceb; color: #d32f2f; }
     .p-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: .88rem; flex-wrap: nowrap; min-width: 0; }
-    .p-name { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; gap: 4px; }
+    .p-name { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; gap: 4px; overflow: hidden; }
     .p-name em { font-style: normal; font-size: .75rem; color: #9aa5b1; margin-left: 4px; }
-    .p-scroll { flex: 1 1 auto; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; align-self: center; }
-    .p-scroll-in { display: inline-block; white-space: nowrap; will-change: transform; }
-    .p-scroll.over .p-scroll-in { animation: ptagScroll 9s linear infinite; }
+    .p-tag-flow { display: inline-block; vertical-align: middle; flex: 0 1 auto; min-width: 0; max-width: min(132px, 36vw); overflow: hidden; }
+    .pf-in { display: inline-block; white-space: nowrap; vertical-align: middle; will-change: transform; }
+    .p-tag-flow.over .pf-in { animation: ptagScroll 9s linear infinite; }
     @keyframes ptagScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
     .p-count { flex: none; }
     .p-first { flex: none; font-size: .78rem; color: #9aa5b1; }
@@ -108,11 +108,11 @@
       tri.textContent = open ? '▾' : '▸';
     }
 
-    // 首触时间右侧固定：前面的名字/标签区太宽时整条横向轮播
+    // 首触时间右侧固定：只有超长标签（如旗手累计）内部文字横向轮播，名字/短标签不动不变
     function applyRowMarquee(root) {
       if (!root) return;
-      root.querySelectorAll('.p-scroll').forEach(box => {
-        const inner = box.querySelector('.p-scroll-in');
+      root.querySelectorAll('.p-tag-flow').forEach(box => {
+        const inner = box.querySelector('.pf-in');
         if (!inner) return;
         const over = inner.scrollWidth > box.clientWidth + 1;
         box.classList.toggle('over', over);
@@ -183,10 +183,10 @@
             const nameHtml = dn(r.playerName) + (r.isTest ? ' <em class="t-tag">测试</em>' : '')
               + (r.bestStreak && r.achievementId === 'bomber_edge' ? ` <em class="t-tag">最佳 ${r.bestStreak} 连空</em>` : '')
               + (r.bestStreak && r.achievementId === 'bomber_streak5' ? ` <em class="t-tag">最佳 ${r.bestStreak} 连击</em>` : '')
-              + (flagTot != null ? ` <em class="t-tag">累计已正确标记 ${flagTot} 雷</em>` : '');
+              + (flagTot != null ? ` <em class="t-tag p-tag-flow"><span class="pf-in">累计已正确标记 ${flagTot} 雷</span></em>` : '');
             return `
               <div class="p-row">
-                <span class="p-name"><span class="p-scroll"><span class="p-scroll-in">${nameHtml}</span></span><em class="p-count">x${r.count}</em></span>
+                <span class="p-name">${nameHtml}<em class="p-count">x${r.count}</em></span>
                 <span class="p-first">首触 ${fmtTime(r.firstTime)}</span>
                 <span class="p-tri" id="${tId}" onclick="toggleDetail('${r.playerName}', '${id}')">▸</span>
               </div>
