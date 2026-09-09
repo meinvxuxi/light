@@ -34,6 +34,10 @@
     .p-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: .88rem; flex-wrap: nowrap; min-width: 0; }
     .p-name { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; gap: 4px; }
     .p-name em { font-style: normal; font-size: .75rem; color: #9aa5b1; margin-left: 4px; }
+    .p-scroll { flex: 1 1 auto; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; align-self: center; }
+    .p-scroll-in { display: inline-block; white-space: nowrap; will-change: transform; }
+    .p-scroll.over .p-scroll-in { animation: ptagScroll 9s linear infinite; }
+    @keyframes ptagScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
     .p-count { flex: none; }
     .p-first { flex: none; font-size: .78rem; color: #9aa5b1; }
     .p-tri { flex: none; margin-left: auto; cursor: pointer; color: #9aa5b1; user-select: none; padding: 0 4px; font-size: .8rem; }
@@ -105,6 +109,22 @@
       tri.textContent = open ? '▾' : '▸';
     }
 
+    // 荣誉墙整行不换行：名字+标签太宽时整条无缝滚动（两份内容之间补一个空格再循环）
+    function applyRowMarquee(root) {
+      if (!root) return;
+      root.querySelectorAll('.p-scroll').forEach(box => {
+        const inner = box.querySelector('.p-scroll-in');
+        if (!inner) return;
+        const over = inner.scrollWidth > box.clientWidth + 1;
+        box.classList.toggle('over', over);
+        if (over && !box.getAttribute('data-seeded')) {
+          const one = inner.innerHTML;
+          inner.innerHTML = one + ' ' + one; // 滚完一轮先留一个空格，再接续下一轮
+          box.setAttribute('data-seeded', '1');
+        }
+      });
+    }
+
     let achData = null;       // 最近一次从服务器拉到的数据
     let curGame = 'yahtzee';  // 当前选中的游戏筛选
 
@@ -165,10 +185,10 @@
             const nameHtml = dn(r.playerName) + (r.isTest ? ' <em class="t-tag">测试</em>' : '')
               + (r.bestStreak && r.achievementId === 'bomber_edge' ? ` <em class="t-tag">最佳 ${r.bestStreak} 连空</em>` : '')
               + (r.bestStreak && r.achievementId === 'bomber_streak5' ? ` <em class="t-tag">最佳 ${r.bestStreak} 连击</em>` : '')
-              + (flagTot != null ? ` <em class="t-tag">累计${flagTot}雷</em>` : '');
+              + (flagTot != null ? ` <em class="t-tag">累计${flagTot}</em>` : '');
             return `
               <div class="p-row">
-                <span class="p-name">${nameHtml}<em class="p-count">x${r.count}</em></span>
+                <span class="p-name"><span class="p-scroll"><span class="p-scroll-in">${nameHtml}</span></span><em class="p-count">x${r.count}</em></span>
                 <span class="p-first">首触 ${fmtTime(r.firstTime)}</span>
                 <span class="p-tri" id="${tId}" onclick="toggleDetail('${r.playerName}', '${id}')">▸</span>
               </div>
@@ -186,6 +206,7 @@
       });
 
       el.innerHTML = html || '<div class="empty">还没有任何成就记录，快去游戏里解锁吧～</div>';
+      applyRowMarquee(el);
     }
 
     const socket = io();
