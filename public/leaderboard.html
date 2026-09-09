@@ -38,7 +38,13 @@
       <span class="lb-tab active" id="tabBoard" onclick="switchTab('board')">快艇榜</span>
       <span class="lb-tab" id="tabDrawing" onclick="switchTab('drawing')">花菜榜</span>
       <span class="lb-tab" id="tabBomber" onclick="switchTab('bomber')">烟火师榜</span>
+      <span class="lb-tab" id="tabMsP" onclick="switchTab('msP')">扫雷·个人</span>
+      <span class="lb-tab" id="tabMsT" onclick="switchTab('msT')">扫雷·组队</span>
       <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
+    </div>
+    <div class="tabs sub" id="subMode" style="padding-top:4px;">
+      <span class="lb-tab active" id="subBest" onclick="setMode('best')">最佳</span>
+      <span class="lb-tab" id="subScore" onclick="setMode('score')">分数（可重复上榜）</span>
     </div>
     <div class="lb-list" id="lbList"><div class="empty">加载中…</div></div>
   </div>
@@ -47,7 +53,9 @@
   <script>
     const myName = sessionStorage.getItem('playerName');
     if (!myName) { window.location.href = '/index.html'; }
-    let board = [], achBoard = [], drawingBoard = [], bomberBoard = [], curTab = 'board';
+    let board = [], achBoard = [], drawingBoard = [], bomberBoard = [], curTab = 'board', scoreMode = 'best';
+    let msPBest = [], msPH = [], msTBest = [], msTH = [];
+    let highHistBoard = [], drawingHistBoard = [], bomberHistBoard = [];
 
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -128,37 +136,70 @@
     window.addEventListener('pageshow', () => { paintSaved(); if (socket.connected) applyTheme(); });
     setInterval(sendHeartbeat, 10000);
 
+    function setMode(m) {
+      scoreMode = m;
+      document.getElementById('subBest').classList.toggle('active', m === 'best');
+      document.getElementById('subScore').classList.toggle('active', m === 'score');
+      render();
+    }
     function switchTab(tab) {
       curTab = tab;
       document.getElementById('tabBoard').classList.toggle('active', tab === 'board');
       document.getElementById('tabDrawing').classList.toggle('active', tab === 'drawing');
       document.getElementById('tabBomber').classList.toggle('active', tab === 'bomber');
+      document.getElementById('tabMsP').classList.toggle('active', tab === 'msP');
+      document.getElementById('tabMsT').classList.toggle('active', tab === 'msT');
       document.getElementById('tabAch').classList.toggle('active', tab === 'ach');
       render();
     }
+    function currentRows() {
+      if (curTab === 'board') return scoreMode === 'best' ? board : highHistBoard;
+      if (curTab === 'drawing') return scoreMode === 'best' ? drawingBoard : drawingHistBoard;
+      if (curTab === 'bomber') return scoreMode === 'best' ? bomberBoard : bomberHistBoard;
+      if (curTab === 'msP') return scoreMode === 'best' ? msPBest : msPH;
+      if (curTab === 'msT') return scoreMode === 'best' ? msTBest : msTH;
+      return achBoard;
+    }
     function render() {
       const el = document.getElementById('lbList');
-      const isScoreBoard = curTab === 'board' || curTab === 'drawing';
-      const isBomber = curTab === 'bomber';
-      const rows = curTab === 'board' ? board : (curTab === 'drawing' ? drawingBoard : (curTab === 'bomber' ? bomberBoard : achBoard));
+      const sub = document.getElementById('subMode');
+      if (sub) sub.style.display = (curTab === 'ach') ? 'none' : 'flex';
+      const rows = currentRows();
       if (!rows.length) {
         const emptyTxt = curTab === 'board' ? '还没有快艇对局记录，去打一局吧～'
           : (curTab === 'drawing' ? '还没有花菜对局记录，去打一局画猜接龙吧～'
-            : (curTab === 'bomber' ? '还没有烟火师记录，去炸一局飞机吧～' : '还没有成就记录'));
+            : (curTab === 'bomber' ? '还没有烟火师记录，去炸一局飞机吧～'
+              : (curTab === 'msP' ? '还没有扫雷个人记录，去玩一局扫雷吧～'
+                : (curTab === 'msT' ? '还没有扫雷组队记录，去玩一局 2v2 吧～' : '还没有成就记录'))));
         el.innerHTML = '<div class="empty">' + emptyTxt + '</div>';
         return;
       }
       el.innerHTML = rows.map((r, i) => {
         const rankCls = i < 3 ? 'lb-rank top' : 'lb-rank';
-        const rankTxt = isBomber ? 'S' + (i + 1) : (i + 1);
-        const stat = isScoreBoard
-          ? `单局最高 ${r.best} 分`
-          : (isBomber
-            ? `单局炸毁机头 ${r.best} 架`
-            : `${r.count} 个成就`);
+        const rankTxt = curTab === 'bomber' ? 'S' + (i + 1) : (i + 1);
+        let who = '', stat = '';
+        if (curTab === 'ach') {
+          who = esc(r.displayName);
+          stat = `${r.count} 个成就`;
+        } else if (curTab === 'msP') {
+          who = scoreMode === 'best' ? esc(r.displayName) : esc(r.displayName) + (r.displayPartner ? '（和 ' + esc(r.displayPartner) + '）' : '');
+          stat = scoreMode === 'best' ? `单场最高 ${r.best} 分` : `${r.score} 分`;
+        } else if (curTab === 'msT') {
+          who = esc((r.displayPlayers || r.players || []).join(' × '));
+          stat = `${r.total} 分`;
+        } else if (curTab === 'board') {
+          who = esc(r.displayName);
+          stat = scoreMode === 'best' ? `单局最高 ${r.best} 分` : `${r.total} 分`;
+        } else if (curTab === 'drawing') {
+          who = esc(r.displayName);
+          stat = scoreMode === 'best' ? `单局最高 ${r.best} 分` : `${r.score} 分`;
+        } else { // bomber
+          who = esc(r.displayName);
+          stat = scoreMode === 'best' ? `单局炸毁机头 ${r.best} 架` : `单局炸毁机头 ${r.score} 架`;
+        }
         return `<div class="lb-row">
           <span class="${rankCls}">${rankTxt}</span>
-          <span class="lb-who">${esc(r.displayName)}</span>
+          <span class="lb-who">${who}</span>
           ${r.title ? `<span class="lb-title">${esc(r.title)}</span>` : ''}
           <span class="lb-stat">${stat}</span>
         </div>`;
@@ -171,6 +212,13 @@
           achBoard = res.achBoard || [];
           drawingBoard = res.drawingBoard || [];
           bomberBoard = res.bomberBoard || [];
+          highHistBoard = res.highHistBoard || [];
+          drawingHistBoard = res.drawingHistBoard || [];
+          bomberHistBoard = res.bomberHistBoard || [];
+          msPBest = res.msBestBoard || [];
+          msPH = res.msHistBoard || [];
+          msTBest = res.msTeamBestBoard || [];
+          msTH = res.msTeamHistBoard || [];
           render();
         } else {
           document.getElementById('lbList').innerHTML = '<div class="err">加载失败，请刷新重试</div>';

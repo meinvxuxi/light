@@ -2800,14 +2800,18 @@ io.on('connection', (socket) => {
     // 扫雷个人榜（最佳=每人最好；分数流水=前20可重复）
     const msBestArr = [...msBestBoard.entries()].map(([name, best]) => ({ name, displayName: getDisplayName(name), best }))
       .sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
-    const msHistArr = msHistory.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20);
+    const msHistArr = msHistory.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20)
+      .map(r => Object.assign({}, r, { displayName: getDisplayName(r.name), displayPartner: r.partner ? getDisplayName(r.partner) : null }));
     // 扫雷组队榜
-    const msTeamBestArr = [...msTeamBest.entries()].map(([key, total]) => ({ players: key.split('\u0001'), total }))
-      .sort((a, b) => b.total - a.total);
-    const msTeamHistArr = msTeamHistory.slice().sort((a, b) => b.total - a.total || a.ts - b.ts).slice(0, 20);
-    const highHistArr = highHist.slice().sort((a, b) => b.total - a.total || a.ts - b.ts).slice(0, 20);
-    const drawingHistArr = drawingHist.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20);
-    const bomberHistArr = bomberHist.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20);
+    const msTeamBestArr = [...msTeamBest.entries()].map(([key, total]) => {
+      const players = key.split('\u0001');
+      return { players, displayPlayers: players.map(getDisplayName), total };
+    }).sort((a, b) => b.total - a.total);
+    const msTeamHistArr = msTeamHistory.slice().sort((a, b) => b.total - a.total || a.ts - b.ts).slice(0, 20)
+      .map(r => Object.assign({}, r, { displayPlayers: (r.players || []).map(getDisplayName) }));
+    const highHistArr = highHist.slice().sort((a, b) => b.total - a.total || a.ts - b.ts).slice(0, 20).map(r => Object.assign({}, r, { displayName: getDisplayName(r.name) }));
+    const drawingHistArr = drawingHist.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20).map(r => Object.assign({}, r, { displayName: getDisplayName(r.name) }));
+    const bomberHistArr = bomberHist.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20).map(r => Object.assign({}, r, { displayName: getDisplayName(r.name) }));
     if (cb) cb({ success: true, game: '快艇骰子', board: gamesArr, achBoard: achArr, drawingBoard: drawingArr, bomberBoard: bomberArr,
       highHistBoard: highHistArr, drawingHistBoard: drawingHistArr, bomberHistBoard: bomberHistArr,
       msBestBoard: msBestArr, msHistBoard: msHistArr, msTeamBestBoard: msTeamBestArr, msTeamHistBoard: msTeamHistArr });
