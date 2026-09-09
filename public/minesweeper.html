@@ -95,10 +95,12 @@ body.dyn-red .pface{border-color:rgba(166,64,58,.55);}
     document.body.classList.add(c);
   }
   applyMsTheme(localStorage.getItem('myTheme'));
-  socket.on('connect',()=>{ socket.emit('heartbeat', myName, IS_T, true); setTimeout(()=>{ socket.emit('get_profile',r=>{ if(r&&r.success&&r.theme){ localStorage.setItem('myTheme',r.theme); applyMsTheme(r.theme); } }); },200); });
   const socket = io();
   const IS_T = sessionStorage.getItem('isTest') === 'true';
-  socket.on('connect', () => socket.emit('heartbeat', myName, IS_T, true));
+  socket.on('connect', () => {
+    socket.emit('heartbeat', myName, IS_T, true);
+    setTimeout(() => { socket.emit('get_profile', r => { if (r && r.success && r.theme) { localStorage.setItem('myTheme', r.theme); applyMsTheme(r.theme); } }); }, 200);
+  });
   setInterval(() => socket.emit('heartbeat', myName, IS_T, true), 10000);
   const E = {
     '玩家1': { A:'/assets/avatars/p1/bqb1/'+encodeURIComponent('绯绯狐-不要小瞧我和小浣熊的羁绊啊！.png'), B:'/assets/avatars/p1/bqb1/'+encodeURIComponent('绯绯狐-对的对的.png'), C:'/assets/avatars/p1/bqb1/'+encodeURIComponent('绯绯狐-不对不对.png') },
