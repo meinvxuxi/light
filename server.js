@@ -164,6 +164,14 @@ const ACH_TITLES_BY_GAME = {
     epic: '艺术就是爆炸',
     legend: '宇宙热寂之前',
     hidden: '哑火艺术家' // 未来隐藏成就兜底用
+  },
+  // 扫雷系列（2026-09-09 定稿：普通 50/50 / 稀有 生存还是毁灭 / 史诗 爱上雷神！ / 传说 天上人间）
+  minesweeper: {
+    common: '50/50',
+    rare: '生存还是毁灭',
+    epic: '爱上雷神！',
+    legend: '天上人间',
+    hidden: '五连绝世' // 隐藏成就兜底
   }
 };
 const ACH_TITLE_ORDER = ['common', 'rare', 'epic', 'legend'];
@@ -181,7 +189,7 @@ function playerUnlockedTitles(name) {
     const map = ACH_TITLES_BY_GAME[game];
     const qs = metas.filter(m => m.game === game).map(m => m.quality);
     for (const q of ACH_TITLE_ORDER) if (qs.includes(q)) out.push(map[q]);
-    if (qs.includes('hidden')) out.push(map.hidden);
+    if (qs.includes('hidden') && map.hidden) out.push(map.hidden);
   }
   return out;
 }
@@ -232,17 +240,21 @@ function buildProfileByGame(name) {
     const gk = e.game || 'other';
     if (!games[gk]) { games[gk] = {}; order.push(gk); }
     const mk = (e.game === 'minesweeper' && e.mode === 'team') ? '2v2' : (e.totalPlayers ? `${e.totalPlayers}人` : '普通');
-    const m = games[gk][mk] || { games: 0, wins: 0, totalScore: 0, best: 0 };
+    const m = games[gk][mk] || { games: 0, wins: 0, totalScore: 0, best: 0, teamScore: 0, teamBest: 0 };
     m.games++;
     m.totalScore += my.score;
     if (my.score > m.best) m.best = my.score;
     if (timelineWin(e, name)) m.wins++;
+    if (e.game === 'minesweeper' && e.mode === 'team' && my.teamTotal != null) {
+      m.teamScore = (m.teamScore || 0) + my.teamTotal;
+      if (my.teamTotal > (m.teamBest || 0)) m.teamBest = my.teamTotal;
+    }
     games[gk][mk] = m;
   }
   return order.map(gk => ({
     game: gk,
     modes: Object.keys(games[gk])
-      .map(mode => { const s = games[gk][mode]; return { mode, games: s.games, wins: s.wins, winRate: s.games ? Math.round(s.wins / s.games * 100) : 0, totalScore: s.totalScore, best: s.best }; })
+      .map(mode => { const s = games[gk][mode]; return { mode, games: s.games, wins: s.wins, winRate: s.games ? Math.round(s.wins / s.games * 100) : 0, totalScore: s.totalScore, best: s.best, teamScore: s.teamScore || 0, teamBest: s.teamBest || 0 }; })
       .sort((a, b) => profileModeRank(a.mode) - profileModeRank(b.mode))
   }));
 }
@@ -272,6 +284,7 @@ let msHistory = [];              // 个人分数流水（可重复上榜）
 let msTeamBest = new Map();      // 组合键(玩家A\u0001玩家B) -> 该组合最好合计分
 let msTeamHistory = [];          // 组队合计流水
 let msFlagTotals = new Map();    // 玩家名 -> 累计正确插旗数（旗手 C/B/A/S1 成就）
+let msBestInfo = new Map();      // 玩家名 -> 最佳成绩来源 {mode:'solo'/'team', partner}（2v2 个人分上榜标注用）
 function recordBomberSparks(g) {
   if (!g) return;
   const ts = Date.now();
@@ -317,7 +330,10 @@ function recordMinesweeperGame(g, room) {
     const score = g.scores[n] || 0;
     const partner = g.mode === 'team' ? msTeammate(g, n) : null;
     msHistory.push({ name: n, score, mode: g.mode, partner, ts });
-    if (score > (msBestBoard.get(n) || 0)) msBestBoard.set(n, score);
+    if (score > (msBestBoard.get(n) || 0)) {
+      msBestBoard.set(n, score);
+      msBestInfo.set(n, { mode: g.mode, partner: partner || null });
+    }
   }
   // 旗手累计：每局每人正确插旗数汇入终身累计，跨档才解锁（避免反复播报低档）
   for (const n of g.playerOrder) {
@@ -345,16 +361,23 @@ function recordMinesweeperGame(g, room) {
     });
     if (msTeamHistory.length > 300) msTeamHistory = msTeamHistory.slice(-300);
   }
-  // 时光墙：正式玩家整局（个人分）
+  // 时光墙：正式玩家整局（个人分 + 组队合计分）
   const officials = g.playerOrder.filter(isOfficialPlayer);
   if (officials.length) {
     const sorted = g.playerOrder.slice().sort((x, y) => (g.scores[y] || 0) - (g.scores[x] || 0));
+    const teamTot = {};
+    if (g.mode === 'team' && g.teams) {
+      officials.forEach(n => {
+        const mem = g.playerOrder.filter(x => g.teams[x] === g.teams[n]);
+        teamTot[n] = mem.reduce((a, x) => a + (g.scores[x] || 0), 0);
+      });
+    }
     addTimeline({
       ts, type: 'game', game: 'minesweeper', totalPlayers: g.playerOrder.length,
       mode: g.mode,
       players: officials,
       winners: Array.isArray(g.over.winnerNames) ? g.over.winnerNames.slice() : undefined,
-      results: officials.map(n => ({ name: n, score: g.scores[n] || 0, rank: sorted.indexOf(n) + 1, teamWin: !!(Array.isArray(g.over.winnerNames) && g.over.winnerNames.includes(n)) }))
+      results: officials.map(n => ({ name: n, score: g.scores[n] || 0, rank: sorted.indexOf(n) + 1, teamTotal: teamTot[n] || null, teamWin: !!(Array.isArray(g.over.winnerNames) && g.over.winnerNames.includes(n)) }))
     });
   }
   saveBoardStats();
@@ -369,6 +392,7 @@ function saveBoardStats() {
       drawing: Object.fromEntries(drawingHighBoard),
       bomber: Object.fromEntries(bomberSparkBoard),
       msBest: Object.fromEntries(msBestBoard),
+      msBestInfo: Object.fromEntries(msBestInfo),
       msHistory: msHistory,
       msTeamBest: Object.fromEntries(msTeamBest),
       msTeamHistory: msTeamHistory,
@@ -384,6 +408,7 @@ function loadBoardStats() {
     if (o.drawing) drawingHighBoard = new Map(Object.entries(o.drawing));
     if (o.bomber) bomberSparkBoard = new Map(Object.entries(o.bomber));
     if (o.msBest) msBestBoard = new Map(Object.entries(o.msBest));
+    if (o.msBestInfo) msBestInfo = new Map(Object.entries(o.msBestInfo));
     if (Array.isArray(o.msHistory)) msHistory = o.msHistory;
     if (o.msTeamBest) msTeamBest = new Map(Object.entries(o.msTeamBest));
     if (Array.isArray(o.msTeamHistory)) msTeamHistory = o.msTeamHistory;
@@ -405,6 +430,12 @@ function msPreviewClean() {
   for (const [n, d] of msSeedTrack.best) {
     const c = msBestBoard.get(n) || 0;
     if (c - d > 0) msBestBoard.set(n, c - d); else msBestBoard.delete(n);
+    const oldInfo = (msSeedTrack.info || new Map()).get(n);
+    if (oldInfo !== undefined) {
+      if (oldInfo) msBestInfo.set(n, oldInfo); else msBestInfo.delete(n);
+    } else if (c - d <= 0) {
+      msBestInfo.delete(n);
+    }
   }
   for (const [k, d] of msSeedTrack.team) {
     const c = msTeamBest.get(k) || 0;
@@ -453,7 +484,7 @@ function seedMsBoardsInto(profileName) {
     { names: ['测试者1', '测试者2'], sc: [72, 60], fl: [6, 4], winTeam: true },
     { names: ['测试者3', '测试者4'], sc: [55, 80], fl: [5, 7], winTeam: true }
   ];
-  const track = { best: new Map(), team: new Map(), flag: new Map() };
+  const track = { best: new Map(), team: new Map(), flag: new Map(), info: new Map() };
   const gamesMeta = []; // {mode, players, scores, winners}
   let timeOff = 0;
   solo.forEach(row => {
@@ -464,7 +495,12 @@ function seedMsBoardsInto(profileName) {
     row.sc.forEach((score, i) => {
       const n = players[i]; const f = row.fl[i] || 0;
       const oldBest = msBestBoard.get(n) || 0;
-      if (score > oldBest) { msBestBoard.set(n, score); track.best.set(n, (track.best.get(n) || 0) + (score - oldBest)); }
+      if (score > oldBest) {
+        msBestBoard.set(n, score);
+        if (!track.info.has(n)) track.info.set(n, msBestInfo.get(n) || null);
+        msBestInfo.set(n, { mode: 'solo', partner: null });
+        track.best.set(n, (track.best.get(n) || 0) + (score - oldBest));
+      }
       msHistory.push({ name: n, score, mode: 'solo', partner: null, ts: ts - timeOff * 60000, flagHits: f, _seedMs: true });
       const oldF = msFlagTotals.get(n) || 0;
       msFlagTotals.set(n, oldF + f);
@@ -481,6 +517,13 @@ function seedMsBoardsInto(profileName) {
     row.names.forEach((n, i) => {
       const score = row.sc[i]; const f = row.fl[i] || 0;
       const partner = row.names[1 - i];
+      const oldBest = msBestBoard.get(n) || 0;
+      if (score > oldBest) {
+        msBestBoard.set(n, score);
+        if (!track.info.has(n)) track.info.set(n, msBestInfo.get(n) || null);
+        msBestInfo.set(n, { mode: 'team', partner });
+        track.best.set(n, (track.best.get(n) || 0) + (score - oldBest));
+      }
       msHistory.push({ name: n, score, mode: 'team', partner, ts: ts - timeOff * 60000, flagHits: f, _seedMs: true });
       const oldF = msFlagTotals.get(n) || 0;
       msFlagTotals.set(n, oldF + f);
@@ -496,7 +539,7 @@ function seedMsBoardsInto(profileName) {
       ts: ts - (timeOff - 1 - i) * 60000, type: 'game', game: 'minesweeper', totalPlayers: gm.n, mode: gm.mode,
       players: gm.players.slice(),
       winners: gm.winners.slice(),
-      results: gm.players.map((n, idx) => ({ name: n, score: gm.scores[idx], rank: sorted.findIndex(x => x.n === n) + 1, teamWin: gm.winners.includes(n) })),
+      results: gm.players.map((n, idx) => ({ name: n, score: gm.scores[idx], rank: sorted.findIndex(x => x.n === n) + 1, teamTotal: gm.mode === 'team' ? gm.scores.reduce((x, y) => x + y, 0) : null, teamWin: gm.winners.includes(n) })),
       _test: true, _seedMs: true
     });
   });
@@ -508,18 +551,23 @@ function seedMsBoardsInto(profileName) {
     const mk = gm.mode === 'team' ? '2v2' : (gm.n + '人');
     gm.players.forEach((n, idx) => {
       const a = (agg[n] = agg[n] || {});
-      const m = (a[mk] = a[mk] || { games: 0, wins: 0, totalScore: 0, best: 0 });
+      const m = (a[mk] = a[mk] || { games: 0, wins: 0, totalScore: 0, best: 0, teamScore: 0, teamBest: 0 });
       m.games++;
       m.totalScore += gm.scores[idx];
       if (gm.scores[idx] > m.best) m.best = gm.scores[idx];
       if (gm.winners.includes(n)) m.wins++;
+      if (gm.mode === 'team') {
+        const tot = gm.scores.reduce((x, y) => x + y, 0);
+        m.teamScore = (m.teamScore || 0) + tot;
+        if (tot > (m.teamBest || 0)) m.teamBest = tot;
+      }
     });
   });
   const order = ['2人', '3人', '4人', '2v2'];
   const profileModes = order.map(mk => {
     const s = agg[profileName] && agg[profileName][mk];
-    return s ? { mode: mk, games: s.games, wins: s.wins, winRate: Math.round(s.wins / s.games * 100), totalScore: s.totalScore, best: s.best }
-      : { mode: mk, games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0 };
+    return s ? { mode: mk, games: s.games, wins: s.wins, winRate: Math.round(s.wins / s.games * 100), totalScore: s.totalScore, best: s.best, teamScore: s.teamScore || 0, teamBest: s.teamBest || 0 }
+      : { mode: mk, games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0, teamScore: 0, teamBest: 0 };
   });
   return { solo: solo.length, team: team.length, profileModes };
 }
@@ -607,7 +655,7 @@ function seedTestProfile(name) {
       { mode: '2人', games: 1, wins: 1, winRate: 100, totalScore: 55, best: 55 },
       { mode: '3人', games: 2, wins: 1, winRate: 50, totalScore: 91, best: 60 },
       { mode: '4人', games: 2, wins: 1, winRate: 50, totalScore: 64, best: 44 },
-      { mode: '2v2', games: 3, wins: 2, winRate: 67, totalScore: 159, best: 66 }
+      { mode: '2v2', games: 3, wins: 2, winRate: 67, totalScore: 159, best: 66, teamScore: 281, teamBest: 112 }
     ]
   }];
   const totals = { games: 18, wins: 9, winRate: 50, totalScore: 2143, best: 336 };
@@ -718,8 +766,8 @@ const ACHIEVEMENTS = {
   ms_penta:    { name: '五连绝世',      quality: 'hidden', game: 'minesweeper' },
   ms_flag_c:   { name: 'C牌旗手',       quality: 'common', game: 'minesweeper', base: '旗手', group: 'ms_flag' },
   ms_flag_b:   { name: 'B牌旗手',       quality: 'rare',   game: 'minesweeper', base: '旗手', group: 'ms_flag' },
-  ms_flag_a:   { name: 'A牌旗手',       quality: 'rare',   game: 'minesweeper', base: '旗手', group: 'ms_flag' },
-  ms_flag_s1:  { name: 'S1旗手',        quality: 'epic',   game: 'minesweeper', base: '旗手', group: 'ms_flag' }
+  ms_flag_a:   { name: 'A牌旗手',       quality: 'epic',   game: 'minesweeper', base: '旗手', group: 'ms_flag' },
+  ms_flag_s1:  { name: 'S1旗手',        quality: 'legend', game: 'minesweeper', base: '旗手', group: 'ms_flag' }
 };
 const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
 // 旗手升级档位（累计正确插旗数）：同组 id 靠品质最高档展示
@@ -2674,8 +2722,9 @@ io.on('connection', (socket) => {
       if (cb) cb({ success: false, msg: '未知成就：' + achievementId });
       return;
     }
-    recordAchievement(name, achievementId); // 测试者：内存记录，重启即刷新
-    if (cb) cb({ success: true, name, achievementId, achievementName: ACHIEVEMENTS[achievementId].name });
+    const already = ACHIEVEMENTS[achievementId].group === 'ms_flag' && achTestRecords.some(r => r.playerName === name && r.achievementId === achievementId);
+    if (!already) recordAchievement(name, achievementId); // 测试者：内存记录，重启即刷新
+    if (cb) cb({ success: true, name, achievementId, achievementName: ACHIEVEMENTS[achievementId].name, already });
   });
 
   // 测试助手：一键给若干测试账号批量触发一组成就（画猜场景预览用）
@@ -2688,7 +2737,12 @@ io.on('connection', (socket) => {
     const list = (Array.isArray(targets) && targets.length ? targets : [me]).filter(n => TEST_NAMES.includes(n));
     const validIds = ids.filter(id => ACHIEVEMENTS[id]);
     const rows = [];
-    list.forEach(n => validIds.forEach(id => { recordAchievement(n, id); rows.push(`${n} → ${ACHIEVEMENTS[id].name}`); }));
+    list.forEach(n => validIds.forEach(id => {
+      // 旗手是可升级成就：每个等级每人最多记录一次，重复点不再累计次数
+      if ((ACHIEVEMENTS[id].group === 'ms_flag') && achTestRecords.some(r => r.playerName === n && r.achievementId === id)) return;
+      recordAchievement(n, id);
+      rows.push(`${n} → ${ACHIEVEMENTS[id].name}`);
+    }));
     if (cb) cb({ success: true, count: rows.length, rows });
   });
 
@@ -2736,6 +2790,30 @@ io.on('connection', (socket) => {
     achTestRecords = [];
     testProfileSeeds.clear();
     if (cb) cb({ success: true, msg: '测试成就 / 模拟战绩已重置' });
+  });
+
+  // 测试助手：查看四名测试号各自“已正确标记雷数”与旗手各档解锁情况（每档每人最多一次）
+  socket.on('dev_ms_flag_info', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（测试者1~测试者4）可使用' });
+      return;
+    }
+    const defs = [
+      { id: 'ms_flag_c', need: 10 },
+      { id: 'ms_flag_b', need: 100 },
+      { id: 'ms_flag_a', need: 500 },
+      { id: 'ms_flag_s1', need: 1000 }
+    ];
+    const rows = TEST_NAMES.map(t => ({
+      name: t,
+      total: msFlagTotals.get(t) || 0,
+      levels: defs.map(d => ({
+        id: d.id, name: ACHIEVEMENTS[d.id].name, quality: ACHIEVEMENTS[d.id].quality, need: d.need,
+        unlocked: achTestRecords.some(r => r.playerName === t && r.achievementId === d.id)
+      }))
+    }));
+    if (cb) cb({ success: true, rows });
   });
 
   // 测试助手：扫雷生态一键预览（成绩榜个人/组队 + 流水 + 时光墙 + 当前账号个人战绩；可清除重造）
@@ -3038,7 +3116,14 @@ io.on('connection', (socket) => {
     }
     bomberArr.sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
     // 扫雷个人榜（最佳=每人最好；分数流水=前20可重复）
-    const msBestArr = [...msBestBoard.entries()].map(([name, best]) => ({ name, displayName: getDisplayName(name), best }))
+    const msBestArr = [...msBestBoard.entries()].map(([name, best]) => {
+      const info = msBestInfo.get(name) || {};
+      return {
+        name, displayName: getDisplayName(name), best,
+        mode: info.mode || 'solo', partner: info.partner || null,
+        displayPartner: info.partner ? getDisplayName(info.partner) : null
+      };
+    })
       .sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
     const msHistArr = msHistory.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20)
       .map(r => Object.assign({}, r, { displayName: getDisplayName(r.name), displayPartner: r.partner ? getDisplayName(r.partner) : null }));

@@ -12,20 +12,30 @@
     .back { color: #4a90d9; text-decoration: none; font-size: .88rem; }
     .back:hover { text-decoration: underline; }
     .wrap { max-width: 620px; margin: 0 auto; padding: 16px 4px 60px; }
-    .tabs { display: flex; gap: 22px; border-bottom: 1px solid #e8ecf1; padding-bottom: 8px; }
-    .lb-tab { color: #6b7a90; font-size: .92rem; cursor: pointer; padding: 2px 2px 4px; border-bottom: 2px solid transparent; user-select: none; }
+    .lb-bar { display: flex; align-items: flex-end; gap: 10px; width: 100%; }
+    .tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 18px; border-bottom: 1px solid #e8ecf1; padding: 0 2px 8px; scrollbar-width: none; -ms-overflow-style: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .lb-tab { flex: 0 0 auto; color: #6b7a90; font-size: .92rem; cursor: pointer; padding: 2px 2px 4px; border-bottom: 2px solid transparent; user-select: none; white-space: nowrap; }
     .lb-tab:hover { color: #4a90d9; }
     .lb-tab.active { color: #4a90d9; border-bottom-color: #4a90d9; font-weight: 600; }
+    .seg { flex: none; display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,.55); border: 1px solid rgba(230,235,240,.9); border-radius: 999px; padding: 2px; margin-bottom: 8px; box-shadow: 0 1px 6px rgba(0,0,0,.04); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+    .seg span { font-size: .7rem; color: #7f8fa6; padding: 2px 9px; border-radius: 999px; cursor: pointer; white-space: nowrap; border: 1px solid transparent; user-select: none; }
+    .seg span.on { color: #4a90d9; background: rgba(74,144,217,.12); border-color: rgba(74,144,217,.35); font-weight: 600; }
     .lb-list { padding-top: 6px; }
     .lb-row { display: flex; align-items: baseline; gap: 10px; padding: 10px 2px; border-bottom: 1px dashed #eef0f4; font-size: .92rem; }
     .lb-row:last-child { border-bottom: none; }
     .lb-rank { width: 28px; color: #9aa5b1; font-size: .82rem; flex: none; }
     .lb-rank.top { color: #4a90d9; font-weight: 700; }
     .lb-who { color: #2c3e50; font-weight: 600; }
+    .lb-with { font-size: .64rem; font-weight: 400; color: #7a8fa6; background: rgba(120,140,165,.1); border-radius: 999px; padding: 0 6px; margin-left: 6px; line-height: 1.7; letter-spacing: .2px; white-space: nowrap; }
     .lb-title { font-size: .7rem; color: #b6bec9; background: #eef1f5; border-radius: 20px; padding: 1px 8px; }
     .lb-stat { margin-left: auto; color: #7f8fa6; font-size: .82rem; white-space: nowrap; }
     .empty { text-align: center; color: #adb5bd; padding: 46px 0; font-size: .88rem; }
     .err { text-align: center; color: #e74c3c; padding: 34px 0; font-size: .9rem; }
+    @media (max-width: 480px) {
+      .tabs { gap: 14px; }
+      .lb-who { overflow-wrap: anywhere; }
+    }
   </style>
 </head>
 <body>
@@ -34,17 +44,19 @@
     <a class="back" href="/lobby.html">返回大厅</a>
   </div>
   <div class="wrap">
-    <div class="tabs">
-      <span class="lb-tab active" id="tabBoard" onclick="switchTab('board')">快艇榜</span>
-      <span class="lb-tab" id="tabDrawing" onclick="switchTab('drawing')">花菜榜</span>
-      <span class="lb-tab" id="tabBomber" onclick="switchTab('bomber')">烟火师榜</span>
-      <span class="lb-tab" id="tabMsP" onclick="switchTab('msP')">扫雷·个人</span>
-      <span class="lb-tab" id="tabMsT" onclick="switchTab('msT')">扫雷·组队</span>
-      <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
-    </div>
-    <div class="tabs sub" id="subMode" style="padding-top:4px;">
-      <span class="lb-tab active" id="subBest" onclick="setMode('best')">最佳</span>
-      <span class="lb-tab" id="subScore" onclick="setMode('score')">分数（可重复上榜）</span>
+    <div class="lb-bar">
+      <div class="tabs" id="gameTabs">
+        <span class="lb-tab active" id="tabBoard" onclick="switchTab('board')">快艇榜</span>
+        <span class="lb-tab" id="tabDrawing" onclick="switchTab('drawing')">花菜榜</span>
+        <span class="lb-tab" id="tabBomber" onclick="switchTab('bomber')">烟火师榜</span>
+        <span class="lb-tab" id="tabMsP" onclick="switchTab('msP')">扫雷·个人</span>
+        <span class="lb-tab" id="tabMsT" onclick="switchTab('msT')">扫雷·组队</span>
+        <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
+      </div>
+      <div class="seg" id="subMode">
+        <span class="on" id="subBest" onclick="setMode('best')">最佳</span>
+        <span id="subScore" onclick="setMode('score')">分数</span>
+      </div>
     </div>
     <div class="lb-list" id="lbList"><div class="empty">加载中…</div></div>
   </div>
@@ -69,13 +81,17 @@
       const s = document.createElement('style');
       s.id = 'dynThemeStyle';
       const scoped = (prefix, selList) => selList.split(',').map(x => prefix + ' ' + x.trim()).join(',');
-      const col = '.back,.back:hover,.lb-tab.active';
+      const col = '.back,.back:hover,.lb-tab.active,.lb-rank.top,.seg span.on,.lb-with';
       const pink =
         scoped('body.dyn-pink', col) + '{color:#f06292!important}' +
-        'body.dyn-pink .lb-tab.active{border-bottom-color:#ffb3c6!important}';
+        'body.dyn-pink .lb-tab.active{border-bottom-color:#ffb3c6!important}' +
+        'body.dyn-pink .seg span.on{border-color:#ffb3c6!important;background:rgba(240,98,146,.13)!important}' +
+        'body.dyn-pink .lb-with{background:rgba(240,98,146,.12)!important}';
       const green =
         scoped('body.dyn-green', col) + '{color:#6f9e63!important}' +
-        'body.dyn-green .lb-tab.active{border-bottom-color:#a9c79e!important}';
+        'body.dyn-green .lb-tab.active{border-bottom-color:#a9c79e!important}' +
+        'body.dyn-green .seg span.on{border-color:#a9c79e!important;background:rgba(111,158,99,.14)!important}' +
+        'body.dyn-green .lb-with{background:rgba(111,158,99,.13)!important}';
           const gold = pink
       .replace(/dyn-pink/g, 'dyn-gold')
       .replace(/#f06292/g, '#d6a843')
@@ -138,8 +154,8 @@
 
     function setMode(m) {
       scoreMode = m;
-      document.getElementById('subBest').classList.toggle('active', m === 'best');
-      document.getElementById('subScore').classList.toggle('active', m === 'score');
+      document.getElementById('subBest').classList.toggle('on', m === 'best');
+      document.getElementById('subScore').classList.toggle('on', m === 'score');
       render();
     }
     function switchTab(tab) {
@@ -182,7 +198,9 @@
           who = esc(r.displayName);
           stat = `${r.count} 个成就`;
         } else if (curTab === 'msP') {
-          who = scoreMode === 'best' ? esc(r.displayName) : esc(r.displayName) + (r.displayPartner ? '（和 ' + esc(r.displayPartner) + '）' : '');
+          const withTag = (r.mode === 'team' && (r.displayPartner || r.partner))
+            ? `<span class="lb-with">with ${esc(r.displayPartner || r.partner)}</span>` : '';
+          who = esc(r.displayName) + withTag;
           stat = scoreMode === 'best' ? `单场最高 ${r.best} 分` : `${r.score} 分`;
         } else if (curTab === 'msT') {
           who = esc((r.displayPlayers || r.players || []).join(' × '));

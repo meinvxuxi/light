@@ -35,8 +35,9 @@
     .st-mode .mk { width: 54px; flex: none; font-size: .76rem; }
     .st-mode .mv { font-weight: 600; color: #2c3e50; margin: 0 2px; }
     .st-sep { color: #c3cad3; margin: 0 4px; }
-    .ptabs { display: flex; flex-wrap: wrap; gap: 4px 20px; border-bottom: 1px solid #e8ecf1; padding: 2px 2px 8px; }
-    .ptab { color: #6b7a90; font-size: .9rem; cursor: pointer; padding: 2px 2px 4px; border-bottom: 2px solid transparent; user-select: none; }
+    .ptabs { display: flex; flex-wrap: nowrap; gap: 4px 20px; border-bottom: 1px solid #e8ecf1; padding: 2px 2px 8px; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+    .ptabs::-webkit-scrollbar { display: none; }
+    .ptab { flex: 0 0 auto; white-space: nowrap; color: #6b7a90; font-size: .9rem; cursor: pointer; padding: 2px 2px 4px; border-bottom: 2px solid transparent; user-select: none; }
     .ptab:hover { color: #4a90d9; }
     .ptab.active { color: #4a90d9; border-bottom-color: #4a90d9; font-weight: 600; }
     .st-grid.two .st-cell { width: 50%; }
@@ -199,6 +200,11 @@
       const vs = [m.games, m.wins, m.winRate + '%', m.totalScore, m.best];
       return ps.map((p, i) => (i ? '<span class="st-sep">·</span>' : '') + p + ' <span class="mv">' + vs[i] + '</span>').join('');
     }
+    function metricStrMsTeam(m) {
+      return metricStr(m) +
+        `<span class="st-sep">·</span>累计团队分 <span class="mv">${m.teamScore || 0}</span>` +
+        `<span class="st-sep">·</span>最高团队分 <span class="mv">${m.teamBest || 0}</span>`;
+    }
     function renderStatsBox() {
       const box = document.getElementById('stBox');
       if (!box) return;
@@ -244,7 +250,7 @@
         <div class="st-grid">
           ${statCell('游玩场次', s.games)}${statCell('冠军次数', s.wins)}${statCell('胜率', s.winRate + '%')}${statCell('累计总分', s.totalScore)}${statCell('单局最高', s.best)}
         </div>
-        ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStr(m)}</div>`).join('')}`;
+        ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${m.mode === '2v2' ? metricStrMsTeam(m) : metricStr(m)}</div>`).join('')}`;
       }
       const gAch = stAch.filter(a => a.game === curGame);
       if (gAch.length) {

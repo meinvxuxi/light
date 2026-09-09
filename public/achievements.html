@@ -11,8 +11,9 @@
     .title { font-weight: 700; font-size: 1.08rem; }
     .back { color: #4a90d9; text-decoration: none; font-size: .88rem; }
     .back:hover { text-decoration: underline; }
-    .filter { max-width: 680px; margin: 14px auto 2px; display: flex; gap: 6px; }
-    .g-tab { background: none; border: none; padding: 5px 14px; font-size: .88rem; cursor: pointer; color: #6b7a90; border-radius: 8px; }
+    .filter { max-width: 680px; margin: 14px auto 2px; display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+    .filter::-webkit-scrollbar { display: none; }
+    .g-tab { flex: 0 0 auto; white-space: nowrap; background: none; border: none; padding: 5px 14px; font-size: .88rem; cursor: pointer; color: #6b7a90; border-radius: 8px; }
     .g-tab:hover { color: #4a90d9; background: none; }
     .g-tab.active { color: #4a90d9; font-weight: 700; border-bottom: 2px solid #4a90d9; border-radius: 0; }
     .t-tag { font-style: normal; font-size: .62rem; background: #fff1e0; color: #b45309; border-radius: 4px; padding: 1px 4px; margin-left: 3px; }

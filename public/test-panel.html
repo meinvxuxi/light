@@ -160,9 +160,11 @@
     <button class="btn-info" onclick="window.location.href='/leaderboard.html'">查看扫雷排行榜</button>
     <button class="btn-info" onclick="window.location.href='/profile.html?name=' + encodeURIComponent(sessionStorage.getItem('playerName'))">查看我的个人空间</button>
     <button class="btn-info" onclick="window.location.href='/timeline.html'">查看时光墙</button>
+    <button class="btn-info" onclick="msFlagInfo()">🚩 查看旗手累计（已正确标记雷数）</button>
     <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
-      一键生成 6 场个人赛（2/3/4人）+ 2 场 2v2 的榜单与流水，同时写好当前账号个人战绩（2人/3人/4人/2v2 胜率）；可反复重新生成，清除只删预览标记数据。
+      一键生成 6 场个人赛（2/3/4人）+ 2 场 2v2 的榜单与流水，同时写好当前账号个人战绩（2人/3人/4人/2v2 胜率）；可反复重新生成，清除只删预览标记数据。旗手每档每人只解锁一次。
     </p>
+    <div id="msFlagInfo" style="margin-top:6px;font-size:.8rem;line-height:1.9;color:#6c757d;"></div>
   </div>
 
   <!-- 时光墙测试 -->
@@ -191,6 +193,7 @@
   <script>
     const socket = io();
     const logEl = document.getElementById('log');
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
     // ===== 心跳：让服务器识别"当前登录者是谁"（本页是新连接，刷新后身份要靠心跳续接）=====
     // 只有测试账号能进入本页，isTest 固定为 true；inRoom=false（不在房间上下文）
@@ -275,14 +278,28 @@
 
     function seedMsPreview() {
       socket.emit('dev_seed_ms_preview', (res) => {
-        if (res && res.success) log('✅ ' + ((res && res.msg) || '扫雷生态预览已生成'));
+        if (res && res.success) { log('✅ ' + ((res && res.msg) || '扫雷生态预览已生成')); msFlagInfo(); }
         else log('❌ ' + ((res && res.msg) || '生成失败'));
       });
     }
     function resetMsPreview() {
       socket.emit('dev_reset_ms_preview', (res) => {
-        if (res && res.success) log('✅ ' + ((res && res.msg) || '扫雷生态预览已清除'));
+        if (res && res.success) { log('✅ ' + ((res && res.msg) || '扫雷生态预览已清除')); msFlagInfo(); }
         else log('❌ ' + ((res && res.msg) || '清除失败'));
+      });
+    }
+
+    function msFlagInfo() {
+      socket.emit('dev_ms_flag_info', (res) => {
+        const box = document.getElementById('msFlagInfo');
+        if (!box) return;
+        if (!res || !res.success) { box.innerHTML = '❌ ' + ((res && res.msg) || '查询失败'); return; }
+        const qIco = { common: '🥉', rare: '🥈', epic: '🥇', legend: '👑' };
+        box.innerHTML = (res.rows || []).map(r =>
+          `<b>${esc(r.name)}</b> 已正确标记 <b>${r.total}</b> 雷<br>` +
+          r.levels.map(l => `${qIco[l.quality] || ''}${esc(l.name)}（累计≥${l.need}）${l.unlocked ? ' ✅ 已解锁' : ' 未解锁'}`).join('　')
+        ).join('<hr style="border:none;border-top:1px dashed #e3e7ec;margin:4px 0;">');
+        log('🚩 已刷新旗手累计（含每档解锁状态）');
       });
     }
 
