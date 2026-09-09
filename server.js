@@ -545,6 +545,16 @@ function seedMsBoardsInto(profileName) {
   });
   msSeedTrack = track;
   saveBoardStats();
+  // 旗手演示：预览种子把累计数灌进后，按真实“跨档才解锁”口径补一次记录（每档每人最多一次）
+  const fakeGame = { mock: false, achievementsByPlayer: {} };
+  for (const t of TEST_NAMES) {
+    const total = msFlagTotals.get(t) || 0;
+    for (const [id, need] of MS_FLAG_LEVELS) {
+      if (total >= need && !achTestRecords.some(r => r.playerName === t && r.achievementId === id)) {
+        announceAchievement(fakeGame, 'dev_ms_preview', t, id);
+      }
+    }
+  }
   // 个人空间需要按“模式×人数”聚合（含 2v2 组队独立成行）
   const agg = {};
   gamesMeta.forEach(gm => {
