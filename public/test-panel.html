@@ -178,6 +178,19 @@
     <div id="msFlagInfo" style="margin-top:6px;font-size:.8rem;line-height:1.9;color:#6c757d;"></div>
   </div>
 
+  <!-- 翻转棋生态预览 -->
+  <div class="panel">
+    <h3>🎴 翻转棋生态预览（仅测试账号；内存，可清除重造）</h3>
+    <button class="btn-trigger" onclick="seedOthPreview()">🎴 一键生成翻转棋榜单 + 流水 + 时光墙 + 个人战绩</button>
+    <button class="btn-reset" onclick="resetOthPreview()">🗑️ 清除翻转棋预览</button>
+    <button class="btn-info" onclick="window.location.href='/leaderboard.html'">查看翻转棋排行榜</button>
+    <button class="btn-info" onclick="window.location.href='/profile.html?name=' + encodeURIComponent(sessionStorage.getItem('playerName'))">查看我的个人空间</button>
+    <button class="btn-info" onclick="window.location.href='/timeline.html'">查看时光墙</button>
+    <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
+      生成 4 局 2 人对局（含 1 局平局）：翻转棋榜最佳/流水、时光墙终局棋子数与平局标记、当前账号个人战绩（场次/胜场/平局/胜率/累计与最高终局棋子数）。可反复重造，清除只删预览数据。
+    </p>
+  </div>
+
   <!-- 时光墙测试 -->
   <div class="panel">
     <h3>📜 时光墙（仅测试账号；内存记录，重启即清空）</h3>
@@ -323,6 +336,19 @@
           r.levels.map(l => `${qIco[l.quality] || ''}${esc(l.name)}（累计≥${l.need}）${l.unlocked ? ' ✅ 已解锁' : ' 未解锁'}`).join('　')
         ).join('<hr style="border:none;border-top:1px dashed #e3e7ec;margin:4px 0;">');
         log('🚩 已刷新旗手累计（含每档解锁状态）');
+      });
+    }
+
+    function seedOthPreview() {
+      socket.emit('dev_seed_othello_preview', (res) => {
+        if (res && res.success) log('✅ ' + ((res && res.msg) || '翻转棋生态预览已生成'));
+        else log('❌ ' + ((res && res.msg) || '生成失败'));
+      });
+    }
+    function resetOthPreview() {
+      socket.emit('dev_reset_othello_preview', (res) => {
+        if (res && res.success) log('✅ ' + ((res && res.msg) || '翻转棋生态预览已清除'));
+        else log('❌ ' + ((res && res.msg) || '清除失败'));
       });
     }
 

@@ -48,7 +48,7 @@
     if (!myName) { window.location.href = '/index.html'; }
     if (sessionStorage.getItem('isGuest') === 'true') { window.location.href = '/lobby.html'; }
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋' };
 
     // ===== 显示名映射 =====
     let _dispMap = {};
@@ -80,9 +80,15 @@
         if (it.type === 'game') {
           const who = (it.players || []).map(dn).join('、');
           const gameName = GAME_LABEL[it.game] || it.game;
-          row.innerHTML = `<span class="tl-time">${fmtTime(it.ts)}</span>${who} 游玩了【${gameName}】<span class="tl-tri" id="${tId}" onclick="toggleDetail(${it.ts})">▸</span>`;
-          const results = (it.results || []).slice().sort((a, b) => a.rank - b.rank)
+          const isOth = it.game === 'othello';
+          row.innerHTML = `<span class="tl-time">${fmtTime(it.ts)}</span>${who} 游玩了【${gameName}】${isOth ? (it.draw ? '（平局）' : '') : ''}<span class="tl-tri" id="${tId}" onclick="toggleDetail(${it.ts})">▸</span>`;
+          const results = (it.results || []).slice()
+            .sort((a, b) => isOth ? (b.score - a.score) : (a.rank - b.rank))
             .map(r => {
+              if (isOth) {
+                const draw = it.draw || r.draw;
+                return `${draw ? '平局' : ('第' + (r.rank || '-') + '名')}　${dn(r.name)}　终局棋子 ${r.score} 子（黑 ${it.black != null ? it.black : (r.black != null ? r.black : '?')} / 白 ${it.white != null ? it.white : (r.white != null ? r.white : '?')}）`;
+              }
               const votes = [];
               if (r.mvpVotes) votes.push(`MVP票 ${r.mvpVotes}`);
               if (r.culpritVotes) votes.push(`罪魁票 ${r.culpritVotes}`);

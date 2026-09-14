@@ -606,6 +606,79 @@ function seedMsBoardsInto(profileName) {
   return { solo: solo.length, team: team.length, profileModes };
 }
 
+// ===== 开发者预览：翻转棋生态种子（榜单/流水/时光墙/个人战绩；带 _seedOth 标记，可清除重造） =====
+let othSeedTrack = null; // { best: Map }
+function othPreviewClean() {
+  if (!othSeedTrack) return;
+  othHistory = othHistory.filter(r => !r._seedOth);
+  timelineEntries = timelineEntries.filter(e => !e._seedOth);
+  for (const [n, d] of othSeedTrack.best) {
+    const c = othBestBoard.get(n) || 0;
+    if (c - d > 0) othBestBoard.set(n, c - d); else othBestBoard.delete(n);
+  }
+  othSeedTrack = null;
+  saveBoardStats();
+}
+function othProfileRemoveMine(name) {
+  const seed = testProfileSeeds.get(name);
+  if (!seed || !seed.byGame.some(g => g.game === 'othello')) return;
+  const byGame = seed.byGame.filter(g => g.game !== 'othello');
+  testProfileSeeds.set(name, Object.assign({}, seed, { byGame, totals: recalcSeedTotals(byGame) }));
+}
+function othProfileMergeMine(name, mineModes) {
+  const seed = testProfileSeeds.get(name) || seedTestProfile(name);
+  const byGame = seed.byGame.filter(g => g.game !== 'othello').concat([{ game: 'othello', modes: mineModes }]);
+  testProfileSeeds.set(name, Object.assign({}, seed, { byGame, totals: recalcSeedTotals(byGame) }));
+}
+// 造 4 局 2 人对局（含一局平局）；返回当前账号在“2人”模式的聚合数据
+function seedOthPreviewInto(profileName) {
+  othPreviewClean();
+  const ts = Date.now();
+  const games = [
+    { black: '测试者1', white: '测试者2', b: 40, w: 24 },
+    { black: '测试者2', white: '测试者1', b: 28, w: 36 },
+    { black: '测试者3', white: '测试者1', b: 30, w: 34 },
+    { black: '测试者4', white: '测试者1', b: 32, w: 32 }
+  ];
+  const track = { best: new Map() };
+  const agg = { games: 0, wins: 0, draws: 0, totalScore: 0, best: 0 };
+  games.forEach((gm, i) => {
+    const players = [gm.black, gm.white];
+    const draw = gm.b === gm.w;
+    const winners = draw ? [] : [gm.b > gm.w ? gm.black : gm.white];
+    const mkScore = n => players[0] === n ? gm.b : gm.w;
+    players.forEach(n => {
+      const score = mkScore(n);
+      othHistory.push({ name: n, score, ts: ts - (games.length - i) * 60000, draw, _seedOth: true });
+      const old = othBestBoard.get(n) || 0;
+      if (score > old) { othBestBoard.set(n, score); track.best.set(n, (track.best.get(n) || 0) + (score - old)); }
+    });
+    addTimeline({
+      ts: ts - (games.length - i) * 60000, type: 'game', game: 'othello', totalPlayers: 2, mode: 'solo',
+      draw, black: gm.b, white: gm.w,
+      players: players.slice(), winners: winners.slice(),
+      results: players.map(n => {
+        const score = mkScore(n);
+        return { name: n, score, rank: draw ? 0 : (score > (players[0] === n ? gm.w : gm.b) ? 1 : 2), draw, black: gm.b, white: gm.w };
+      }),
+      _test: true, _seedOth: true
+    });
+    if (players.includes(profileName)) {
+      const me = mkScore(profileName), foe = players[0] === profileName ? gm.w : gm.b;
+      agg.games++;
+      agg.totalScore += me;
+      if (me > agg.best) agg.best = me;
+      if (draw) agg.draws++;
+      else if (me > foe) agg.wins++;
+    }
+  });
+  othSeedTrack = track;
+  saveBoardStats();
+  const winRate = agg.games ? Math.round(agg.wins / agg.games * 100) : 0;
+  return { modes: [{ mode: '2人', games: agg.games, wins: agg.wins, draws: agg.draws, winRate, totalScore: agg.totalScore, best: agg.best }] };
+}
+
+
 // ===== 画猜接龙（花菜）榜与战绩 =====
 let drawingHighBoard = new Map(); // 玩家名 -> 单局最高分
 let drawingHist = [];             // 花菜分数流水（每局每人）
@@ -3075,6 +3148,29 @@ io.on('connection', (socket) => {
     msPreviewClean();
     msProfileRemoveMine(me);
     if (cb) cb({ success: true, msg: '扫雷生态预览已清除（榜单流水/时光墙/个人战绩），正式真实数据不受影响' });
+  });
+
+  // 测试助手：翻转棋生态一键预览（榜单+流水+时光墙+当前账号个人战绩；可清除重造）
+  socket.on('dev_seed_othello_preview', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（测试者1~测试者4）可使用' });
+      return;
+    }
+    othProfileRemoveMine(me);
+    const r = seedOthPreviewInto(me);
+    othProfileMergeMine(me, r.modes);
+    if (cb) cb({ success: true, msg: '翻转棋生态预览已生成（4 局，含 1 局平局）：翻转棋榜、流水、时光墙、个人战绩都可以看了' });
+  });
+  socket.on('dev_reset_othello_preview', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（测试者1~测试者4）可使用' });
+      return;
+    }
+    othPreviewClean();
+    othProfileRemoveMine(me);
+    if (cb) cb({ success: true, msg: '翻转棋生态预览已清除（榜单流水/时光墙/个人战绩），正式真实数据不受影响' });
   });
 
   // 测试助手：生成几条测试时光墙记录（标记 _test，可一键重置；开发期不落盘）
