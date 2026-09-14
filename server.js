@@ -116,6 +116,16 @@ const GAME_ROOMS = {
     spectators: [],
     playerMap: new Map(),
     leaveTimers: {}
+  },
+  othello: {
+    roomId: 'othello_001',
+    gameType: 'othello',
+    hostName: null,
+    maxPlayers: 2,
+    seats: { 1: null, 2: null, 3: null, 4: null },
+    spectators: [],
+    playerMap: new Map(),
+    leaveTimers: {}
   }
 };
 
@@ -973,9 +983,10 @@ const GAME_URL_MAP = {
   light: '/light.html',
   drawing: '/drawing.html',
   bomber: '/bomber.html',
-  minesweeper: '/minesweeper.html'
+  minesweeper: '/minesweeper.html',
+  othello: '/othello.html'
 };
-const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷' };
+const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋' };
 const ACH_Q_LABEL = { common: '普通', rare: '稀有', epic: '史诗', legend: '传说', hidden: '隐藏' };
 
 const yahtzeeGames = {};
@@ -1287,6 +1298,8 @@ function bmbAttack(g, room, attacker, target, r, c) {
 // ======================== 扫雷（minesweeper）核心 ========================
 const minesweeperGames = {}; // roomId -> 对局
 const msAtGame = new Map();   // playerName -> 当前正打开扫雷游戏页的 socket.id
+const othelloGames = {};      // roomId -> 翻转棋对局
+const othAtGame = new Map();  // playerName -> 当前正打开翻转棋游戏页的 socket.id
 const MS_SIZE = 8;
 const MS_MINES = 26;
 const MS_BONUS = { 1: 6, 2: 3, 3: 2, 4: 1 };
@@ -1485,6 +1498,122 @@ function bmsCancel(room, g, deleteNow) {
   Object.keys(room.seats).forEach(sid => { if (room.seats[sid]) room.seats[sid].ready = false; });
   broadcastRoom(room);
 }
+
+// ======================== 翻转棋（othello / 黑白棋）核心 ========================
+// 规格见 development/制作笔记/othello.md；坐标：列 a~h 左→右，行 1~8 上→下
+const OTH_DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const OTH_LETTERS = 'abcdefgh';
+function othOther(p) { return p === 1 ? 2 : 1; }
+function othIdx(r, c) { return r * 8 + c; }
+function othIn(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
+function othCoord(r, c) { return OTH_LETTERS[c] + (r + 1); }
+function othColorOf(g, name) { return g.playerOrder.indexOf(name) === 0 ? 1 : (g.playerOrder.indexOf(name) === 1 ? 2 : 0); }
+// 在 (r,c) 落 player 色后，八个方向被夹住的对方棋子坐标集合
+function othFlips(board, r, c, player) {
+  const opp = othOther(player), out = [];
+  if (!othIn(r, c) || board[othIdx(r, c)] !== 0) return out;
+  for (const [dr, dc] of OTH_DIRS) {
+    const path = [];
+    let rr = r + dr, cc = c + dc;
+    while (othIn(rr, cc) && board[othIdx(rr, cc)] === opp) { path.push([rr, cc]); rr += dr; cc += dc; }
+    if (path.length && othIn(rr, cc) && board[othIdx(rr, cc)] === player) out.push(...path);
+  }
+  return out;
+}
+function othLegal(board, player) {
+  const out = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (board[othIdx(r, c)] !== 0) continue;
+    if (othFlips(board, r, c, player).length) out.push({ r, c });
+  }
+  return out;
+}
+function othCount(board, player) { let n = 0; for (const v of board) if (v === player) n++; return n; }
+function othInit(room, names) {
+  const board = new Array(64).fill(0);
+  board[othIdx(3, 3)] = 2; // d4 白
+  board[othIdx(4, 4)] = 2; // e5 白
+  board[othIdx(3, 4)] = 1; // e4 黑
+  board[othIdx(4, 3)] = 1; // d5 黑
+  return {
+    roomId: room.roomId, playerOrder: names.slice(0, 2), board,
+    turn: names[0], passStreak: 0, passName: '', history: '', last: null,
+    over: null, cancelVotes: []
+  };
+}
+function othFinish(g) {
+  const black = othCount(g.board, 1), white = othCount(g.board, 2);
+  g.over = {
+    black, white,
+    winnerNames: black > white ? [g.playerOrder[0]] : (white > black ? [g.playerOrder[1]] : [])
+  };
+  return g.over;
+}
+// 落子；返回 {ok,msg?,finished?,pass?}
+function othPlace(g, name, r, c) {
+  if (!g) return { ok: false, msg: '对局不存在' };
+  if (g.over) return { ok: false, msg: '对局已结束' };
+  const color = othColorOf(g, name);
+  if (!color) return { ok: false, msg: '你不在本局中' };
+  if (g.turn !== name) return { ok: false, msg: '还没轮到你落子' };
+  r = Number(r); c = Number(c);
+  if (!othIn(r, c) || g.board[othIdx(r, c)] !== 0) return { ok: false, msg: '该位置不能落子' };
+  const flips = othFlips(g.board, r, c, color);
+  if (!flips.length) return { ok: false, msg: '必须下在能翻转对方棋子的位置' };
+  g.board[othIdx(r, c)] = color;
+  flips.forEach(([fr, fc]) => { g.board[othIdx(fr, fc)] = color; });
+  g.history += othCoord(r, c);
+  g.last = { name, r, c, flips: flips.map(([fr, fc]) => ({ r: fr, c: fc })) };
+  const other = g.playerOrder[1 - g.playerOrder.indexOf(name)];
+  g.turn = other;
+  // 对手无合法落子 → 自动弃权；若自己也无合法落子 → 双方弃权，结束
+  if (othLegal(g.board, othColorOf(g, other)).length === 0) {
+    g.passStreak = (g.passStreak || 0) + 1;
+    g.passName = other;
+    g.turn = name;
+    if (othLegal(g.board, color).length === 0) { g.passStreak = 2; othFinish(g); return { ok: true, finished: true, pass: true }; }
+    return { ok: true, finished: false, pass: true };
+  }
+  g.passStreak = 0;
+  g.passName = '';
+  if (g.board.every(v => v !== 0)) { othFinish(g); return { ok: true, finished: true, pass: false }; }
+  return { ok: true, finished: false, pass: false };
+}
+function othView(g, name, room) {
+  const online = {};
+  for (const n of g.playerOrder) {
+    const hb = userLastHeartbeat.get(n);
+    const sid = room && room.playerMap.get(n);
+    online[n] = !!(hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && othAtGame.get(n) === sid && io.sockets.sockets.has(sid));
+  }
+  const myColor = othColorOf(g, name);
+  return {
+    you: name, playerOrder: g.playerOrder.slice(), board: g.board.slice(),
+    turn: g.turn, legal: (!g.over && myColor && g.turn === name) ? othLegal(g.board, myColor) : [],
+    last: g.last, over: g.over || null, passName: g.passName || '',
+    history: g.history, step: g.history.length,
+    black: othCount(g.board, 1), white: othCount(g.board, 2),
+    myColor, online,
+    cancelVotes: (g.cancelVotes || []).slice()
+  };
+}
+function othBroadcast(room, g) {
+  room.playerMap.forEach((sid, n) => {
+    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('othello_state', othView(g, n, room));
+  });
+}
+function othBroadcastFor(roomId) {
+  const room = GAME_ROOMS.othello;
+  const g = othelloGames[roomId];
+  if (room && g && g.roomId === roomId) othBroadcast(room, g);
+}
+function othCancel(room, g) {
+  delete othelloGames[room.roomId];
+  io.to(room.roomId).emit('othello_cancel');
+  Object.keys(room.seats).forEach(sid => { if (room.seats[sid]) room.seats[sid].ready = false; });
+  broadcastRoom(room);
+}
+
 const drawingAtGame = new Map(); // playerName -> 当前正打开“画猜接龙游戏页”的 socket.id（用于判定谁真正在对局内）
 const lobbyViewers = new Map(); // playerName -> 正在大厅页的 socket.id（表情包跨页互发用）
 const bomberAtGame = new Map(); // playerName -> 正在炸飞机游戏页的 socket.id（离开/返回与取消判定）
@@ -1494,6 +1623,7 @@ function activeGameOf(room) {
   if (room.gameType === 'drawing') return drawingGames[room.roomId] || null;
   if (room.gameType === 'bomber') return bomberGames[room.roomId] || null;
   if (room.gameType === 'minesweeper') return minesweeperGames[room.roomId] || null;
+  if (room.gameType === 'othello') return othelloGames[room.roomId] || null;
   return yahtzeeGames[room.roomId] || null;
 }
 
@@ -1878,7 +2008,7 @@ function broadcastRoom(room) {
 // ========== 房间重置：当房间里所有玩家（含观战）都离线后，把房间彻底还原成可重新开局的状态 ==========
 function resetRoom(room) {
   if (room.playerMap.size > 0) return; // 还有人则不动
-  room.maxPlayers = 4;
+  room.maxPlayers = room.gameType === 'othello' ? 2 : 4;
   room.hostName = null;
   room.seats = { 1: null, 2: null, 3: null, 4: null };
   room.spectators = [];
@@ -1904,6 +2034,10 @@ function resetRoom(room) {
     if (mg.roundTimer) clearTimeout(mg.roundTimer);
     delete minesweeperGames[room.roomId];
     console.log(`🔄 房间 ${room.roomId} 的扫雷已清除`);
+  }
+  if (othelloGames[room.roomId]) {
+    delete othelloGames[room.roomId];
+    console.log(`🔄 房间 ${room.roomId} 的翻转棋已清除`);
   }
   if (gameEndTimers[room.roomId]) {
     clearTimeout(gameEndTimers[room.roomId]);
@@ -1947,8 +2081,8 @@ function removeOfflinePlayer(room, playerName, force) {
     else broadcastRoom(room);
     return;
   }
-  // 扫雷：同熟人局规则——离线不除名、原地等待，可重连继续
-  if (room.gameType === 'minesweeper' && minesweeperGames[room.roomId]) {
+  // 扫雷 / 翻转棋：同熟人局规则——离线不除名、原地等待，可重连继续
+  if ((room.gameType === 'minesweeper' && minesweeperGames[room.roomId]) || (room.gameType === 'othello' && othelloGames[room.roomId])) {
     if (room.leaveTimers[playerName]) {
       clearTimeout(room.leaveTimers[playerName]);
       delete room.leaveTimers[playerName];
@@ -2551,6 +2685,11 @@ io.on('connection', (socket) => {
       if (cb) cb({ success: false, msg: '画猜接龙固定 4 人' });
       return;
     }
+    if (room.gameType === 'othello' && maxPlayers != null) {
+      // 翻转棋固定双人
+      if (cb) cb({ success: false, msg: '翻转棋固定 2 人' });
+      return;
+    }
     if (activeGameOf(room)) return;
 
     // 离线是否自动跳过：默认 false（不跳），仅在房间设置勾选后生效
@@ -2586,7 +2725,7 @@ io.on('connection', (socket) => {
       if (!game) continue;
       const finished = room.gameType === 'drawing'
         ? game.stage === 'result'
-        : (room.gameType === 'bomber' || room.gameType === 'minesweeper')
+        : (room.gameType === 'bomber' || room.gameType === 'minesweeper' || room.gameType === 'othello')
           ? game.phase === 'over'
           : game.phase === 'finished';
       if (!finished) { cleared = false; break; } // 进行中：仅退出页面，对局保留
@@ -2601,6 +2740,7 @@ io.on('connection', (socket) => {
         if (minesweeperGames[room.roomId].roundTimer) clearTimeout(minesweeperGames[room.roomId].roundTimer);
         delete minesweeperGames[room.roomId];
       }
+      delete othelloGames[room.roomId];
       Object.keys(room.seats).forEach(seatId => {
         if (room.seats[seatId]) room.seats[seatId].ready = false;
       });
@@ -3181,6 +3321,7 @@ io.on('connection', (socket) => {
     const needPlayers = room.gameType === 'drawing' ? 4 : 2; // 画猜接龙为四人版；其余默认至少 2 人
     if (players.length < needPlayers || !players.every(p => p.ready)) return;
     if (room.gameType === 'minesweeper' && room.msTeam && players.length < 4) return; // 2v2 固定 4 人
+    if (room.gameType === 'othello' && players.length !== 2) return; // 翻转棋固定 2 人
     if (room.gameType === 'yahtzee') {
       const playerNames = players.map(p => p.name);
       initYahtzeeGame(room.roomId, playerNames);
@@ -3193,6 +3334,9 @@ io.on('connection', (socket) => {
     } else if (room.gameType === 'minesweeper') {
       const playerNames = players.map(p => p.name);
       minesweeperGames[room.roomId] = msInit(room, playerNames, room.msTeam === true);
+    } else if (room.gameType === 'othello') {
+      const playerNames = players.map(p => p.name);
+      othelloGames[room.roomId] = othInit(room, playerNames);
     }
     broadcastRoom(room);
     if (room.gameType === 'drawing') {
@@ -3201,6 +3345,8 @@ io.on('connection', (socket) => {
       bmbBroadcast(room, bomberGames[room.roomId]);
     } else if (room.gameType === 'minesweeper') {
       bmsBroadcast(room, minesweeperGames[room.roomId]);
+    } else if (room.gameType === 'othello') {
+      othBroadcast(room, othelloGames[room.roomId]);
     } else {
       broadcastYahtzeeState(room.roomId);
     }
@@ -4172,6 +4318,64 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
   });
 
+  // ======================== 翻转棋（othello）事件 ========================
+  function othFindRoomOf(name) {
+    return Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'othello') || null;
+  }
+  socket.on('othello_enter', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    othAtGame.set(name, socket.id);
+    const room = othFindRoomOf(name);
+    const g = room && othelloGames[room.roomId];
+    if (room && g) othBroadcast(room, g);
+  });
+  socket.on('othello_pull', (cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? othFindRoomOf(name) : null;
+    const g = room && othelloGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false }); return; }
+    if (cb) cb(Object.assign({ success: true }, othView(g, name, room)));
+  });
+  socket.on('othello_place', ({ r, c } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? othFindRoomOf(name) : null;
+    const g = room && othelloGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = othPlace(g, name, r, c);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    othBroadcast(room, g);
+    if (cb) cb({ success: true, pass: !!res.pass, finished: !!res.finished });
+  });
+  // 取消对局：沿用熟人局全员同意（可撤回）
+  socket.on('othello_cancel_vote', ({ revoke } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? othFindRoomOf(name) : null;
+    const g = room && othelloGames[room.roomId];
+    if (!room || !g || !g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const onlineNames = g.playerOrder.filter(n => {
+      const sid = room.playerMap.get(n);
+      const sid2 = othAtGame.get(n);
+      const hb = userLastHeartbeat.get(n);
+      return sid && sid === sid2 && io.sockets.sockets.has(sid) && hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT;
+    });
+    if (revoke) {
+      g.cancelVotes = (g.cancelVotes || []).filter(n => n !== name);
+      othBroadcast(room, g);
+      if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+      return;
+    }
+    g.cancelVotes = g.cancelVotes || [];
+    if (!g.cancelVotes.includes(name)) g.cancelVotes.push(name);
+    if (onlineNames.length && g.cancelVotes.length >= onlineNames.length) {
+      othCancel(room, g);
+      if (cb) cb({ success: true, cancelled: true });
+      return;
+    }
+    othBroadcast(room, g);
+    if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+  });
+
   socket.on('disconnect', () => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
@@ -4183,6 +4387,7 @@ io.on('connection', (socket) => {
     // 离开炸飞机游戏页
     if (bomberAtGame.get(name) === socket.id) bomberAtGame.delete(name);
     if (msAtGame.get(name) === socket.id) msAtGame.delete(name);
+    if (othAtGame.get(name) === socket.id) othAtGame.delete(name);
 
     // 默契空间：离开会话（断线兜底）
     const syncKey = socketSyncKey.get(socket.id);

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>翻转棋</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-serif;padding:10px;}
+.head{max-width:560px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;font-size:.9rem;}
+.head a{color:#4a90d9;cursor:pointer;font-weight:600;margin-left:10px;}
+.wrap{max-width:560px;margin:0 auto;}
+.info{display:flex;justify-content:space-between;gap:8px;margin:8px 0 6px;font-size:.85rem;color:#6b7a90;flex-wrap:wrap;}
+.players{display:flex;justify-content:center;gap:10px;margin:6px 0 8px;flex-wrap:wrap;}
+.pchip{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:14px;border:1px solid rgba(74,144,217,.35);background:rgba(255,255,255,.7);font-size:.86rem;backdrop-filter:blur(8px);}
+.pchip.on{border-color:#e67e22;box-shadow:0 0 0 2px rgba(230,126,34,.18) inset;font-weight:700;}
+.pchip .odot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#d7dde3;}
+.pchip .odot.on{background:#6f9e63;}
+.pchip .odot.off{background:#c0392b;}
+.disc{width:20px;height:20px;border-radius:50%;border:1px solid rgba(0,0,0,.35);flex:none;}
+.disc.b{background:radial-gradient(circle at 35% 30%,#5b6470,#101418 72%);}
+.disc.w{background:radial-gradient(circle at 35% 30%,#ffffff,#cfd6dd 72%);}
+.pchip .cnt{margin-left:auto;color:#7f8fa6;font-size:.8rem;}
+.boardwrap{text-align:center;margin:6px 0 4px;overflow-x:auto;}
+table.oth{border-collapse:collapse;margin:0 auto;background:#2f7d4f;border:3px solid #1f5a37;border-radius:8px;}
+table.oth td{width:min(10vw,50px);height:min(10vw,50px);min-width:30px;min-height:30px;border:1px solid #1f5a37;position:relative;padding:0;}
+table.oth td.hdr{width:16px;min-width:16px;border:none;background:none;color:#6b7a90;font-size:.66rem;text-align:center;}
+td.legal{cursor:pointer;}
+td.legal::after{content:'';position:absolute;inset:36%;border-radius:50%;background:rgba(255,255,255,.72);box-shadow:0 0 6px rgba(255,255,255,.6);}
+.piece{position:absolute;inset:7%;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,.35);}
+.piece.b{background:radial-gradient(circle at 35% 30%,#5b6470,#101418 72%);}
+.piece.w{background:radial-gradient(circle at 35% 30%,#ffffff,#cfd6dd 72%);}
+.piece.flip{animation:othflip .45s ease;}
+@keyframes othflip{0%{transform:rotateY(0) scale(.85);}100%{transform:rotateY(360deg) scale(1);}}
+td.lastmark{outline:2px solid #f1c40f;outline-offset:-3px;}
+.msg{text-align:center;font-size:.88rem;color:#6b7a90;margin:8px 0;min-height:22px;}
+.res{max-width:440px;margin:8px auto;background:rgba(255,255,255,.8);backdrop-filter:blur(12px);border:1px solid rgba(74,144,217,.4);border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 10px 28px rgba(31,45,61,.12);}
+.res-title{font-size:1.05rem;font-weight:800;color:#2c3e50;margin-bottom:8px;}
+.res-score{color:#6b7a90;font-size:.86rem;margin-bottom:10px;}
+.rec{width:100%;height:64px;margin:6px 0 2px;border:1px solid #dfe3e8;border-radius:10px;padding:6px 8px;font-size:.78rem;color:#4a5568;resize:vertical;background:#fff;word-break:break-all;}
+.res-btns{display:flex;gap:10px;justify-content:center;margin-top:8px;flex-wrap:wrap;}
+.res-btn{display:inline-block;padding:7px 16px;border-radius:10px;background:#4a90d9;color:#fff;font-size:.84rem;cursor:pointer;border:none;}
+.res-btn.ghost{background:rgba(74,144,217,.14);color:#2f6fb2;}
+.toast{position:fixed;left:50%;top:16%;transform:translate(-50%,-10px);background:rgba(255,255,255,.85);border:1px solid rgba(74,144,217,.5);color:#2c3e50;border-radius:12px;padding:9px 18px;font-size:.85rem;font-weight:600;backdrop-filter:blur(10px);opacity:0;transition:opacity .25s;pointer-events:none;z-index:3000;max-width:86vw;text-align:center;}
+body.dyn-pink .res{border-color:rgba(240,98,146,.45);background:rgba(255,244,248,.82);}
+body.dyn-green .res{border-color:rgba(111,158,99,.5);background:rgba(241,248,238,.82);}
+body.dyn-gold .res{border-color:rgba(214,168,67,.5);background:rgba(255,250,238,.84);}
+body.dyn-red .res{border-color:rgba(166,64,58,.5);background:rgba(253,243,241,.84);}
+body.dyn-pink .res-btn{background:#f06292;} body.dyn-green .res-btn{background:#6f9e63;} body.dyn-gold .res-btn{background:#d6a843;} body.dyn-red .res-btn{background:#a6403a;}
+body.dyn-pink .pchip{border-color:rgba(240,98,146,.4);} body.dyn-green .pchip{border-color:rgba(111,158,99,.45);} body.dyn-gold .pchip{border-color:rgba(214,168,67,.45);} body.dyn-red .pchip{border-color:rgba(166,64,58,.45);}
+body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{border-color:rgba(111,158,99,.55);} body.dyn-gold .toast{border-color:rgba(214,168,67,.55);} body.dyn-red .toast{border-color:rgba(166,64,58,.55);}
+@media (max-width:480px){ table.oth td{width:11.2vw;height:11.2vw;} .pchip{padding:5px 9px;font-size:.8rem;} }
+</style>
+</head>
+<body>
+  <div class="head"><b>🎴 翻转棋</b><span><a id="othCancelLb" onclick="othCancel()">取消对局</a><a onclick="othExit()">返回房间</a></span></div>
+  <div class="wrap">
+    <div class="info"><span id="othStage">连接中…</span><span id="othStep">第 0 手</span></div>
+    <div class="players" id="othPlayers"></div>
+    <div class="boardwrap" id="boardWrap"></div>
+    <div class="msg" id="othMsg"></div>
+  </div>
+  <div class="toast" id="othToast"></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  const myName = sessionStorage.getItem('playerName');
+  if (!myName) location.href = '/index.html';
+  const OTH_IMG = { p1:'/assets/avatars/p1/beijing.png.jpg', p2:'/assets/avatars/p2/zuixin2.jpg', p3:'/assets/avatars/p3/zuixin3.jpg', p4:'/assets/avatars/p4/beijing4.jpg', pomelo:'/assets/avatars/p3/nene.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const OTH_MOB = { p4:'/assets/avatars/p4/zuixin4.jpg', pomelo:'/assets/avatars/p3/nene2.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const OTH_ALPHA = { p1:.82, p2:.75, p3:.75, p4:.82, pomelo:.6, agly:.82, lyff:.8 };
+  function applyOthTheme(t){
+    const mobile = window.matchMedia('(max-width: 768px)').matches;
+    document.body.classList.remove('dyn-pink','dyn-green','dyn-gold','dyn-red');
+    if (!t || t === 'initial') { document.body.style.backgroundImage=''; document.body.style.backgroundSize=''; document.body.style.backgroundAttachment=''; document.body.style.backgroundPosition=''; return; }
+    const c = (t==='agly')?'dyn-gold':((t==='lyff')?'dyn-red':((t==='p3'||t==='pomelo')?'dyn-green':'dyn-pink'));
+    document.body.classList.add(c);
+    const img = (mobile && OTH_MOB[t]) ? OTH_MOB[t] : (OTH_IMG[t] || '');
+    if (img) { const a = OTH_ALPHA[t] || .82; document.body.style.backgroundImage = "linear-gradient(rgba(255,255,255,"+a+"),rgba(255,255,255,"+a+")),url('"+img+"')"; document.body.style.backgroundSize='cover'; document.body.style.backgroundAttachment = mobile?'scroll':'fixed'; document.body.style.backgroundPosition='center'; }
+  }
+  applyOthTheme(localStorage.getItem('myTheme'));
+  const socket = io();
+  const IS_T = sessionStorage.getItem('isTest') === 'true';
+  let S = null, _dm = {}, othToastTimer = null;
+  function dn(n){ return _dm[n] || n; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function toast(m){ const e=document.getElementById('othToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(othToastTimer); othToastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
+  socket.on('connect', () => {
+    socket.emit('heartbeat', myName, IS_T, true);
+    setTimeout(() => { socket.emit('get_profile', r => { if (r && r.success && r.theme) { localStorage.setItem('myTheme', r.theme); applyOthTheme(r.theme); } }); }, 200);
+    socket.emit('get_display_names', res => { if (res && res.success) { _dm = res.map; render(); } });
+    setTimeout(() => {
+      socket.emit('othello_enter');
+      socket.emit('othello_pull', res => { if (res && res.success) { S = res; render(); } });
+    }, 400);
+  });
+  setInterval(() => socket.emit('heartbeat', myName, IS_T, true), 10000);
+  socket.emit('get_display_names', res => { if (res && res.success) _dm = res.map; });
+  socket.on('othello_state', s => { S = s; render(); });
+  socket.on('othello_cancel', () => { location.href = '/room.html?game=othello'; });
+  setInterval(() => {
+    if (!socket.connected) return;
+    socket.emit('othello_pull', res => {
+      if (res && res.success) { S = res; render(); return; }
+      if (!(S && S.over)) location.href = '/room.html?game=othello';
+    });
+  }, 2200);
+  function colorOf(n){ return (S && S.playerOrder && S.playerOrder[0] === n) ? 1 : 2; }
+  function renderPlayers(){
+    const el = document.getElementById('othPlayers');
+    const po = (S && S.playerOrder) || [];
+    el.innerHTML = po.map(n => {
+      const c = colorOf(n);
+      const on = !S.over && S.turn === n;
+      const online = S.online ? S.online[n] : true;
+      const cnt = c === 1 ? (S.black || 0) : (S.white || 0);
+      return '<div class="pchip' + (on ? ' on' : '') + '">'
+        + '<span class="disc ' + (c === 1 ? 'b' : 'w') + '"></span>'
+        + '<span class="odot ' + (online ? 'on' : 'off') + '"></span>'
+        + '<span>' + esc(dn(n)) + (n === myName ? '（你）' : '') + '</span>'
+        + '<span class="cnt">' + cnt + ' 子</span>'
+        + (on ? '<span class="cnt">落子中</span>' : '')
+        + '</div>';
+    }).join('');
+  }
+  function renderBoard(){
+    const wrap = document.getElementById('boardWrap');
+    if (!S) { wrap.innerHTML = ''; return; }
+    const legal = {}; (S.legal || []).forEach(x => { legal[x.r + ',' + x.c] = 1; });
+    const flips = {}; if (S.last && S.last.flips) S.last.flips.forEach(f => { flips[f.r + ',' + f.c] = 1; });
+    const letters = 'abcdefgh';
+    let html = '<table class="oth"><tr><td class="hdr"></td>';
+    for (let c = 0; c < 8; c++) html += '<td class="hdr">' + letters[c] + '</td>';
+    html += '</tr>';
+    for (let r = 0; r < 8; r++) {
+      html += '<tr><td class="hdr">' + (r + 1) + '</td>';
+      for (let c = 0; c < 8; c++) {
+        const v = S.board[r * 8 + c];
+        const k = r + ',' + c;
+        const isLast = S.last && S.last.r === r && S.last.c === c;
+        html += '<td class="' + (legal[k] ? 'legal' : '') + (isLast ? ' lastmark' : '') + '"'
+          + (legal[k] ? ' onclick="place(' + r + ',' + c + ')"' : '') + '>'
+          + (v ? '<span class="piece ' + (v === 1 ? 'b' : 'w') + (flips[k] ? ' flip' : '') + '"></span>' : '')
+          + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</table>';
+    wrap.innerHTML = html;
+  }
+  function renderResult(){
+    const el = document.getElementById('othMsg');
+    if (S.over) {
+      const w = S.over.winnerNames || [];
+      const title = w.length ? ('🏆 ' + w.map(dn).join(' / ') + ' 获胜！') : '🤝 平局！';
+      el.innerHTML = '<div class="res">'
+        + '<div class="res-title">' + esc(title) + '</div>'
+        + '<div class="res-score">黑 ' + S.over.black + ' 子 ／ 白 ' + S.over.white + ' 子</div>'
+        + '<div style="text-align:left;font-size:.78rem;color:#9aa5b1;">棋谱（黑先）</div>'
+        + '<textarea class="rec" id="recText" readonly>' + esc(S.history || '') + '</textarea>'
+        + '<div class="res-btns">'
+        + '<button class="res-btn" onclick="copyRecord()">复制棋谱</button>'
+        + '<button class="res-btn ghost" onclick="othExit()">返回房间</button>'
+        + '</div></div>';
+      return;
+    }
+    const myTurn = S.turn === myName;
+    let txt = myTurn ? ('轮到你落子（' + (S.myColor === 1 ? '黑棋' : '白棋') + '）') : ('等待 ' + esc(dn(S.turn)) + ' 落子…');
+    if (S.passName) txt += '　·　' + esc(dn(S.passName)) + ' 无子可下，自动跳过';
+    el.innerHTML = '<span>' + txt + '</span>';
+  }
+  function render(){
+    if (!S) return;
+    document.getElementById('othStage').textContent = S.over ? '游戏结束' : '对局进行中';
+    document.getElementById('othStep').textContent = '第 ' + (S.step || 0) + ' 手';
+    const cl = document.getElementById('othCancelLb');
+    const total = (S.playerOrder || []).length;
+    const votes = (S.cancelVotes || []).length;
+    if (cl) cl.textContent = '取消对局' + (votes ? ('（' + votes + '/' + total + '）') : '');
+    renderPlayers();
+    renderBoard();
+    renderResult();
+  }
+  function place(r, c){
+    if (!S || S.over) return;
+    if (S.turn !== myName) { toast('还没轮到你落子'); return; }
+    if (!(S.legal || []).some(x => x.r === r && x.c === c)) { toast('这里不能落子'); return; }
+    socket.emit('othello_place', { r, c }, res => {
+      if (res && !res.success && res.msg) toast(res.msg);
+      else if (res && res.success && res.pass) toast('对方无子可下，自动跳过');
+    });
+  }
+  function copyRecord(){
+    const txt = (S && S.history) || '';
+    const done = () => toast('棋谱已复制：' + txt);
+    const fallback = () => {
+      const ta = document.getElementById('recText');
+      if (!ta) return;
+      ta.focus(); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { toast('复制失败，请手动选择'); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done).catch(fallback);
+    else fallback();
+  }
+  function othCancel(){ socket.emit('othello_cancel_vote', {}); }
+  function othExit(){ location.href = '/room.html?game=othello'; }
+
+  </script>
+</body>
+</html>

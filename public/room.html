@@ -265,8 +265,9 @@
 
     const params = new URLSearchParams(window.location.search);
     const gameName = params.get('game') || 'yahtzee';
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋' };
     const isDrawing = gameName === 'drawing'; // 画猜接龙固定 4 人，无人数设置
+    const isFixedPlayers = gameName === 'drawing' || gameName === 'othello'; // 固定人数游戏：不显示人数设置
     document.getElementById('roomTitle').textContent = (GAME_LABEL[gameName] || '游戏') + ' · 房间';
 
     // ========== 心跳发送（防止被踢 + 刷新/跳转后自动续接身份） ==========
@@ -379,7 +380,7 @@
       roomId = res.roomId || '';
       isHost = res.isHost || false;
       document.getElementById('roomId').textContent = roomId;
-      if (isHost && !isDrawing) {
+      if (isHost && !isFixedPlayers) {
         document.getElementById('hostSettings').style.display = 'block';
       }
     });
@@ -401,8 +402,11 @@
         msSel.value = roomState.msTeam ? '1' : '0';
       }
       const msInfo = document.getElementById('msModeInfo');
-      if (msInfo) msInfo.style.display = gameName === 'minesweeper' ? 'block' : 'none';
-      if (msInfo && gameName === 'minesweeper') msInfo.textContent = '当前赛制：' + (roomState.msTeam ? '2v2 组队（需 4 人，队伍随机）' : '个人赛 · ' + (roomState.maxPlayers || 4) + '人');
+      if (msInfo) {
+        msInfo.style.display = (gameName === 'minesweeper' || gameName === 'othello') ? 'block' : 'none';
+        if (gameName === 'minesweeper') msInfo.textContent = '当前赛制：' + (roomState.msTeam ? '2v2 组队（需 4 人，队伍随机）' : '个人赛 · ' + (roomState.maxPlayers || 4) + '人');
+        else if (gameName === 'othello') msInfo.textContent = '双人对局 · 固定 2 人（黑棋先手，轮到你落子时棋盘会亮出可下位置）';
+      }
 
       const seatsDiv = document.getElementById('seats');
       seatsDiv.innerHTML = '';
@@ -434,7 +438,7 @@
       isSpectator = specs.includes(myName);
 
       isHost = (roomState.hostName === myName);
-      document.getElementById('hostSettings').style.display = (isHost && !isDrawing) ? 'block' : 'none';
+      document.getElementById('hostSettings').style.display = (isHost && !isFixedPlayers) ? 'block' : 'none';
       latestRoom = roomState;   // 保存最新房间状态，供 startGame 的本地校验用
       updateBtnStates(roomState);
       updateGameView(roomState);

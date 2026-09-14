@@ -142,7 +142,8 @@
     .game-list {
       display: flex;
       justify-content: center;
-      gap: 14px;
+      align-items: center;
+      gap: 10px 22px;
       flex-wrap: wrap;
     }
 
@@ -191,7 +192,7 @@
     .l-link:hover { text-decoration: underline; }
 
     .game-list { margin-top: 4px; }
-    .game-link { display: inline-block; color: #2c3e50; font-weight: 700; font-size: 1rem; text-decoration: none; border-bottom: 2px solid #4a90d9; padding-bottom: 2px; }
+    .game-link { display: inline-block; color: #2c3e50; font-weight: 700; font-size: 1rem; text-decoration: none; border-bottom: 2px solid #4a90d9; padding-bottom: 2px; white-space: nowrap; }
     .game-link:hover { color: #4a90d9; }
 
     .func-links { display: flex; flex-wrap: nowrap; gap: 4px; padding: 2px 0; }
@@ -287,9 +288,10 @@
       <div class="zhead">开始游戏</div>
       <div class="game-list">
         <a href="/room.html?game=yahtzee" class="game-link">快艇骰子</a>
-        <a href="/room.html?game=drawing" class="game-link" style="margin-left:20px;">画猜接龙</a>
-        <a href="/room.html?game=bomber" class="game-link" style="margin-left:20px;">炸飞机</a>
-        <a href="/room.html?game=minesweeper" class="game-link" style="margin-left:20px;">扫雷</a>
+        <a href="/room.html?game=drawing" class="game-link">画猜接龙</a>
+        <a href="/room.html?game=bomber" class="game-link">炸飞机</a>
+        <a href="/room.html?game=minesweeper" class="game-link">扫雷</a>
+        <a href="/room.html?game=othello" class="game-link">翻转棋</a>
       </div>
     </section>
 
