@@ -164,7 +164,7 @@
     window.addEventListener('pageshow', () => { paintSaved(); if (socket.connected) applyTheme(); });
     setInterval(sendHeartbeat, 10000);
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋' };
     function gameLabel(k) { return GAME_LABEL[k] || k; }
     function statCell(lab, val) {
       return `<div class="st-cell">${lab}<b>${val}</b></div>`;
@@ -182,9 +182,10 @@
       if (list) list.style.display = on ? 'block' : 'none';
     }
     function sumByGame(g) {
-      const s = { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0 };
+      const s = { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0, draws: 0 };
       (g.modes || []).forEach(m => {
         s.games += m.games; s.wins += m.wins; s.totalScore += m.totalScore;
+        s.draws += (m.draws || 0);
         if (m.best > s.best) s.best = m.best;
       });
       s.winRate = s.games ? Math.round(s.wins / s.games * 100) : 0;
@@ -204,6 +205,11 @@
       return metricStr(m) +
         `<span class="st-sep">·</span>累计团队分 <span class="mv">${m.teamScore || 0}</span>` +
         `<span class="st-sep">·</span>最高团队分 <span class="mv">${m.teamBest || 0}</span>`;
+    }
+    function metricStrOth(m) {
+      const ps = ['场次', '胜场', '平局', '胜率', '累计棋子', '最高棋子'];
+      const vs = [m.games, m.wins, (m.draws || 0), m.winRate + '%', m.totalScore, m.best];
+      return ps.map((p, i) => (i ? '<span class="st-sep">·</span>' : '') + p + ' <span class="mv">' + vs[i] + '</span>').join('');
     }
     function renderStatsBox() {
       const box = document.getElementById('stBox');
@@ -245,6 +251,18 @@
         </div>
         <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">炸飞机专属战绩（含一次炸毁多架，不计已击毁机头的重复波及）</div>
         ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrBomber(m)}</div>`).join('')}`;
+      } else if (curGame === 'othello') {
+        html = `
+        <div class="st-grid two">
+          ${statCell('游玩场次', s.games)}
+          ${statCell('胜场', s.wins)}
+          ${statCell('平局场数', s.draws)}
+          ${statCell('胜率', s.games ? s.winRate + '%' : '—')}
+          ${statCell('累计终局棋子数', s.totalScore)}
+          ${statCell('单局最高终局棋子数', s.best)}
+        </div>
+        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">翻转棋战绩（终局棋子数）</div>
+        ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrOth(m)}</div>`).join('')}`;
       } else {
         html = `
         <div class="st-grid">

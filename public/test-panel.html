@@ -119,7 +119,15 @@
         <option value="ms_flag_c">C牌旗手（普通）</option>
         <option value="ms_flag_b">B牌旗手（稀有）</option>
         <option value="ms_flag_a">A牌旗手（稀有）</option>
-        <option value="ms_flag_s1">S1旗手（史诗）</option>
+        <option value="ms_flag_s1">S1旗手（传说）</option>
+      </optgroup>
+      <optgroup label="翻转棋">
+        <option value="oth_corners">打地鼠（普通）</option>
+        <option value="oth_draw">平局圣佛（普通）</option>
+        <option value="oth_multi">何谈翻啊（稀有）</option>
+        <option value="oth_wipe">领土战争（稀有）</option>
+        <option value="oth_basin">风水盆地（史诗）</option>
+        <option value="oth_perfect">完美主义（传说）</option>
       </optgroup>
     </select>
     <button class="btn-trigger" onclick="triggerAchievement()">触发</button>
@@ -133,6 +141,9 @@
     <br>
     <button class="btn-trigger" onclick="triggerMs('me')">🚩 一键触发全部扫雷成就（当前账号）</button>
     <button class="btn-trigger" onclick="triggerMs('all')">🚩 给四个测试号各触发全部扫雷成就</button>
+    <br>
+    <button class="btn-trigger" onclick="triggerOth('me')">🎴 一键触发全部翻转棋成就（当前账号）</button>
+    <button class="btn-trigger" onclick="triggerOth('all')">🎴 给四个测试号各触发全部翻转棋成就</button>
     <br>
     <button class="btn-trigger" onclick="guestAchDemo()">📢 模拟游客稀有成就 → 游客留言板</button>
     <br>
@@ -260,6 +271,18 @@
       socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
         if (res && res.success) {
           log(`✅ 已批量触发 ${res.count} 条扫雷成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
+        } else {
+          log('❌ ' + ((res && res.msg) || '触发失败'));
+        }
+      });
+    }
+
+    function triggerOth(scope) {
+      const ids = ['oth_corners', 'oth_draw', 'oth_multi', 'oth_wipe', 'oth_basin', 'oth_perfect'];
+      const targets = scope === 'all' ? ['测试者1', '测试者2', '测试者3', '测试者4'] : undefined;
+      socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
+        if (res && res.success) {
+          log(`✅ 已批量触发 ${res.count} 条翻转棋成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
         } else {
           log('❌ ' + ((res && res.msg) || '触发失败'));
         }

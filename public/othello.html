@@ -50,6 +50,12 @@ body.dyn-pink .res-btn{background:#f06292;} body.dyn-green .res-btn{background:#
 body.dyn-pink .pchip{border-color:rgba(240,98,146,.4);} body.dyn-green .pchip{border-color:rgba(111,158,99,.45);} body.dyn-gold .pchip{border-color:rgba(214,168,67,.45);} body.dyn-red .pchip{border-color:rgba(166,64,58,.45);}
 body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{border-color:rgba(111,158,99,.55);} body.dyn-gold .toast{border-color:rgba(214,168,67,.55);} body.dyn-red .toast{border-color:rgba(166,64,58,.55);}
 @media (max-width:480px){ table.oth td{width:11.2vw;height:11.2vw;} .pchip{padding:5px 9px;font-size:.8rem;} }
+.ach-pop{position:fixed;left:50%;top:22%;transform:translate(-50%,0);z-index:6000;background:rgba(255,255,255,.82);border:1px solid rgba(74,144,217,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:16px;padding:12px 22px;text-align:center;font-weight:700;font-size:.95rem;color:#2c3e50;box-shadow:0 10px 30px rgba(31,45,61,.2);pointer-events:none;opacity:0;transition:opacity .25s;max-width:86vw;}
+.ach-pop small{display:block;color:#9aa5b1;font-weight:400;font-size:.75rem;margin-top:3px;}
+body.dyn-pink .ach-pop{border-color:rgba(240,98,146,.6);background:rgba(255,242,247,.82);}
+body.dyn-green .ach-pop{border-color:rgba(111,158,99,.6);background:rgba(241,248,238,.82);}
+body.dyn-gold .ach-pop{border-color:rgba(214,168,67,.6);background:rgba(255,250,238,.84);}
+body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,241,.84);}
 </style>
 </head>
 <body>
@@ -80,7 +86,7 @@ body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{b
   applyOthTheme(localStorage.getItem('myTheme'));
   const socket = io();
   const IS_T = sessionStorage.getItem('isTest') === 'true';
-  let S = null, _dm = {}, othToastTimer = null;
+  let S = null, _dm = {}, othToastTimer = null, othAnimStep = -1, othBoardHidden = false, othBoardTimer = null;
   function dn(n){ return _dm[n] || n; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function toast(m){ const e=document.getElementById('othToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(othToastTimer); othToastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
@@ -97,6 +103,13 @@ body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{b
   socket.emit('get_display_names', res => { if (res && res.success) _dm = res.map; });
   socket.on('othello_state', s => { S = s; render(); });
   socket.on('othello_cancel', () => { location.href = '/room.html?game=othello'; });
+  const othAchEl = document.createElement('div'); othAchEl.className = 'ach-pop'; document.body.appendChild(othAchEl); let othAchTimer = null;
+  socket.on('achievement_unlocked', function(d){
+    if (!d || !d.name) return;
+    const qLab = { common:'普通', rare:'稀有', epic:'史诗', legend:'传说', hidden:'隐藏' };
+    othAchEl.innerHTML = '🏅 解锁成就「' + esc(d.name) + '」<small>' + ((d.quality && (qLab[d.quality] || d.quality)) || '') + (d.playerName ? ' · ' + esc(dn(d.playerName)) : '') + '</small>';
+    othAchEl.style.opacity = '1'; clearTimeout(othAchTimer); othAchTimer = setTimeout(function(){ othAchEl.style.opacity = '0'; }, 2600);
+  });
   setInterval(() => {
     if (!socket.connected) return;
     socket.emit('othello_pull', res => {
@@ -127,6 +140,9 @@ body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{b
     if (!S) { wrap.innerHTML = ''; return; }
     const legal = {}; (S.legal || []).forEach(x => { legal[x.r + ',' + x.c] = 1; });
     const flips = {}; if (S.last && S.last.flips) S.last.flips.forEach(f => { flips[f.r + ',' + f.c] = 1; });
+    // 只在“新的一手”渲染时播翻转动效；轮询/重绘同一手不再重复动画
+    const freshMove = S.step !== othAnimStep;
+    if (freshMove) othAnimStep = S.step;
     const letters = 'abcdefgh';
     let html = '<table class="oth"><tr><td class="hdr"></td>';
     for (let c = 0; c < 8; c++) html += '<td class="hdr">' + letters[c] + '</td>';
@@ -139,7 +155,7 @@ body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{b
         const isLast = S.last && S.last.r === r && S.last.c === c;
         html += '<td class="' + (legal[k] ? 'legal' : '') + (isLast ? ' lastmark' : '') + '"'
           + (legal[k] ? ' onclick="place(' + r + ',' + c + ')"' : '') + '>'
-          + (v ? '<span class="piece ' + (v === 1 ? 'b' : 'w') + (flips[k] ? ' flip' : '') + '"></span>' : '')
+          + (v ? '<span class="piece ' + (v === 1 ? 'b' : 'w') + ((freshMove && flips[k]) ? ' flip' : '') + '"></span>' : '')
           + '</td>';
       }
       html += '</tr>';
@@ -155,10 +171,11 @@ body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{b
       el.innerHTML = '<div class="res">'
         + '<div class="res-title">' + esc(title) + '</div>'
         + '<div class="res-score">黑 ' + S.over.black + ' 子 ／ 白 ' + S.over.white + ' 子</div>'
-        + '<div style="text-align:left;font-size:.78rem;color:#9aa5b1;">棋谱（黑先）</div>'
+        + '<div style="text-align:left;font-size:.78rem;color:#9aa5b1;">走步记录（黑先）</div>'
         + '<textarea class="rec" id="recText" readonly>' + esc(S.history || '') + '</textarea>'
         + '<div class="res-btns">'
-        + '<button class="res-btn" onclick="copyRecord()">复制棋谱</button>'
+        + '<button class="res-btn" onclick="copyRecord()">复制走步记录</button>'
+        + '<button class="res-btn ghost" onclick="toggleBoard()">' + (othBoardHidden ? '展开棋盘' : '收起棋盘') + '</button>'
         + '<button class="res-btn ghost" onclick="othExit()">返回房间</button>'
         + '</div></div>';
       return;
@@ -178,6 +195,11 @@ body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{b
     if (cl) cl.textContent = '取消对局' + (votes ? ('（' + votes + '/' + total + '）') : '');
     renderPlayers();
     renderBoard();
+    // 终局 3 秒后自动收起棋盘（结果页可再点“展开棋盘”）
+    const bw = document.getElementById('boardWrap');
+    if (bw) bw.style.display = (S.over && othBoardHidden) ? 'none' : '';
+    if (S.over && !othBoardTimer) othBoardTimer = setTimeout(() => { othBoardHidden = true; render(); }, 3000);
+    if (!S.over && othBoardTimer) { clearTimeout(othBoardTimer); othBoardTimer = null; othBoardHidden = false; }
     renderResult();
   }
   function place(r, c){
@@ -191,7 +213,7 @@ body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{b
   }
   function copyRecord(){
     const txt = (S && S.history) || '';
-    const done = () => toast('棋谱已复制：' + txt);
+    const done = () => toast('走步记录已复制：' + txt);
     const fallback = () => {
       const ta = document.getElementById('recText');
       if (!ta) return;
@@ -202,8 +224,10 @@ body.dyn-pink .toast{border-color:rgba(240,98,146,.55);} body.dyn-green .toast{b
     else fallback();
   }
   function othCancel(){ socket.emit('othello_cancel_vote', {}); }
+  function toggleBoard(){ othBoardHidden = !othBoardHidden; render(); }
   function othExit(){ location.href = '/room.html?game=othello'; }
 
   </script>
+  <script src="/emoji-widget.js"></script>
 </body>
 </html>

@@ -57,6 +57,7 @@
       <span class="lb-tab" id="tabBomber" onclick="switchTab('bomber')">烟火师榜</span>
       <span class="lb-tab" id="tabMsP" onclick="switchTab('msP')">扫雷·个人</span>
       <span class="lb-tab" id="tabMsT" onclick="switchTab('msT')">扫雷·组队</span>
+      <span class="lb-tab" id="tabOth" onclick="switchTab('othello')">翻转棋</span>
       <span class="lb-tab" id="tabAch" onclick="switchTab('ach')">成就榜</span>
     </div>
     <div class="lb-list" id="lbList"><div class="empty">加载中…</div></div>
@@ -68,6 +69,7 @@
     if (!myName) { window.location.href = '/index.html'; }
     let board = [], achBoard = [], drawingBoard = [], bomberBoard = [], curTab = 'board', scoreMode = 'best';
     let msPBest = [], msPH = [], msTBest = [], msTH = [];
+    let othBest = [], othHist = [];
     let highHistBoard = [], drawingHistBoard = [], bomberHistBoard = [];
 
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -166,6 +168,7 @@
       document.getElementById('tabBomber').classList.toggle('active', tab === 'bomber');
       document.getElementById('tabMsP').classList.toggle('active', tab === 'msP');
       document.getElementById('tabMsT').classList.toggle('active', tab === 'msT');
+      document.getElementById('tabOth').classList.toggle('active', tab === 'othello');
       document.getElementById('tabAch').classList.toggle('active', tab === 'ach');
       render();
     }
@@ -175,6 +178,7 @@
       if (curTab === 'bomber') return scoreMode === 'best' ? bomberBoard : bomberHistBoard;
       if (curTab === 'msP') return scoreMode === 'best' ? msPBest : msPH;
       if (curTab === 'msT') return scoreMode === 'best' ? msTBest : msTH;
+      if (curTab === 'othello') return scoreMode === 'best' ? othBest : othHist;
       return achBoard;
     }
     function render() {
@@ -187,7 +191,8 @@
           : (curTab === 'drawing' ? '还没有花菜对局记录，去打一局画猜接龙吧～'
             : (curTab === 'bomber' ? '还没有烟火师记录，去炸一局飞机吧～'
               : (curTab === 'msP' ? '还没有扫雷个人记录，去玩一局扫雷吧～'
-                : (curTab === 'msT' ? '还没有扫雷组队记录，去玩一局 2v2 吧～' : '还没有成就记录'))));
+                : (curTab === 'msT' ? '还没有扫雷组队记录，去玩一局 2v2 吧～'
+                  : (curTab === 'othello' ? '还没有翻转棋记录，去下两局黑白棋吧～' : '还没有成就记录')))));
         el.innerHTML = '<div class="empty">' + emptyTxt + '</div>';
         return;
       }
@@ -206,6 +211,9 @@
         } else if (curTab === 'msT') {
           who = esc((r.displayPlayers || r.players || []).join(' × '));
           stat = `${r.total} 分`;
+        } else if (curTab === 'othello') {
+          who = esc(r.displayName);
+          stat = scoreMode === 'best' ? `单局最高终局棋子数 ${r.best}` : `终局 ${r.score} 子`;
         } else if (curTab === 'board') {
           who = esc(r.displayName);
           stat = scoreMode === 'best' ? `单局最高 ${r.best} 分` : `${r.total} 分`;
@@ -238,6 +246,8 @@
           msPH = res.msHistBoard || [];
           msTBest = res.msTeamBestBoard || [];
           msTH = res.msTeamHistBoard || [];
+          othBest = res.othBestBoard || [];
+          othHist = res.othHistBoard || [];
           render();
         } else {
           document.getElementById('lbList').innerHTML = '<div class="err">加载失败，请刷新重试</div>';

@@ -182,6 +182,13 @@ const ACH_TITLES_BY_GAME = {
     epic: '爱上雷神！',
     legend: '天上人间',
     hidden: '五连绝世' // 隐藏成就兜底
+  },
+  // 翻转棋系列（2026-09-09 定稿）
+  othello: {
+    common: '色盲神秘客',
+    rare: '易如翻掌',
+    epic: '在彩色里朝圣黑白',
+    legend: '翻手为云覆手为雨'
   }
 };
 const ACH_TITLE_ORDER = ['common', 'rare', 'epic', 'legend'];
@@ -250,11 +257,12 @@ function buildProfileByGame(name) {
     const gk = e.game || 'other';
     if (!games[gk]) { games[gk] = {}; order.push(gk); }
     const mk = (e.game === 'minesweeper' && e.mode === 'team') ? '2v2' : (e.totalPlayers ? `${e.totalPlayers}人` : '普通');
-    const m = games[gk][mk] || { games: 0, wins: 0, totalScore: 0, best: 0, teamScore: 0, teamBest: 0 };
+    const m = games[gk][mk] || { games: 0, wins: 0, totalScore: 0, best: 0, teamScore: 0, teamBest: 0, draws: 0 };
     m.games++;
     m.totalScore += my.score;
     if (my.score > m.best) m.best = my.score;
     if (timelineWin(e, name)) m.wins++;
+    if (e.draw) m.draws = (m.draws || 0) + 1;
     if (e.game === 'minesweeper' && e.mode === 'team' && my.teamTotal != null) {
       m.teamScore = (m.teamScore || 0) + my.teamTotal;
       if (my.teamTotal > (m.teamBest || 0)) m.teamBest = my.teamTotal;
@@ -264,7 +272,7 @@ function buildProfileByGame(name) {
   return order.map(gk => ({
     game: gk,
     modes: Object.keys(games[gk])
-      .map(mode => { const s = games[gk][mode]; return { mode, games: s.games, wins: s.wins, winRate: s.games ? Math.round(s.wins / s.games * 100) : 0, totalScore: s.totalScore, best: s.best, teamScore: s.teamScore || 0, teamBest: s.teamBest || 0 }; })
+      .map(mode => { const s = games[gk][mode]; return { mode, games: s.games, wins: s.wins, winRate: s.games ? Math.round(s.wins / s.games * 100) : 0, totalScore: s.totalScore, best: s.best, teamScore: s.teamScore || 0, teamBest: s.teamBest || 0, draws: s.draws || 0 }; })
       .sort((a, b) => profileModeRank(a.mode) - profileModeRank(b.mode))
   }));
 }
@@ -295,6 +303,8 @@ let msTeamBest = new Map();      // 组合键(玩家A\u0001玩家B) -> 该组合
 let msTeamHistory = [];          // 组队合计流水
 let msFlagTotals = new Map();    // 玩家名 -> 累计正确插旗数（旗手 C/B/A/S1 成就）
 let msBestInfo = new Map();      // 玩家名 -> 最佳成绩来源 {mode:'solo'/'team', partner}（2v2 个人分上榜标注用）
+let othBestBoard = new Map();    // 玩家名 -> 翻转棋单局最高终局棋子数
+let othHistory = [];             // 翻转棋终局棋子数流水
 function recordBomberSparks(g) {
   if (!g) return;
   const ts = Date.now();
@@ -407,6 +417,8 @@ function saveBoardStats() {
       msTeamBest: Object.fromEntries(msTeamBest),
       msTeamHistory: msTeamHistory,
       msFlagTotals: Object.fromEntries(msFlagTotals),
+      othBest: Object.fromEntries(othBestBoard),
+      othHistory: othHistory,
       yHist: highHist, dHist: drawingHist, bHist: bomberHist
     }, null, 2), 'utf8');
   } catch (e) { console.error('❌ 排行榜写入失败：', e.message); }
@@ -423,6 +435,8 @@ function loadBoardStats() {
     if (o.msTeamBest) msTeamBest = new Map(Object.entries(o.msTeamBest));
     if (Array.isArray(o.msTeamHistory)) msTeamHistory = o.msTeamHistory;
     if (o.msFlagTotals) msFlagTotals = new Map(Object.entries(o.msFlagTotals));
+    if (o.othBest) othBestBoard = new Map(Object.entries(o.othBest));
+    if (Array.isArray(o.othHistory)) othHistory = o.othHistory;
     if (Array.isArray(o.yHist)) highHist = o.yHist;
     if (Array.isArray(o.dHist)) drawingHist = o.dHist;
     if (Array.isArray(o.bHist)) bomberHist = o.bHist;
@@ -677,8 +691,13 @@ function seedTestProfile(name) {
       { mode: '4人', games: 2, wins: 1, winRate: 50, totalScore: 64, best: 44 },
       { mode: '2v2', games: 3, wins: 2, winRate: 67, totalScore: 159, best: 66, teamScore: 281, teamBest: 112 }
     ]
+  }, {
+    game: 'othello',
+    modes: [
+      { mode: '2人', games: 5, wins: 2, draws: 1, winRate: 40, totalScore: 118, best: 40 }
+    ]
   }];
-  const totals = { games: 18, wins: 9, winRate: 50, totalScore: 2143, best: 336 };
+  const totals = { games: 23, wins: 11, winRate: 48, totalScore: 2261, best: 336 };
   const drawingCareer = { games: 4, wins: 1, winRate: 25, totalScore: 30, best: 13, mvp: 6, culprit: 4 };
   testProfileSeeds.set(name, { totals, byGame, drawingCareer });
   return { totals, byGame, drawingCareer };
@@ -787,7 +806,14 @@ const ACHIEVEMENTS = {
   ms_flag_c:   { name: 'C牌旗手',       quality: 'common', game: 'minesweeper', base: '旗手', group: 'ms_flag' },
   ms_flag_b:   { name: 'B牌旗手',       quality: 'rare',   game: 'minesweeper', base: '旗手', group: 'ms_flag' },
   ms_flag_a:   { name: 'A牌旗手',       quality: 'epic',   game: 'minesweeper', base: '旗手', group: 'ms_flag' },
-  ms_flag_s1:  { name: 'S1旗手',        quality: 'legend', game: 'minesweeper', base: '旗手', group: 'ms_flag' }
+  ms_flag_s1:  { name: 'S1旗手',        quality: 'legend', game: 'minesweeper', base: '旗手', group: 'ms_flag' },
+  // ===== 翻转棋（othello）成就（2026-09-09 定稿） =====
+  oth_corners:  { name: '打地鼠',    quality: 'common', game: 'othello' },
+  oth_draw:     { name: '平局圣佛',  quality: 'common', game: 'othello' },
+  oth_multi:    { name: '何谈翻啊',  quality: 'rare',   game: 'othello' },
+  oth_wipe:     { name: '领土战争',  quality: 'rare',   game: 'othello' },
+  oth_basin:    { name: '风水盆地',  quality: 'epic',   game: 'othello' },
+  oth_perfect:  { name: '完美主义',  quality: 'legend', game: 'othello' }
 };
 const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
 // 旗手升级档位（累计正确插旗数）：同组 id 靠品质最高档展示
@@ -1529,6 +1555,12 @@ function othLegal(board, player) {
   return out;
 }
 function othCount(board, player) { let n = 0; for (const v of board) if (v === player) n++; return n; }
+const OTH_CORNERS = [[0, 0], [0, 7], [7, 0], [7, 7]];
+function othCornerCount(board, player) {
+  let n = 0;
+  for (const [r, c] of OTH_CORNERS) if (board[othIdx(r, c)] === player) n++;
+  return n;
+}
 function othInit(room, names) {
   const board = new Array(64).fill(0);
   board[othIdx(3, 3)] = 2; // d4 白
@@ -1543,11 +1575,53 @@ function othInit(room, names) {
 }
 function othFinish(g) {
   const black = othCount(g.board, 1), white = othCount(g.board, 2);
-  g.over = {
-    black, white,
-    winnerNames: black > white ? [g.playerOrder[0]] : (white > black ? [g.playerOrder[1]] : [])
-  };
+  const winnerNames = black > white ? [g.playerOrder[0]] : (white > black ? [g.playerOrder[1]] : []);
+  g.over = { black, white, winnerNames, draw: black === white };
+  // —— 终局成就 ——
+  if (black === white) {
+    g.playerOrder.forEach(n => announceAchievement(g, g.roomId, n, 'oth_draw'));
+  } else if (winnerNames.length) {
+    const wname = winnerNames[0];
+    const wcolor = othColorOf(g, wname);
+    if (black === 0 || white === 0) {
+      announceAchievement(g, g.roomId, wname, 'oth_wipe');         // 领土战争：吃光对面
+      if (Math.max(black, white) === 64) announceAchievement(g, g.roomId, wname, 'oth_perfect'); // 完美主义 64:0
+    }
+    if (othCornerCount(g.board, wcolor) === 0) announceAchievement(g, g.roomId, wname, 'oth_basin'); // 风水盆地：未占角获胜
+  }
+  recordOthelloGame(g);
   return g.over;
+}
+// 翻转棋真实整局 → 排行榜（最佳/流水）+ 时光墙（正式玩家）
+function recordOthelloGame(g) {
+  if (!g || !g.over || g._recorded) return;
+  g._recorded = true;
+  const ts = Date.now();
+  const b = g.over.black, w = g.over.white, draw = !!g.over.draw;
+  for (const n of g.playerOrder) {
+    const color = othColorOf(g, n);
+    const score = color === 1 ? b : w;
+    othHistory.push({ name: n, score, ts, draw });
+    if (score > (othBestBoard.get(n) || 0)) othBestBoard.set(n, score);
+  }
+  if (othHistory.length > 300) othHistory = othHistory.slice(-300);
+  saveBoardStats();
+  const officials = g.playerOrder.filter(isOfficialPlayer);
+  if (officials.length) {
+    addTimeline({
+      ts, type: 'game', game: 'othello', totalPlayers: g.playerOrder.length, mode: 'solo',
+      draw,
+      players: officials,
+      winners: Array.isArray(g.over.winnerNames) ? g.over.winnerNames.slice() : [],
+      black: b, white: w,
+      results: officials.map(n => {
+        const color = othColorOf(g, n);
+        const score = color === 1 ? b : w;
+        const rank = draw ? 0 : ((color === 1 ? b > w : w > b) ? 1 : 2);
+        return { name: n, score, rank, draw, black: b, white: w };
+      })
+    });
+  }
 }
 // 落子；返回 {ok,msg?,finished?,pass?}
 function othPlace(g, name, r, c) {
@@ -1564,6 +1638,11 @@ function othPlace(g, name, r, c) {
   flips.forEach(([fr, fc]) => { g.board[othIdx(fr, fc)] = color; });
   g.history += othCoord(r, c);
   g.last = { name, r, c, flips: flips.map(([fr, fc]) => ({ r: fr, c: fc })) };
+  // —— 成就：我方连续行动三次（对手连续弃权） / 占领全部四角 ——
+  g.sameStreak = (g.lastMover === name) ? ((g.sameStreak || 0) + 1) : 1;
+  g.lastMover = name;
+  if (g.sameStreak >= 3) announceAchievement(g, g.roomId, name, 'oth_multi');
+  if (othCornerCount(g.board, color) === 4) announceAchievement(g, g.roomId, name, 'oth_corners');
   const other = g.playerOrder[1 - g.playerOrder.indexOf(name)];
   g.turn = other;
   // 对手无合法落子 → 自动弃权；若自己也无合法落子 → 双方弃权，结束
@@ -3295,8 +3374,14 @@ io.on('connection', (socket) => {
     const highHistArr = highHist.slice().sort((a, b) => b.total - a.total || a.ts - b.ts).slice(0, 20).map(r => Object.assign({}, r, { displayName: getDisplayName(r.name) }));
     const drawingHistArr = drawingHist.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20).map(r => Object.assign({}, r, { displayName: getDisplayName(r.name) }));
     const bomberHistArr = bomberHist.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20).map(r => Object.assign({}, r, { displayName: getDisplayName(r.name) }));
+    // 翻转棋榜：单局最高终局棋子数 + 流水
+    const othBestArr = [...othBestBoard.entries()].map(([name, best]) => ({ name, displayName: getDisplayName(name), best }))
+      .sort((a, b) => b.best - a.best || (a.name < b.name ? -1 : 1));
+    const othHistArr = othHistory.slice().sort((a, b) => b.score - a.score || a.ts - b.ts).slice(0, 20)
+      .map(r => Object.assign({}, r, { displayName: getDisplayName(r.name) }));
     if (cb) cb({ success: true, game: '快艇骰子', board: gamesArr, achBoard: achArr, drawingBoard: drawingArr, bomberBoard: bomberArr,
       highHistBoard: highHistArr, drawingHistBoard: drawingHistArr, bomberHistBoard: bomberHistArr,
+      othBestBoard: othBestArr, othHistBoard: othHistArr,
       msBestBoard: msBestArr, msHistBoard: msHistArr, msTeamBestBoard: msTeamBestArr, msTeamHistBoard: msTeamHistArr });
   });
 
@@ -4345,6 +4430,18 @@ io.on('connection', (socket) => {
     const res = othPlace(g, name, r, c);
     if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
     othBroadcast(room, g);
+    if (res.finished) broadcastAchievementSummary(room.roomId, g);
+    // 终局：8 秒后自动结算房间（复位准备状态，可开新局）；客户端保留本地棋局，仍可展开查看
+    if (res.finished && !gameEndTimers[room.roomId]) {
+      gameEndTimers[room.roomId] = setTimeout(() => {
+        if (othelloGames[room.roomId] !== g) { delete gameEndTimers[room.roomId]; return; }
+        delete othelloGames[room.roomId];
+        Object.keys(room.seats).forEach(i => { if (room.seats[i]) room.seats[i].ready = false; });
+        broadcastRoom(room);
+        delete gameEndTimers[room.roomId];
+        console.log(`🔄 翻转棋 ${room.roomId} 已结算，房间已复位`);
+      }, 8000);
+    }
     if (cb) cb({ success: true, pass: !!res.pass, finished: !!res.finished });
   });
   // 取消对局：沿用熟人局全员同意（可撤回）
