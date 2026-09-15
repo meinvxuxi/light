@@ -15,9 +15,12 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .pchip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;border:1px solid rgba(74,144,217,.35);background:rgba(255,255,255,.72);font-size:.82rem;backdrop-filter:blur(8px);}
 .pchip.on{border-color:#e67e22;box-shadow:0 0 0 2px rgba(230,126,34,.18) inset;font-weight:700;}
 .pchip.done{opacity:.55;}
-.pawnchip{width:18px;height:18px;border-radius:50%;overflow:hidden;border:1.5px solid #cbd2da;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
+.pawnchip{width:16px;height:16px;border-radius:50%;overflow:hidden;border:1px solid #cbd2da;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
 .pawnchip img{width:100%;height:100%;object-fit:contain;}
-.pawnchip .fb{font-size:.6rem;font-weight:800;}
+.pawnchip .fb{font-size:.55rem;font-weight:800;}
+.legend{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;font-size:.72rem;color:#6b7a90;margin:2px 0 4px;}
+.legend span{display:inline-flex;align-items:center;gap:4px;}
+.legend i{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none;}
 .pchip .meta{color:#7f8fa6;font-size:.72rem;}
 .modebar{display:flex;justify-content:center;gap:8px;margin:6px 0;flex-wrap:wrap;}
 .mode-opt{padding:5px 12px;border-radius:10px;border:1px solid #dfe3e8;background:#fff;cursor:pointer;font-size:.82rem;}
@@ -28,9 +31,9 @@ table.q{border-collapse:separate;border-spacing:0;margin:0 auto;background:#efe6
 table.q td{width:min(8.6vw,42px);height:min(8.6vw,42px);min-width:26px;min-height:26px;border:1px solid #c9b99b;position:relative;padding:0;text-align:center;vertical-align:middle;}
 table.q td.legal{cursor:pointer;}
 table.q td.legal::after{content:'';position:absolute;inset:34%;border-radius:50%;background:rgba(74,144,217,.6);}
-.pawn{position:absolute;inset:13%;border-radius:50%;overflow:hidden;border:1.5px solid rgba(0,0,0,.25);background:#fff;display:flex;align-items:center;justify-content:center;}
+.pawn{position:absolute;inset:22%;border-radius:50%;overflow:hidden;border:1px solid rgba(0,0,0,.25);background:#fff;display:flex;align-items:center;justify-content:center;}
 .pawn img{width:100%;height:100%;object-fit:contain;}
-.pawn .fb{font-size:.62rem;font-weight:800;}
+.pawn .fb{font-size:.55rem;font-weight:800;}
 .wslot{position:absolute;z-index:6;cursor:pointer;background:rgba(74,144,217,.35);border-radius:4px;}
 .wslot.h{left:1px;right:1px;bottom:-5px;height:9px;}
 .wslot.v{top:1px;bottom:1px;right:-5px;width:9px;}
@@ -62,6 +65,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   <div class="wrap">
     <div class="info"><span id="quoStage">连接中…</span><span id="quoStep">第 0 手</span></div>
     <div class="players" id="quoPlayers"></div>
+    <div class="legend" id="quoLegend"></div>
     <div class="modebar" id="quoModes"></div>
     <div class="boardwrap" id="quoBoard"></div>
     <div class="msg" id="quoMsg"></div>
@@ -144,6 +148,12 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
         + '</div>';
     }).join('');
   }
+  function renderLegend(){
+    const el = document.getElementById('quoLegend');
+    if (!S || !S.players) { el.innerHTML = ''; return; }
+    el.innerHTML = S.players.map(p => '<span><i style="background:' + p.color + ';"></i>'
+      + esc(dn(p.name)) + '：' + goalText(p.goal) + (p.finished ? ' ✅' : '') + '</span>').join('');
+  }
   function renderModes(){
     const el = document.getElementById('quoModes');
     if (!S || !S.players) { el.innerHTML = ''; return; }
@@ -195,6 +205,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const total = (S.playerOrder || []).length, votes = (S.cancelVotes || []).length;
     if (cl) cl.textContent = '取消对局' + (votes ? ('（' + votes + '/' + total + '）') : '');
     renderPlayers();
+    renderLegend();
     renderModes();
     // 终局 3 秒后自动收起棋盘（用户手动开合后不再自动干预）
     if (S.over && !quoBoardTimer && !quoUserToggled) quoBoardTimer = setTimeout(() => { quoBoardHidden = true; render(); }, 3000);
@@ -265,7 +276,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       html += '<tr>';
       for (let C = 0; C < 9; C++) {
         const cell = G[R][C], style = [];
-        if (cell.goal) style.push('background:' + hexA(cell.goal, .16));
+        if (cell.goal) style.push('background:' + hexA(cell.goal, .3));
         if (cell.wB) style.push('border-bottom:5px solid ' + cell.wB);
         if (cell.wR) style.push('border-right:5px solid ' + cell.wR);
         let inner = '';

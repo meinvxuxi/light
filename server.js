@@ -1796,11 +1796,11 @@ function othCancel(room, g) {
 // ======================== 路墙棋（quoridor）核心 ========================
 // 规格见 development/制作笔记/quoridor.md：9×9；列 a~i、行 1~9（r=0 → 第1行）
 const QUO_SIZE = 9;
-// 各人数的起点 / 目标边 / 每人墙数
+// 各人数的起点 / 目标边 / 每人墙数（start=[行,列]：r=0 第1行，c=0 a列）
 const QUO_CFG = {
-  2: [{ start: [4, 0], goal: 'row8' }, { start: [4, 8], goal: 'row0' }],
-  3: [{ start: [4, 0], goal: 'row8' }, { start: [4, 8], goal: 'row0' }, { start: [0, 4], goal: 'col8' }],
-  4: [{ start: [4, 0], goal: 'row8' }, { start: [4, 8], goal: 'row0' }, { start: [0, 4], goal: 'col8' }, { start: [8, 4], goal: 'col0' }]
+  2: [{ start: [0, 4], goal: 'row8' }, { start: [8, 4], goal: 'row0' }],          // 玩家1 e1→第9行；玩家2 e9→第1行
+  3: [{ start: [0, 4], goal: 'row8' }, { start: [8, 4], goal: 'row0' }, { start: [4, 0], goal: 'col8' }], // 玩家3 a5→i列
+  4: [{ start: [0, 4], goal: 'row8' }, { start: [8, 4], goal: 'row0' }, { start: [4, 0], goal: 'col8' }, { start: [4, 8], goal: 'col0' }] // 玩家4 i5→a列
 };
 const QUO_WALLS = { 2: 10, 3: 7, 4: 5 };
 const QUO_COLORS = ['#e74c3c', '#3f7fd6', '#43a047', '#e6b422']; // 红/蓝/绿/黄
