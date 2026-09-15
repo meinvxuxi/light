@@ -12,12 +12,12 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .wrap{max-width:600px;margin:0 auto;}
 .info{display:flex;justify-content:space-between;gap:8px;margin:8px 0 6px;font-size:.85rem;color:#6b7a90;flex-wrap:wrap;}
 .players{display:flex;justify-content:center;gap:8px;margin:4px 0 6px;flex-wrap:wrap;}
-.pchip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;border:1px solid rgba(74,144,217,.35);background:rgba(255,255,255,.72);font-size:.82rem;backdrop-filter:blur(8px);}
+.pchip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;border:1px solid rgba(74,144,217,.35);background:rgba(255,255,255,.72);font-size:.82rem;backdrop-filter:blur(8px);flex:0 0 auto;}
 .pchip.on{border-color:#e67e22;box-shadow:0 0 0 2px rgba(230,126,34,.18) inset;font-weight:700;}
 .pchip.done{opacity:.55;}
-.pawnchip{width:16px;height:16px;border-radius:50%;overflow:hidden;border:1px solid #cbd2da;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
-.pawnchip img{width:100%;height:100%;object-fit:contain;}
-.pawnchip .fb{font-size:.55rem;font-weight:800;}
+.pawnchip{width:24px;height:24px;border-radius:50%;overflow:hidden;border:2px solid #cbd2da;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
+.pawnchip img{width:100%;height:100%;object-fit:contain;display:block;}
+.pawnchip .fb{font-size:.75rem;font-weight:800;}
 .legend{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;font-size:.72rem;color:#6b7a90;margin:2px 0 4px;}
 .legend span{display:inline-flex;align-items:center;gap:4px;}
 .legend i{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none;}
@@ -31,12 +31,16 @@ table.q{border-collapse:separate;border-spacing:0;margin:0 auto;background:#efe6
 table.q td{width:min(8.6vw,42px);height:min(8.6vw,42px);min-width:26px;min-height:26px;border:1px solid #c9b99b;position:relative;padding:0;text-align:center;vertical-align:middle;}
 table.q td.legal{cursor:pointer;}
 table.q td.legal::after{content:'';position:absolute;inset:34%;border-radius:50%;background:rgba(74,144,217,.6);}
-.pawn{position:absolute;inset:22%;border-radius:50%;overflow:hidden;border:1px solid rgba(0,0,0,.25);background:#fff;display:flex;align-items:center;justify-content:center;}
-.pawn img{width:100%;height:100%;object-fit:contain;}
-.pawn .fb{font-size:.55rem;font-weight:800;}
+.pawn{position:absolute;inset:10%;border-radius:50%;overflow:hidden;border:2px solid rgba(0,0,0,.25);background:#fff;display:flex;align-items:center;justify-content:center;}
+.pawn img{width:100%;height:100%;object-fit:contain;display:block;}
+.pawn .fb{font-size:.72rem;font-weight:800;}
+/* 已放置的墙：画在两条格线正中间（跨两格） */
+.wall{position:absolute;z-index:5;border-radius:4px;pointer-events:none;box-shadow:0 1px 2px rgba(0,0,0,.25);}
+.wall.h{left:0;width:200%;bottom:-4px;height:8px;}
+.wall.v{top:0;height:200%;right:-4px;width:8px;}
 .wslot{position:absolute;z-index:6;cursor:pointer;background:rgba(74,144,217,.35);border-radius:4px;}
-.wslot.h{left:1px;right:1px;bottom:-5px;height:9px;}
-.wslot.v{top:1px;bottom:1px;right:-5px;width:9px;}
+.wslot.h{left:1px;right:1px;bottom:-4px;height:8px;}
+.wslot.v{top:1px;bottom:1px;right:-4px;width:8px;}
 .msg{text-align:center;font-size:.86rem;color:#6b7a90;margin:8px 0;min-height:22px;}
 .res{max-width:460px;margin:8px auto;background:rgba(255,255,255,.82);backdrop-filter:blur(12px);border:1px solid rgba(74,144,217,.4);border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 10px 28px rgba(31,45,61,.12);}
 .res-title{font-size:1.05rem;font-weight:800;margin-bottom:8px;}
@@ -69,7 +73,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     <div class="modebar" id="quoModes"></div>
     <div class="boardwrap" id="quoBoard"></div>
     <div class="msg" id="quoMsg"></div>
-    <div class="histbar"><span class="hist-toggle" onclick="toggleHist()">📜 时光墙（走步记录）</span> <span id="quoPreviewLb" style="display:none;font-size:.78rem;color:#e67e22;"></span></div>
+    <div class="histbar"><span class="hist-toggle" onclick="toggleHist()">走步记录</span> <span id="quoPreviewLb" style="display:none;font-size:.78rem;color:#e67e22;"></span></div>
     <div class="histpanel" id="quoHist"></div>
   </div>
   <div class="toast" id="quoToast"></div>
@@ -176,7 +180,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
           + (p ? '<span style="color:' + p.color + ';">剩墙 ' + p.wallLeft + '</span>' : '') + '</div>';
       }).join('');
       el.innerHTML = '<div class="res"><div class="res-title">🏁 游戏结束 · 最终排名</div>' + rows
-        + '<div style="font-size:.78rem;color:#9aa5b1;margin-top:6px;">共用 ' + S.actions + ' 手（走步记录请到时光墙展开查看）</div>'
+        + '<div style="font-size:.78rem;color:#9aa5b1;margin-top:6px;">共用 ' + S.actions + ' 手</div>'
         + '<div class="res-btns">'
         + '<button class="res-btn ghost" onclick="toggleBoard()">' + (quoBoardHidden ? '展开棋盘' : '收起棋盘') + '</button>'
         + '<button class="res-btn ghost" onclick="quoExit()">返回房间</button>'
@@ -260,15 +264,14 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const goal = me ? me.goal : 'row0';
     const tCell = (r, c) => goal === 'row8' ? [8 - r, 8 - c] : goal === 'col8' ? [8 - c, r] : goal === 'col0' ? [c, 8 - r] : [r, c];
     const tWall = (r, c, o) => goal === 'row8' ? { r: 7 - r, c: 7 - c, o } : goal === 'col8' ? { r: 7 - c, c: r, o: o === 'H' ? 'V' : 'H' } : goal === 'col0' ? { r: c, c: 7 - r, o: o === 'H' ? 'V' : 'H' } : { r, c, o };
-    const G = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => ({ goal: null, pawn: null, legal: false, to: null, wB: null, wR: null, slots: [] })));
+    const G = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => ({ goal: null, pawn: null, legal: false, to: null, walls: [], slots: [] })));
     (S.goalCells || []).forEach(gc => gc.cells.forEach(([r, c]) => { const [R, C] = tCell(r, c); if (!G[R][C].goal) G[R][C].goal = gc.color; }));
     (pos || []).forEach((p, i) => { if (!p) return; const [R, C] = tCell(p[0], p[1]); G[R][C].pawn = i; });
     legalMoves.forEach(m => { const [R, C] = tCell(m[0], m[1]); G[R][C].legal = true; G[R][C].to = [m[0], m[1]]; });
     walls.forEach(w => {
       const tw = tWall(w.r, w.c, w.o);
       const col = (S.players[w.owner] || {}).color || '#8b5a2b';
-      if (tw.o === 'H') { G[tw.r][tw.c].wB = col; if (tw.c + 1 < 9) G[tw.r][tw.c + 1].wB = col; }
-      else { G[tw.r][tw.c].wR = col; if (tw.r + 1 < 9) G[tw.r + 1][tw.c].wR = col; }
+      G[tw.r][tw.c].walls.push({ type: tw.o === 'H' ? 'h' : 'v', color: col });
     });
     legalSlots.forEach(s => { const tw = tWall(s.r, s.c, s.o); G[tw.r][tw.c].slots.push({ o: tw.o, orig: s }); });
     let html = '<table class="q">';
@@ -276,14 +279,13 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       html += '<tr>';
       for (let C = 0; C < 9; C++) {
         const cell = G[R][C], style = [];
-        if (cell.goal) style.push('background:' + hexA(cell.goal, .3));
-        if (cell.wB) style.push('border-bottom:5px solid ' + cell.wB);
-        if (cell.wR) style.push('border-right:5px solid ' + cell.wR);
+        if (cell.goal) style.push('background:' + hexA(cell.goal, .16));
         let inner = '';
         if (cell.pawn != null && S.players[cell.pawn]) { const p = S.players[cell.pawn]; inner = pawnHtml(p.name, p.color); }
+        const wallHtml = cell.walls.map(w => '<span class="wall ' + w.type + '" style="background:' + w.color + ';"></span>').join('');
         let slots = '';
         cell.slots.forEach(sl => { slots += '<span class="wslot ' + (sl.o === 'H' ? 'h' : 'v') + '" onclick="placeWall(' + sl.orig.r + ',' + sl.orig.c + ',\'' + sl.orig.o + '\')"></span>'; });
-        html += '<td class="' + (cell.legal ? 'legal' : '') + '" style="' + style.join(';') + '"' + (cell.legal ? ' onclick="moveTo(' + cell.to[0] + ',' + cell.to[1] + ')"' : '') + '>' + inner + slots + '</td>';
+        html += '<td class="' + (cell.legal ? 'legal' : '') + '" style="' + style.join(';') + '"' + (cell.legal ? ' onclick="moveTo(' + cell.to[0] + ',' + cell.to[1] + ')"' : '') + '>' + inner + wallHtml + slots + '</td>';
       }
       html += '</tr>';
     }
