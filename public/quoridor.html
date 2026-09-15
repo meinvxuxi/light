@@ -15,7 +15,7 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .pchip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;border:1px solid rgba(74,144,217,.35);background:rgba(255,255,255,.72);font-size:.82rem;backdrop-filter:blur(8px);flex:0 0 auto;}
 .pchip.on{border-color:#e67e22;box-shadow:0 0 0 2px rgba(230,126,34,.18) inset;font-weight:700;}
 .pchip.done{opacity:.55;}
-.pawnchip{width:24px;height:24px;border-radius:50%;overflow:hidden;border:2px solid #cbd2da;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
+.pawnchip{position:relative;width:24px;height:24px;border-radius:50%;overflow:hidden;border:2px solid #cbd2da;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
 .pawnchip img{width:100%;height:100%;object-fit:contain;display:block;}
 .pawnchip .fb{font-size:.75rem;font-weight:800;}
 .legend{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;font-size:.72rem;color:#6b7a90;margin:2px 0 4px;}
@@ -113,9 +113,6 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function dn(n){ return _dm[n] || n; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function toast(m){ const e=document.getElementById('quoToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(quoToastTimer); quoToastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
-  function goalText(goal){
-    return goal === 'row8' ? '目标 第9行' : goal === 'row0' ? '目标 第1行' : goal === 'col8' ? '目标 i列' : '目标 a列';
-  }
   socket.on('connect', () => {
     socket.emit('heartbeat', myName, IS_T, true);
     setTimeout(() => { socket.emit('get_profile', r => { if (r && r.success && r.theme) { localStorage.setItem('myTheme', r.theme); applyQuoTheme(r.theme); } }); }, 200);
@@ -148,7 +145,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       return '<div class="pchip' + (on ? ' on' : '') + (p.finished ? ' done' : '') + '">'
         + '<span class="pawnchip">' + pawnHtml(p.name, p.color) + '</span>'
         + '<span style="color:' + p.color + ';font-weight:700;">' + esc(dn(p.name)) + (p.name === myName ? '（你）' : '') + '</span>'
-        + '<span class="meta">剩墙 ' + p.wallLeft + '　' + goalText(p.goal) + (rank ? '　✅' + rank : '') + '</span>'
+        + '<span class="meta">剩墙 ' + p.wallLeft + (rank ? '　✅' + rank : '') + '</span>'
         + '</div>';
     }).join('');
   }
@@ -156,7 +153,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const el = document.getElementById('quoLegend');
     if (!S || !S.players) { el.innerHTML = ''; return; }
     el.innerHTML = S.players.map(p => '<span><i style="background:' + p.color + ';"></i>'
-      + esc(dn(p.name)) + '：' + goalText(p.goal) + (p.finished ? ' ✅' : '') + '</span>').join('');
+      + esc(dn(p.name)) + (p.finished ? ' ✅' : '') + '</span>').join('');
   }
   function renderModes(){
     const el = document.getElementById('quoModes');
