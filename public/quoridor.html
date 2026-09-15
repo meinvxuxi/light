@@ -15,9 +15,11 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .pchip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;border:1px solid rgba(74,144,217,.35);background:rgba(255,255,255,.72);font-size:.82rem;backdrop-filter:blur(8px);flex:0 0 auto;}
 .pchip.on{border-color:#e67e22;box-shadow:0 0 0 2px rgba(230,126,34,.18) inset;font-weight:700;}
 .pchip.done{opacity:.55;}
-.pawnchip{position:relative;width:24px;height:24px;border-radius:50%;overflow:hidden;border:2px solid #cbd2da;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
-.pawnchip img{width:100%;height:100%;object-fit:contain;display:block;}
+.pawnchip{position:relative;width:24px;height:24px;border-radius:50%;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
+.pawnchip img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;}
 .pawnchip .fb{font-size:.75rem;font-weight:800;}
+.pawnchip .pawn{inset:0;border:none;background:transparent;border-radius:50%;}
+.pawnchip .pawn img{object-fit:cover;border-radius:50%;}
 .legend{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;font-size:.72rem;color:#6b7a90;margin:2px 0 4px;}
 .legend span{display:inline-flex;align-items:center;gap:4px;}
 .legend i{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none;}
@@ -34,13 +36,10 @@ table.q td.legal::after{content:'';position:absolute;inset:34%;border-radius:50%
 .pawn{position:absolute;inset:10%;border-radius:50%;overflow:hidden;border:2px solid rgba(0,0,0,.25);background:#fff;display:flex;align-items:center;justify-content:center;}
 .pawn img{width:100%;height:100%;object-fit:contain;display:block;}
 .pawn .fb{font-size:.72rem;font-weight:800;}
-/* 已放置的墙：画在两条格线正中间（跨两格） */
-.wall{position:absolute;z-index:5;border-radius:4px;pointer-events:none;box-shadow:0 1px 2px rgba(0,0,0,.25);}
-.wall.h{left:0;width:200%;bottom:-4px;height:8px;}
-.wall.v{top:0;height:200%;right:-4px;width:8px;}
-.wslot{position:absolute;z-index:6;cursor:pointer;background:rgba(74,144,217,.35);border-radius:4px;}
-.wslot.h{left:1px;right:1px;bottom:-4px;height:8px;}
-.wslot.v{top:1px;bottom:1px;right:-4px;width:8px;}
+.wslot{position:absolute;z-index:6;cursor:pointer;background:rgba(74,144,217,.4);border-radius:4px;}
+.wslot.h{left:80%;width:40%;bottom:-4px;height:8px;}
+.wslot.v{top:80%;height:40%;right:-4px;width:8px;}
+.wslot.on{background:rgba(230,126,34,.92) !important;box-shadow:0 0 0 2px rgba(230,126,34,.3);}
 .msg{text-align:center;font-size:.86rem;color:#6b7a90;margin:8px 0;min-height:22px;}
 .res{max-width:460px;margin:8px auto;background:rgba(255,255,255,.82);backdrop-filter:blur(12px);border:1px solid rgba(74,144,217,.4);border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 10px 28px rgba(31,45,61,.12);}
 .res-title{font-size:1.05rem;font-weight:800;margin-bottom:8px;}
@@ -91,11 +90,11 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     '玩家3': '/assets/avatars/p3/bqb3/' + encodeURIComponent('千夏-烧烤.png'),
     '玩家4': '/assets/avatars/p4/bqb4/' + encodeURIComponent('塔神-阅读.png')
   };
-  function pawnHtml(n, color) {
+  function pawnHtml(n, color, chip) {
     const url = E[n];
-    if (url) return '<span class="pawn"><img src="' + url + '"></span>';
+    if (url) return '<span class="pawn"' + (chip ? '' : ' style="border-color:' + hexA(color, .45) + ';"') + '><img src="' + url + '"></span>';
     const ch = esc(String(n || '?').replace(/^游客/, '').slice(0, 1));
-    return '<span class="pawn" style="border-color:' + color + '"><span class="fb" style="color:' + color + '">' + ch + '</span></span>';
+    return '<span class="pawn" style="border-color:' + hexA(color, .45) + '"><span class="fb" style="color:' + color + '">' + ch + '</span></span>';
   }
   function applyQuoTheme(t){
     const mobile = window.matchMedia('(max-width: 768px)').matches;
@@ -109,7 +108,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   applyQuoTheme(localStorage.getItem('myTheme'));
   const socket = io();
   const IS_T = sessionStorage.getItem('isTest') === 'true';
-  let S = null, _dm = {}, quoMode = 'move', histOpen = false, preview = null, quoBoardHidden = false, quoToastTimer = null, quoBoardTimer = null, quoUserToggled = false;
+  let S = null, _dm = {}, quoMode = 'move', histOpen = false, preview = null, quoBoardHidden = false, quoToastTimer = null, quoBoardTimer = null, quoUserToggled = false, quoWallConfirm = true, armedWall = null, quoWallUni = false;
   function dn(n){ return _dm[n] || n; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function toast(m){ const e=document.getElementById('quoToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(quoToastTimer); quoToastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
@@ -124,7 +123,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   });
   setInterval(() => socket.emit('heartbeat', myName, IS_T, true), 10000);
   socket.emit('get_display_names', res => { if (res && res.success) _dm = res.map; });
-  socket.on('quoridor_state', s => { S = s; preview = null; render(); });
+  socket.on('quoridor_state', s => { S = s; preview = null; armedWall = null; render(); });
   socket.on('quoridor_cancel', () => { location.href = '/room.html?game=quoridor'; });
   setInterval(() => {
     if (!socket.connected) return;
@@ -143,7 +142,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       const on = !S.over && S.current === i;
       const rank = p.finished ? ('第' + (p.rank || '?') + '名') : '';
       return '<div class="pchip' + (on ? ' on' : '') + (p.finished ? ' done' : '') + '">'
-        + '<span class="pawnchip">' + pawnHtml(p.name, p.color) + '</span>'
+        + '<span class="pawnchip">' + pawnHtml(p.name, p.color, true) + '</span>'
         + '<span style="color:' + p.color + ';font-weight:700;">' + esc(dn(p.name)) + (p.name === myName ? '（你）' : '') + '</span>'
         + '<span class="meta">剩墙 ' + p.wallLeft + (rank ? '　✅' + rank : '') + '</span>'
         + '</div>';
@@ -163,6 +162,8 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const wallLeft = me ? me.wallLeft : 0;
     el.innerHTML = '<span class="mode-opt' + (quoMode === 'move' ? ' on' : '') + (turn ? '' : ' dis') + '" onclick="setMode(\'move\')">移动棋子</span>'
       + '<span class="mode-opt' + (quoMode === 'wall' ? ' on' : '') + (turn && wallLeft > 0 ? '' : ' dis') + '" onclick="setMode(\'wall\')">放墙（剩 ' + wallLeft + '）</span>'
+      + '<span class="mode-opt" onclick="setWallConfirm(' + (quoWallConfirm ? 'false' : 'true') + ')">放墙确认：' + (quoWallConfirm ? '两步' : '直接') + '</span>'
+      + '<span class="mode-opt" onclick="toggleWallUni()">墙色：' + (quoWallUni ? '统一' : '分色') + '</span>'
       + (preview ? '<span class="mode-opt dis">回放中</span>' : '');
   }
   function renderMsg(){
@@ -224,7 +225,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       const me = playerAt(myIdx());
       if (!me || me.wallLeft <= 0) { toast('你的墙已用完'); return; }
     }
-    quoMode = m; render();
+    quoMode = m; armedWall = null; render();
   }
   function replayStep(i){
     socket.emit('quoridor_snapshot', { index: i }, res => {
@@ -261,14 +262,15 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const goal = me ? me.goal : 'row0';
     const tCell = (r, c) => goal === 'row8' ? [8 - r, 8 - c] : goal === 'col8' ? [8 - c, r] : goal === 'col0' ? [c, 8 - r] : [r, c];
     const tWall = (r, c, o) => goal === 'row8' ? { r: 7 - r, c: 7 - c, o } : goal === 'col8' ? { r: 7 - c, c: r, o: o === 'H' ? 'V' : 'H' } : goal === 'col0' ? { r: c, c: 7 - r, o: o === 'H' ? 'V' : 'H' } : { r, c, o };
-    const G = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => ({ goal: null, pawn: null, legal: false, to: null, walls: [], slots: [] })));
+    const G = Array.from({ length: 9 }, () => Array.from({ length: 9 }, () => ({ goal: null, pawn: null, legal: false, to: null, wB: null, wR: null, slots: [] })));
     (S.goalCells || []).forEach(gc => gc.cells.forEach(([r, c]) => { const [R, C] = tCell(r, c); if (!G[R][C].goal) G[R][C].goal = gc.color; }));
     (pos || []).forEach((p, i) => { if (!p) return; const [R, C] = tCell(p[0], p[1]); G[R][C].pawn = i; });
     legalMoves.forEach(m => { const [R, C] = tCell(m[0], m[1]); G[R][C].legal = true; G[R][C].to = [m[0], m[1]]; });
     walls.forEach(w => {
       const tw = tWall(w.r, w.c, w.o);
-      const col = (S.players[w.owner] || {}).color || '#8b5a2b';
-      G[tw.r][tw.c].walls.push({ type: tw.o === 'H' ? 'h' : 'v', color: col });
+      const col = quoWallUni ? '#8b6f47' : ((S.players[w.owner] || {}).color || '#8b6f47');
+      if (tw.o === 'H') { G[tw.r][tw.c].wB = col; if (tw.c + 1 < 9) G[tw.r][tw.c + 1].wB = col; }
+      else { G[tw.r][tw.c].wR = col; if (tw.r + 1 < 9) G[tw.r + 1][tw.c].wR = col; }
     });
     legalSlots.forEach(s => { const tw = tWall(s.r, s.c, s.o); G[tw.r][tw.c].slots.push({ o: tw.o, orig: s }); });
     let html = '<table class="q">';
@@ -277,12 +279,16 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       for (let C = 0; C < 9; C++) {
         const cell = G[R][C], style = [];
         if (cell.goal) style.push('background:' + hexA(cell.goal, .16));
+        if (cell.wB) style.push('border-bottom:5px solid ' + cell.wB);
+        if (cell.wR) style.push('border-right:5px solid ' + cell.wR);
         let inner = '';
-        if (cell.pawn != null && S.players[cell.pawn]) { const p = S.players[cell.pawn]; inner = pawnHtml(p.name, p.color); }
-        const wallHtml = cell.walls.map(w => '<span class="wall ' + w.type + '" style="background:' + w.color + ';"></span>').join('');
+        if (cell.pawn != null && S.players[cell.pawn]) { const p = S.players[cell.pawn]; inner = pawnHtml(p.name, p.color, false); }
         let slots = '';
-        cell.slots.forEach(sl => { slots += '<span class="wslot ' + (sl.o === 'H' ? 'h' : 'v') + '" onclick="placeWall(' + sl.orig.r + ',' + sl.orig.c + ',\'' + sl.orig.o + '\')"></span>'; });
-        html += '<td class="' + (cell.legal ? 'legal' : '') + '" style="' + style.join(';') + '"' + (cell.legal ? ' onclick="moveTo(' + cell.to[0] + ',' + cell.to[1] + ')"' : '') + '>' + inner + wallHtml + slots + '</td>';
+        cell.slots.forEach(sl => {
+          const on = armedWall && armedWall.r === sl.orig.r && armedWall.c === sl.orig.c && armedWall.o === sl.orig.o;
+          slots += '<span class="wslot ' + (sl.o === 'H' ? 'h' : 'v') + (on ? ' on' : '') + '" onclick="placeWall(' + sl.orig.r + ',' + sl.orig.c + ',\'' + sl.orig.o + '\')"></span>';
+        });
+        html += '<td class="' + (cell.legal ? 'legal' : '') + '" style="' + style.join(';') + '"' + (cell.legal ? ' onclick="moveTo(' + cell.to[0] + ',' + cell.to[1] + ')"' : '') + '>' + inner + slots + '</td>';
       }
       html += '</tr>';
     }
@@ -292,16 +298,30 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function moveTo(r, c){
     if (preview) return;
     if (!isMyTurn()) { toast('还没轮到你'); return; }
+    armedWall = null;
     socket.emit('quoridor_move', { r, c }, res => { if (res && !res.success && res.msg) toast(res.msg); });
   }
   function placeWall(r, c, o){
     if (preview) return;
     if (!isMyTurn()) { toast('还没轮到你'); return; }
+    if (quoWallConfirm) {
+      if (armedWall && armedWall.r === r && armedWall.c === c && armedWall.o === o) {
+        const a = armedWall; armedWall = null;
+        socket.emit('quoridor_wall', { r: a.r, c: a.c, o: a.o }, res => { if (res && !res.success && res.msg) toast(res.msg); });
+      } else {
+        armedWall = { r, c, o };
+        render();
+        toast('已选好位置，再点同一个位置确认放墙');
+      }
+      return;
+    }
     socket.emit('quoridor_wall', { r, c, o }, res => {
       if (res && !res.success && res.msg) toast(res.msg);
       else if (res && res.success) { quoMode = 'move'; }
     });
   }
+  function setWallConfirm(v){ quoWallConfirm = !!v; armedWall = null; render(); }
+  function toggleWallUni(){ quoWallUni = !quoWallUni; render(); }
   const quoAchEl = document.createElement('div'); quoAchEl.className = 'ach-pop'; document.body.appendChild(quoAchEl); let quoAchTimer = null;
   socket.on('achievement_unlocked', function(d){
     if (!d || !d.name) return;
