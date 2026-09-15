@@ -49,6 +49,21 @@
     if (sessionStorage.getItem('isGuest') === 'true') { window.location.href = '/lobby.html'; }
 
     const GAME_LABEL = { yahtzee: '快艇骰子', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋' };
+    const quoRecs = {};
+    function quoEsc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+    function toggleQuoRecord(id){
+      const el = document.getElementById(id), tri = document.getElementById('qtri-' + id);
+      if (!el) return;
+      const open = el.style.display === 'none';
+      el.style.display = open ? 'block' : 'none';
+      if (tri) tri.textContent = (open ? '▾ ' : '▸ ') + '展开走步记录';
+    }
+    function copyQuoRecord(id){
+      const t = quoRecs[id] || '', btn = document.getElementById('qcopy-' + id);
+      const ok = () => { if (btn) { const o = btn.textContent; btn.textContent = '已复制'; setTimeout(() => { btn.textContent = o; }, 1500); } };
+      const fb = () => { try { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); ok(); } catch (e) {} };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok).catch(fb); else fb();
+    }
 
     // ===== 显示名映射 =====
     let _dispMap = {};
@@ -86,7 +101,10 @@
           const results = (it.results || []).slice()
             .sort((a, b) => isOth ? (b.score - a.score) : (a.rank - b.rank))
             .map(r => {
-              if (isQuo) return `第${r.rank}名　${dn(r.name)}　名次分 ${r.score}`;
+              if (isQuo) {
+                const wl = (it.walls || []).find(x => x.name === r.name);
+                return `第${r.rank}名　${dn(r.name)}　名次分 ${r.score}${wl ? ('　剩墙 ' + wl.left) : ''}`;
+              }
               if (isOth) {
                 const draw = it.draw || r.draw;
                 return `${draw ? '平局' : ('第' + (r.rank || '-') + '名')}　${dn(r.name)}　终局棋子 ${r.score} 子（黑 ${it.black != null ? it.black : (r.black != null ? r.black : '?')} / 白 ${it.white != null ? it.white : (r.white != null ? r.white : '?')}）`;
@@ -100,6 +118,16 @@
           detail.className = 'tl-detail';
           detail.id = dId;
           detail.innerHTML = results;
+          if (isQuo && (it.history || []).length) {
+            const recId = 'quorec-' + it.ts;
+            quoRecs[recId] = (it.history || []).join(' ');
+            detail.innerHTML += '<div style="margin-top:6px;">'
+              + '<span style="color:#4a90d9;cursor:pointer;font-size:.78rem;" id="qtri-' + recId + '" onclick="toggleQuoRecord(\'' + recId + '\')">▸ 展开走步记录</span>'
+              + '<div id="' + recId + '" style="display:none;margin-top:4px;">'
+              + '<div style="max-height:120px;overflow:auto;background:rgba(74,144,217,.08);border-radius:8px;padding:6px 8px;white-space:pre-wrap;word-break:break-all;">' + quoEsc(quoRecs[recId]) + '</div>'
+              + '<button id="qcopy-' + recId + '" onclick="copyQuoRecord(\'' + recId + '\')" style="margin-top:4px;padding:3px 10px;border:none;border-radius:8px;background:#4a90d9;color:#fff;font-size:.75rem;cursor:pointer;">复制走步记录</button>'
+              + '</div></div>';
+          }
           row.appendChild(detail);
         } else {
           const q = (it.quality || 'common');

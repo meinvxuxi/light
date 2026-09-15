@@ -212,8 +212,8 @@
       return ps.map((p, i) => (i ? '<span class="st-sep">·</span>' : '') + p + ' <span class="mv">' + vs[i] + '</span>').join('');
     }
     function metricStrQuo(m) {
-      const ps = ['场次', '胜场', '胜率', '累计名次分', '最高名次分'];
-      const vs = [m.games, m.wins, m.winRate + '%', m.totalScore, m.best];
+      const ps = ['场次', '胜场', '胜率', '累计名次分'];
+      const vs = [m.games, m.wins, m.winRate + '%', m.totalScore];
       return ps.map((p, i) => (i ? '<span class="st-sep">·</span>' : '') + p + ' <span class="mv">' + vs[i] + '</span>').join('');
     }
     function renderStatsBox() {
@@ -275,7 +275,6 @@
           ${statCell('胜场', s.wins)}
           ${statCell('胜率', s.games ? s.winRate + '%' : '—')}
           ${statCell('累计名次分', s.totalScore)}
-          ${statCell('最高名次分', s.best)}
         </div>
         <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">路墙棋战绩（名次分：第1名=人数、第2名=人数-1…）</div>
         ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrQuo(m)}</div>`).join('')}`;

@@ -2100,6 +2100,8 @@ function recordQuoridorGame(g) {
     players: officials,
     ranking: g.over.ranking,
     actions: g.actions,
+    history: g.history.slice(),
+    walls: g.playerOrder.map((n, i) => ({ name: n, left: g.wallLeft[i], used: g.wallsUsed[i] })),
     results: officials.map(n => {
       const r = g.over.ranking.find(x => x.name === n) || { rank: 0 };
       return { name: n, rank: r.rank, score: r.rank ? (g.playerOrder.length - r.rank + 1) : 0 };
