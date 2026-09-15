@@ -164,7 +164,7 @@
     window.addEventListener('pageshow', () => { paintSaved(); if (socket.connected) applyTheme(); });
     setInterval(sendHeartbeat, 10000);
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋' };
     function gameLabel(k) { return GAME_LABEL[k] || k; }
     function statCell(lab, val) {
       return `<div class="st-cell">${lab}<b>${val}</b></div>`;
@@ -209,6 +209,11 @@
     function metricStrOth(m) {
       const ps = ['场次', '胜场', '平局', '胜率', '累计棋子', '最高棋子'];
       const vs = [m.games, m.wins, (m.draws || 0), m.winRate + '%', m.totalScore, m.best];
+      return ps.map((p, i) => (i ? '<span class="st-sep">·</span>' : '') + p + ' <span class="mv">' + vs[i] + '</span>').join('');
+    }
+    function metricStrQuo(m) {
+      const ps = ['场次', '胜场', '胜率', '累计名次分', '最高名次分'];
+      const vs = [m.games, m.wins, m.winRate + '%', m.totalScore, m.best];
       return ps.map((p, i) => (i ? '<span class="st-sep">·</span>' : '') + p + ' <span class="mv">' + vs[i] + '</span>').join('');
     }
     function renderStatsBox() {
@@ -263,6 +268,17 @@
         </div>
         <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">翻转棋战绩（终局棋子数）</div>
         ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrOth(m)}</div>`).join('')}`;
+      } else if (curGame === 'quoridor') {
+        html = `
+        <div class="st-grid two">
+          ${statCell('游玩场次', s.games)}
+          ${statCell('胜场', s.wins)}
+          ${statCell('胜率', s.games ? s.winRate + '%' : '—')}
+          ${statCell('累计名次分', s.totalScore)}
+          ${statCell('最高名次分', s.best)}
+        </div>
+        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">路墙棋战绩（名次分：第1名=人数、第2名=人数-1…）</div>
+        ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrQuo(m)}</div>`).join('')}`;
       } else {
         html = `
         <div class="st-grid">

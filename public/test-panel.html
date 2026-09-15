@@ -129,6 +129,14 @@
         <option value="oth_basin">风水盆地（史诗）</option>
         <option value="oth_perfect">完美主义（传说）</option>
       </optgroup>
+      <optgroup label="路墙棋">
+        <option value="q_wall10">一堵定乾坤（普通）</option>
+        <option value="q_builder">天选建筑师（普通）</option>
+        <option value="q_fast">镜流与近路（稀有）</option>
+        <option value="q_step">步步为营（稀有）</option>
+        <option value="q_real">真·步步为营（史诗）</option>
+        <option value="q_s1">S1导演（传说）</option>
+      </optgroup>
     </select>
     <button class="btn-trigger" onclick="triggerAchievement()">触发</button>
     <button class="btn-info" onclick="window.location.href='/achievements.html'">查看荣誉墙</button>
@@ -144,6 +152,9 @@
     <br>
     <button class="btn-trigger" onclick="triggerOth('me')">🎴 一键触发全部翻转棋成就（当前账号）</button>
     <button class="btn-trigger" onclick="triggerOth('all')">🎴 给四个测试号各触发全部翻转棋成就</button>
+    <br>
+    <button class="btn-trigger" onclick="triggerQuo('me')">🧱 一键触发全部路墙棋成就（当前账号）</button>
+    <button class="btn-trigger" onclick="triggerQuo('all')">🧱 给四个测试号各触发全部路墙棋成就</button>
     <br>
     <button class="btn-trigger" onclick="guestAchDemo()">📢 模拟游客稀有成就 → 游客留言板</button>
     <br>
@@ -296,6 +307,18 @@
       socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
         if (res && res.success) {
           log(`✅ 已批量触发 ${res.count} 条翻转棋成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
+        } else {
+          log('❌ ' + ((res && res.msg) || '触发失败'));
+        }
+      });
+    }
+
+    function triggerQuo(scope) {
+      const ids = ['q_wall10', 'q_builder', 'q_fast', 'q_step', 'q_real', 'q_s1'];
+      const targets = scope === 'all' ? ['测试者1', '测试者2', '测试者3', '测试者4'] : undefined;
+      socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
+        if (res && res.success) {
+          log(`✅ 已批量触发 ${res.count} 条路墙棋成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
         } else {
           log('❌ ' + ((res && res.msg) || '触发失败'));
         }

@@ -126,6 +126,16 @@ const GAME_ROOMS = {
     spectators: [],
     playerMap: new Map(),
     leaveTimers: {}
+  },
+  quoridor: {
+    roomId: 'quoridor_001',
+    gameType: 'quoridor',
+    hostName: null,
+    maxPlayers: 4,
+    seats: { 1: null, 2: null, 3: null, 4: null },
+    spectators: [],
+    playerMap: new Map(),
+    leaveTimers: {}
   }
 };
 
@@ -189,6 +199,13 @@ const ACH_TITLES_BY_GAME = {
     rare: '易如翻掌',
     epic: '在彩色里朝圣黑白',
     legend: '翻手为云覆手为雨'
+  },
+  // 路墙棋系列（2026-09-09 定稿）
+  quoridor: {
+    common: '？！墙墙！？',
+    rare: '敢问路在何方',
+    epic: '不可一世的堵徒',
+    legend: '终将抵达的彼岸'
   }
 };
 const ACH_TITLE_ORDER = ['common', 'rare', 'epic', 'legend'];
@@ -886,7 +903,14 @@ const ACHIEVEMENTS = {
   oth_multi:    { name: '何谈翻啊',  quality: 'rare',   game: 'othello' },
   oth_wipe:     { name: '领土战争',  quality: 'rare',   game: 'othello' },
   oth_basin:    { name: '风水盆地',  quality: 'epic',   game: 'othello' },
-  oth_perfect:  { name: '完美主义',  quality: 'legend', game: 'othello' }
+  oth_perfect:  { name: '完美主义',  quality: 'legend', game: 'othello' },
+  // ===== 路墙棋（quoridor）成就（2026-09-09 定稿） =====
+  q_wall10:  { name: '一堵定乾坤',   quality: 'common', game: 'quoridor' },
+  q_builder: { name: '天选建筑师',   quality: 'common', game: 'quoridor' },
+  q_fast:    { name: '镜流与近路',   quality: 'rare',   game: 'quoridor' },
+  q_step:    { name: '步步为营',     quality: 'rare',   game: 'quoridor' },
+  q_real:    { name: '真·步步为营',  quality: 'epic',   game: 'quoridor' },
+  q_s1:      { name: 'S1导演',       quality: 'legend', game: 'quoridor' }
 };
 const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
 // 旗手升级档位（累计正确插旗数）：同组 id 靠品质最高档展示
@@ -1083,9 +1107,10 @@ const GAME_URL_MAP = {
   drawing: '/drawing.html',
   bomber: '/bomber.html',
   minesweeper: '/minesweeper.html',
-  othello: '/othello.html'
+  othello: '/othello.html',
+  quoridor: '/quoridor.html'
 };
-const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋' };
+const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋' };
 const ACH_Q_LABEL = { common: '普通', rare: '稀有', epic: '史诗', legend: '传说', hidden: '隐藏' };
 
 const yahtzeeGames = {};
@@ -1399,6 +1424,8 @@ const minesweeperGames = {}; // roomId -> 对局
 const msAtGame = new Map();   // playerName -> 当前正打开扫雷游戏页的 socket.id
 const othelloGames = {};      // roomId -> 翻转棋对局
 const othAtGame = new Map();  // playerName -> 当前正打开翻转棋游戏页的 socket.id
+const quoridorGames = {};     // roomId -> 路墙棋对局
+const quoriAtGame = new Map();// playerName -> 当前正打开路墙棋游戏页的 socket.id
 const MS_SIZE = 8;
 const MS_MINES = 26;
 const MS_BONUS = { 1: 6, 2: 3, 3: 2, 4: 1 };
@@ -1766,6 +1793,323 @@ function othCancel(room, g) {
   broadcastRoom(room);
 }
 
+// ======================== 路墙棋（quoridor）核心 ========================
+// 规格见 development/制作笔记/quoridor.md：9×9；列 a~i、行 1~9（r=0 → 第1行）
+const QUO_SIZE = 9;
+// 各人数的起点 / 目标边 / 每人墙数
+const QUO_CFG = {
+  2: [{ start: [4, 0], goal: 'row8' }, { start: [4, 8], goal: 'row0' }],
+  3: [{ start: [4, 0], goal: 'row8' }, { start: [4, 8], goal: 'row0' }, { start: [0, 4], goal: 'col8' }],
+  4: [{ start: [4, 0], goal: 'row8' }, { start: [4, 8], goal: 'row0' }, { start: [0, 4], goal: 'col8' }, { start: [8, 4], goal: 'col0' }]
+};
+const QUO_WALLS = { 2: 10, 3: 7, 4: 5 };
+const QUO_COLORS = ['#e74c3c', '#3f7fd6', '#43a047', '#e6b422']; // 红/蓝/绿/黄
+const QUO_COLOR_NAMES = ['红', '蓝', '绿', '黄'];
+function quoIn(r, c) { return r >= 0 && r < QUO_SIZE && c >= 0 && c < QUO_SIZE; }
+function quoCoord(r, c) { return 'abcdefghi'[c] + (r + 1); }
+function quoWallKey(r, c, o) { return r + ',' + c + ',' + o; }
+function quoGoalOf(g, idx) { return QUO_CFG[g.playerOrder.length][idx].goal; }
+function quoOnGoal(g, idx, r, c) {
+  const goal = quoGoalOf(g, idx);
+  if (goal === 'row8') return r === 8;
+  if (goal === 'row0') return r === 0;
+  if (goal === 'col8') return c === 8;
+  if (goal === 'col0') return c === 0;
+  return false;
+}
+function quoGoalCells(g, idx) {
+  const goal = quoGoalOf(g, idx), out = [];
+  for (let r = 0; r < QUO_SIZE; r++) for (let c = 0; c < QUO_SIZE; c++) {
+    if (goal === 'row8' && r === 8) out.push([r, c]);
+    else if (goal === 'row0' && r === 0) out.push([r, c]);
+    else if (goal === 'col8' && c === 8) out.push([r, c]);
+    else if (goal === 'col0' && c === 0) out.push([r, c]);
+  }
+  return out;
+}
+// 两个相邻格之间是否有墙（walls 为 Set，键 r,c,H/V）
+function quoBlocked(cell1, cell2, walls) {
+  const [r1, c1] = cell1, [r2, c2] = cell2;
+  if (r1 === r2) {
+    const cMin = Math.min(c1, c2);
+    // 竖墙 V：(wr,wc) 挡在 (wr,wc)-(wr,wc+1) 之间，覆盖 wr、wr+1 两行
+    return walls.has(quoWallKey(r1, cMin, 'V')) || walls.has(quoWallKey(r1 - 1, cMin, 'V'));
+  }
+  if (c1 === c2) {
+    const rMin = Math.min(r1, r2);
+    // 横墙 H：(wr,wc) 挡在 (wr,wc)-(wr+1,wc) 之间，覆盖 wc、wc+1 两列
+    return walls.has(quoWallKey(rMin, c1, 'H')) || walls.has(quoWallKey(rMin, c1 - 1, 'H'));
+  }
+  return false;
+}
+// BFS 最短路径长度（到目标边任意格；忽略棋子阻挡，规则只要求“存在通路”）
+function quoPathLen(g, idx) {
+  if (g.finished.includes(idx)) return 0;
+  const start = g.pos[idx];
+  if (!start) return -1;
+  const goal = quoGoalOf(g, idx);
+  const onGoal = (r, c) => goal === 'row8' ? r === 8 : goal === 'row0' ? r === 0 : goal === 'col8' ? c === 8 : c === 0;
+  const seen = new Set([start[0] + ',' + start[1]]);
+  let frontier = [[start[0], start[1], 0]];
+  while (frontier.length) {
+    const next = [];
+    for (const [r, c, d] of frontier) {
+      if (onGoal(r, c)) return d;
+      for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        const nr = r + dr, nc = c + dc;
+        if (!quoIn(nr, nc)) continue;
+        if (quoBlocked([r, c], [nr, nc], g.walls)) continue;
+        const k = nr + ',' + nc;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        next.push([nr, nc, d + 1]);
+      }
+    }
+    frontier = next;
+  }
+  return -1;
+}
+function quoActiveIdx(g) {
+  const out = [];
+  for (let i = 0; i < g.playerOrder.length; i++) if (!g.finished.includes(i)) out.push(i);
+  return out;
+}
+// 合法移动（含直跳 / 直跳不可用时的斜跳；一次最多跳一枚棋子）
+function quoLegalMoves(g, idx) {
+  const [r, c] = g.pos[idx];
+  const occupied = {};
+  g.pos.forEach((p, i) => { if (p && !g.finished.includes(i)) occupied[p[0] + ',' + p[1]] = i; });
+  const out = [];
+  for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    const nr = r + dr, nc = c + dc;
+    if (!quoIn(nr, nc) || quoBlocked([r, c], [nr, nc], g.walls)) continue;
+    const k = nr + ',' + nc;
+    if (occupied[k] == null) { out.push([nr, nc]); continue; }
+    const br = nr + dr, bc = nc + dc;
+    const straightOk = quoIn(br, bc) && !quoBlocked([nr, nc], [br, bc], g.walls) && occupied[br + ',' + bc] == null;
+    if (straightOk) { out.push([br, bc]); continue; }
+    // 直跳不可用 → 解锁斜跳（被跳棋子的左右两侧）
+    const sides = (dr === 0) ? [[1, 0], [-1, 0]] : [[0, 1], [0, -1]];
+    for (const [sdr, sdc] of sides) {
+      const sr = nr + sdr, sc = nc + sdc;
+      if (!quoIn(sr, sc)) continue;
+      if (quoBlocked([nr, nc], [sr, sc], g.walls)) continue;
+      if (occupied[sr + ',' + sc] != null) continue;
+      out.push([sr, sc]);
+    }
+  }
+  return out;
+}
+// 墙的基本重合/交叉检查（不含连通性）
+function quoWallShapeOk(r, c, o, walls) {
+  if (r < 0 || r > 7 || c < 0 || c > 7) return false;
+  if (o === 'H') {
+    // 横墙占 c、c+1 两列 → 与 c-1 / c / c+1 的横墙都会重叠
+    if (walls.has(quoWallKey(r, c, 'H')) || walls.has(quoWallKey(r, c + 1, 'H')) || walls.has(quoWallKey(r, c - 1, 'H'))) return false;
+    if (walls.has(quoWallKey(r, c, 'V')) || walls.has(quoWallKey(r, c + 1, 'V'))) return false;
+  } else {
+    // 竖墙占 r、r+1 两行 → 与 r-1 / r / r+1 的竖墙都会重叠
+    if (walls.has(quoWallKey(r, c, 'V')) || walls.has(quoWallKey(r + 1, c, 'V')) || walls.has(quoWallKey(r - 1, c, 'V'))) return false;
+    if (walls.has(quoWallKey(r, c, 'H')) || walls.has(quoWallKey(r + 1, c, 'H'))) return false;
+  }
+  return true;
+}
+// 放置后必须保证所有未完成玩家仍有通往目标的路径
+function quoWallLegal(g, idx, r, c, o) {
+  if ((g.wallLeft[idx] || 0) <= 0) return false;
+  if (!quoWallShapeOk(r, c, o, g.walls)) return false;
+  g.walls.add(quoWallKey(r, c, o));
+  let ok = true;
+  for (const i of quoActiveIdx(g)) {
+    if (quoPathLen(g, i) < 0) { ok = false; break; }
+  }
+  g.walls.delete(quoWallKey(r, c, o));
+  return ok;
+}
+function quoInit(room, names) {
+  const n = Math.min(4, Math.max(2, names.length));
+  const cfg = QUO_CFG[n];
+  const order = names.slice(0, n);
+  const pos = order.map((_, i) => cfg[i].start.slice());
+  return {
+    roomId: room.roomId, playerOrder: order, pos,
+    walls: new Set(), wallLeft: order.map(() => QUO_WALLS[n]),
+    wallsUsed: order.map(() => 0), wallOwner: {},
+    current: 0, actions: 0, finished: [], over: null,
+    history: [], snapshots: [], cancelVotes: []
+  };
+}
+function quoSnapshot(g) {
+  return {
+    pos: g.pos.map(p => p ? p.slice() : null),
+    wallList: [...g.walls],
+    wallOwner: Object.assign({}, g.wallOwner),
+    wallLeft: g.wallLeft.slice(),
+    current: g.current,
+    finished: g.finished.slice()
+  };
+}
+function quoPushHistory(g, text) {
+  g.history.push(text);
+  g.snapshots.push(quoSnapshot(g));
+  if (g.history.length > 400) { g.history.shift(); g.snapshots.shift(); }
+}
+function quoAdvance(g) {
+  const act = quoActiveIdx(g);
+  if (!act.length) return;
+  for (let k = 1; k <= g.playerOrder.length; k++) {
+    const i = (g.current + k) % g.playerOrder.length;
+    if (act.includes(i)) { g.current = i; return; }
+  }
+}
+function quoFinish(g, idx, prePaths) {
+  const name = g.playerOrder[idx];
+  const activesBefore = quoActiveIdx(g);
+  const paths = prePaths || activesBefore.map(i => quoPathLen(g, i));
+  const rank = g.finished.length + 1;
+  g.finished.push(idx);
+  // —— 终局成就 ——
+  if (g.playerOrder.length === 2 && rank === 1) {
+    const other = activesBefore.find(i => i !== idx);
+    if (other != null && quoPathLen(g, other) >= 15) announceAchievement(g, g.roomId, name, 'q_builder');
+  }
+  if (g.actions <= 10) announceAchievement(g, g.roomId, name, 'q_fast');
+  if (rank === 1 && (g.wallsUsed[idx] || 0) === 0) announceAchievement(g, g.roomId, name, 'q_s1');
+  const allOne = paths.length > 0 && paths.every(p => p === 1);
+  if (activesBefore.length === 2 && allOne) announceAchievement(g, g.roomId, name, 'q_step');
+  if (activesBefore.length === 3 && allOne && rank === 2) announceAchievement(g, g.roomId, name, 'q_step');
+  if (g.playerOrder.length >= 3 && allOne && rank === 1) announceAchievement(g, g.roomId, name, 'q_real');
+  g.pos[idx] = null;
+  if (g.finished.length >= g.playerOrder.length - 1) {
+    const last = g.playerOrder.findIndex((_, i) => !g.finished.includes(i));
+    if (last >= 0) g.finished.push(last);
+    g.over = { ranking: g.finished.map((i, k) => ({ name: g.playerOrder[i], rank: k + 1 })), actions: g.actions };
+    recordQuoridorGame(g);
+  } else {
+    quoAdvance(g);
+  }
+}
+function quoApplyMove(g, name, r, c) {
+  if (!g) return { ok: false, msg: '对局不存在' };
+  if (g.over) return { ok: false, msg: '对局已结束' };
+  const idx = g.playerOrder.indexOf(name);
+  if (idx < 0) return { ok: false, msg: '你不在本局中' };
+  if (g.current !== idx) return { ok: false, msg: '还没轮到你' };
+  r = Number(r); c = Number(c);
+  if (!quoLegalMoves(g, idx).some(m => m[0] === r && m[1] === c)) return { ok: false, msg: '该位置不能移动' };
+  const prePaths = quoActiveIdx(g).map(i => quoPathLen(g, i));
+  const from = g.pos[idx].slice();
+  g.pos[idx] = [r, c];
+  g.actions++;
+  const fin = quoOnGoal(g, idx, r, c);
+  quoPushHistory(g, g.actions + '. ' + quoCoord(from[0], from[1]) + '-' + quoCoord(r, c));
+  if (fin) quoFinish(g, idx, prePaths); else quoAdvance(g);
+  return { ok: true, finished: fin, ranking: g.over ? g.over.ranking : null };
+}
+function quoApplyWall(g, name, r, c, o) {
+  if (!g) return { ok: false, msg: '对局不存在' };
+  if (g.over) return { ok: false, msg: '对局已结束' };
+  const idx = g.playerOrder.indexOf(name);
+  if (idx < 0) return { ok: false, msg: '你不在本局中' };
+  if (g.current !== idx) return { ok: false, msg: '还没轮到你' };
+  o = (o === 'V') ? 'V' : 'H';
+  r = Number(r); c = Number(c);
+  if ((g.wallLeft[idx] || 0) <= 0) return { ok: false, msg: '你的墙已用完' };
+  if (!quoWallLegal(g, idx, r, c, o)) return { ok: false, msg: '这里不能放墙（重叠或会堵死玩家）' };
+  const actives = quoActiveIdx(g);
+  const before = actives.map(i => quoPathLen(g, i));
+  g.walls.add(quoWallKey(r, c, o));
+  g.wallOwner[quoWallKey(r, c, o)] = idx;
+  g.wallLeft[idx]--;
+  g.wallsUsed[idx]++;
+  g.actions++;
+  quoPushHistory(g, g.actions + '. ' + quoCoord(r, c) + o);
+  // 一堵定乾坤：使任意对手最短路径 +10 以上
+  actives.forEach((i, k) => {
+    if (i === idx) return;
+    const after = quoPathLen(g, i);
+    if (before[k] >= 0 && after - before[k] >= 10) announceAchievement(g, g.roomId, name, 'q_wall10');
+  });
+  quoAdvance(g);
+  return { ok: true };
+}
+function quoView(g, name, room) {
+  const idx = g.playerOrder.indexOf(name);
+  const online = {};
+  for (const n of g.playerOrder) {
+    const hb = userLastHeartbeat.get(n);
+    const sid = room && room.playerMap.get(n);
+    online[n] = !!(hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && quoriAtGame.get(n) === sid && io.sockets.sockets.has(sid));
+  }
+  const players = g.playerOrder.map((n, i) => ({
+    name: n, index: i, color: QUO_COLORS[i], colorName: QUO_COLOR_NAMES[i],
+    pos: g.pos[i], goal: quoGoalOf(g, i), wallLeft: g.wallLeft[i], wallsUsed: g.wallsUsed[i],
+    finished: g.finished.includes(i), rank: g.finished.includes(i) ? (g.finished.indexOf(i) + 1) : 0,
+    online: online[n]
+  }));
+  const myTurn = !g.over && idx >= 0 && g.current === idx;
+  const out = {
+    you: name, players, playerOrder: g.playerOrder.slice(),
+    current: g.current, actions: g.actions,
+    walls: [...g.walls].map(k => { const [r, c, o] = k.split(','); return { r: +r, c: +c, o, owner: g.wallOwner[k] == null ? 0 : g.wallOwner[k] }; }),
+    goalCells: g.playerOrder.map((_, i) => ({ index: i, color: QUO_COLORS[i], cells: quoGoalCells(g, i) })),
+    legalMoves: myTurn ? quoLegalMoves(g, idx) : [],
+    legalWalls: [],
+    over: g.over || null,
+    history: g.history.slice(),
+    snapshotCount: g.snapshots.length,
+    cancelVotes: (g.cancelVotes || []).slice()
+  };
+  if (myTurn && (g.wallLeft[idx] || 0) > 0) {
+    for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+      if (quoWallLegal(g, idx, r, c, 'H')) out.legalWalls.push({ r, c, o: 'H' });
+      if (quoWallLegal(g, idx, r, c, 'V')) out.legalWalls.push({ r, c, o: 'V' });
+    }
+  }
+  return out;
+}
+function quoBroadcast(room, g) {
+  room.playerMap.forEach((sid, n) => {
+    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('quoridor_state', quoView(g, n, room));
+  });
+}
+function quoBroadcastFor(roomId) {
+  const room = GAME_ROOMS.quoridor;
+  const g = quoridorGames[roomId];
+  if (room && g && g.roomId === roomId) quoBroadcast(room, g);
+}
+function quoSnapshotOf(g, index) {
+  if (!g || index < 0 || index >= g.snapshots.length) return null;
+  const s = g.snapshots[index];
+  return { pos: s.pos, wallList: s.wallList, wallOwner: s.wallOwner, wallLeft: s.wallLeft, current: s.current, finished: s.finished, step: g.history[index] || '' };
+}
+function quoCancel(room, g) {
+  delete quoridorGames[room.roomId];
+  io.to(room.roomId).emit('quoridor_cancel');
+  Object.keys(room.seats).forEach(sid => { if (room.seats[sid]) room.seats[sid].ready = false; });
+  broadcastRoom(room);
+}
+// 时光墙：只记正式玩家的整局名次（走步记录留在对局页的“时光墙”小展开）
+function recordQuoridorGame(g) {
+  if (!g || !g.over || g._recorded) return;
+  g._recorded = true;
+  const officials = g.playerOrder.filter(isOfficialPlayer);
+  if (!officials.length) return;
+  addTimeline({
+    ts: Date.now(), type: 'game', game: 'quoridor', totalPlayers: g.playerOrder.length, mode: g.playerOrder.length + '人',
+    players: officials,
+    ranking: g.over.ranking,
+    actions: g.actions,
+    results: officials.map(n => {
+      const r = g.over.ranking.find(x => x.name === n) || { rank: 0 };
+      return { name: n, rank: r.rank, score: r.rank ? (g.playerOrder.length - r.rank + 1) : 0 };
+    })
+  });
+}
+
+
+
+
 const drawingAtGame = new Map(); // playerName -> 当前正打开“画猜接龙游戏页”的 socket.id（用于判定谁真正在对局内）
 const lobbyViewers = new Map(); // playerName -> 正在大厅页的 socket.id（表情包跨页互发用）
 const bomberAtGame = new Map(); // playerName -> 正在炸飞机游戏页的 socket.id（离开/返回与取消判定）
@@ -1776,6 +2120,7 @@ function activeGameOf(room) {
   if (room.gameType === 'bomber') return bomberGames[room.roomId] || null;
   if (room.gameType === 'minesweeper') return minesweeperGames[room.roomId] || null;
   if (room.gameType === 'othello') return othelloGames[room.roomId] || null;
+  if (room.gameType === 'quoridor') return quoridorGames[room.roomId] || null;
   return yahtzeeGames[room.roomId] || null;
 }
 
@@ -2191,6 +2536,10 @@ function resetRoom(room) {
     delete othelloGames[room.roomId];
     console.log(`🔄 房间 ${room.roomId} 的翻转棋已清除`);
   }
+  if (quoridorGames[room.roomId]) {
+    delete quoridorGames[room.roomId];
+    console.log(`🔄 房间 ${room.roomId} 的路墙棋已清除`);
+  }
   if (gameEndTimers[room.roomId]) {
     clearTimeout(gameEndTimers[room.roomId]);
     delete gameEndTimers[room.roomId];
@@ -2233,8 +2582,8 @@ function removeOfflinePlayer(room, playerName, force) {
     else broadcastRoom(room);
     return;
   }
-  // 扫雷 / 翻转棋：同熟人局规则——离线不除名、原地等待，可重连继续
-  if ((room.gameType === 'minesweeper' && minesweeperGames[room.roomId]) || (room.gameType === 'othello' && othelloGames[room.roomId])) {
+  // 扫雷 / 翻转棋 / 路墙棋：同熟人局规则——离线不除名、原地等待，可重连继续
+  if ((room.gameType === 'minesweeper' && minesweeperGames[room.roomId]) || (room.gameType === 'othello' && othelloGames[room.roomId]) || (room.gameType === 'quoridor' && quoridorGames[room.roomId])) {
     if (room.leaveTimers[playerName]) {
       clearTimeout(room.leaveTimers[playerName]);
       delete room.leaveTimers[playerName];
@@ -2877,7 +3226,7 @@ io.on('connection', (socket) => {
       if (!game) continue;
       const finished = room.gameType === 'drawing'
         ? game.stage === 'result'
-        : (room.gameType === 'bomber' || room.gameType === 'minesweeper' || room.gameType === 'othello')
+        : (room.gameType === 'bomber' || room.gameType === 'minesweeper' || room.gameType === 'othello' || room.gameType === 'quoridor')
           ? game.phase === 'over'
           : game.phase === 'finished';
       if (!finished) { cleared = false; break; } // 进行中：仅退出页面，对局保留
@@ -2893,6 +3242,7 @@ io.on('connection', (socket) => {
         delete minesweeperGames[room.roomId];
       }
       delete othelloGames[room.roomId];
+      delete quoridorGames[room.roomId];
       Object.keys(room.seats).forEach(seatId => {
         if (room.seats[seatId]) room.seats[seatId].ready = false;
       });
@@ -3518,6 +3868,9 @@ io.on('connection', (socket) => {
     } else if (room.gameType === 'othello') {
       const playerNames = players.map(p => p.name);
       othelloGames[room.roomId] = othInit(room, playerNames);
+    } else if (room.gameType === 'quoridor') {
+      const playerNames = players.map(p => p.name);
+      quoridorGames[room.roomId] = quoInit(room, playerNames);
     }
     broadcastRoom(room);
     if (room.gameType === 'drawing') {
@@ -3528,6 +3881,8 @@ io.on('connection', (socket) => {
       bmsBroadcast(room, minesweeperGames[room.roomId]);
     } else if (room.gameType === 'othello') {
       othBroadcast(room, othelloGames[room.roomId]);
+    } else if (room.gameType === 'quoridor') {
+      quoBroadcast(room, quoridorGames[room.roomId]);
     } else {
       broadcastYahtzeeState(room.roomId);
     }
@@ -4569,6 +4924,100 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
   });
 
+  // ======================== 路墙棋（quoridor）事件 ========================
+  function quoFindRoomOf(name) {
+    return Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'quoridor') || null;
+  }
+  socket.on('quoridor_enter', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    quoriAtGame.set(name, socket.id);
+    const room = quoFindRoomOf(name);
+    const g = room && quoridorGames[room.roomId];
+    if (room && g) quoBroadcast(room, g);
+  });
+  socket.on('quoridor_pull', (cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? quoFindRoomOf(name) : null;
+    const g = room && quoridorGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false }); return; }
+    if (cb) cb(Object.assign({ success: true }, quoView(g, name, room)));
+  });
+  socket.on('quoridor_snapshot', ({ index } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? quoFindRoomOf(name) : null;
+    const g = room && quoridorGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false }); return; }
+    const snap = quoSnapshotOf(g, Number(index));
+    if (!snap) { if (cb) cb({ success: false, msg: '没有这一步记录' }); return; }
+    if (cb) cb(Object.assign({ success: true }, snap));
+  });
+  // 终局后复位房间（保留走步记录在客户端本地）
+  function quoAfterAction(room, g, res) {
+    if (!res.ok) return;
+    quoBroadcast(room, g);
+    if (g.over) {
+      broadcastAchievementSummary(room.roomId, g);
+      if (!gameEndTimers[room.roomId]) {
+        gameEndTimers[room.roomId] = setTimeout(() => {
+          if (quoridorGames[room.roomId] !== g) { delete gameEndTimers[room.roomId]; return; }
+          delete quoridorGames[room.roomId];
+          Object.keys(room.seats).forEach(i => { if (room.seats[i]) room.seats[i].ready = false; });
+          broadcastRoom(room);
+          delete gameEndTimers[room.roomId];
+          console.log(`🔄 路墙棋 ${room.roomId} 已结算，房间已复位`);
+        }, 12000);
+      }
+    }
+  }
+  socket.on('quoridor_move', ({ r, c } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? quoFindRoomOf(name) : null;
+    const g = room && quoridorGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = quoApplyMove(g, name, r, c);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    quoAfterAction(room, g, res);
+    if (cb) cb({ success: true, finished: !!res.finished });
+  });
+  socket.on('quoridor_wall', ({ r, c, o } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? quoFindRoomOf(name) : null;
+    const g = room && quoridorGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = quoApplyWall(g, name, r, c, o);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    quoAfterAction(room, g, res);
+    if (cb) cb({ success: true });
+  });
+  socket.on('quoridor_cancel_vote', ({ revoke } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? quoFindRoomOf(name) : null;
+    const g = room && quoridorGames[room.roomId];
+    if (!room || !g || !g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const onlineNames = g.playerOrder.filter(n => {
+      const sid = room.playerMap.get(n);
+      const sid2 = quoriAtGame.get(n);
+      const hb = userLastHeartbeat.get(n);
+      return sid && sid === sid2 && io.sockets.sockets.has(sid) && hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT;
+    });
+    if (revoke) {
+      g.cancelVotes = (g.cancelVotes || []).filter(n => n !== name);
+      quoBroadcast(room, g);
+      if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+      return;
+    }
+    g.cancelVotes = g.cancelVotes || [];
+    if (!g.cancelVotes.includes(name)) g.cancelVotes.push(name);
+    if (onlineNames.length && g.cancelVotes.length >= onlineNames.length) {
+      quoCancel(room, g);
+      if (cb) cb({ success: true, cancelled: true });
+      return;
+    }
+    quoBroadcast(room, g);
+    if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+  });
+
   socket.on('disconnect', () => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
@@ -4581,6 +5030,7 @@ io.on('connection', (socket) => {
     if (bomberAtGame.get(name) === socket.id) bomberAtGame.delete(name);
     if (msAtGame.get(name) === socket.id) msAtGame.delete(name);
     if (othAtGame.get(name) === socket.id) othAtGame.delete(name);
+    if (quoriAtGame.get(name) === socket.id) quoriAtGame.delete(name);
 
     // 默契空间：离开会话（断线兜底）
     const syncKey = socketSyncKey.get(socket.id);

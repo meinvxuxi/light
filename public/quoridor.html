@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>路墙棋</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-serif;padding:10px;}
+.head{max-width:600px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;font-size:.9rem;}
+.head a{color:#4a90d9;cursor:pointer;font-weight:600;margin-left:10px;}
+.wrap{max-width:600px;margin:0 auto;}
+.info{display:flex;justify-content:space-between;gap:8px;margin:8px 0 6px;font-size:.85rem;color:#6b7a90;flex-wrap:wrap;}
+.players{display:flex;justify-content:center;gap:8px;margin:4px 0 6px;flex-wrap:wrap;}
+.pchip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;border:1px solid rgba(74,144,217,.35);background:rgba(255,255,255,.72);font-size:.82rem;backdrop-filter:blur(8px);}
+.pchip.on{border-color:#e67e22;box-shadow:0 0 0 2px rgba(230,126,34,.18) inset;font-weight:700;}
+.pchip.done{opacity:.55;}
+.pawnchip{width:24px;height:24px;border-radius:50%;overflow:hidden;border:2px solid #cbd2da;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
+.pawnchip img{width:100%;height:100%;object-fit:contain;}
+.pawnchip .fb{font-size:.75rem;font-weight:800;}
+.pchip .meta{color:#7f8fa6;font-size:.72rem;}
+.modebar{display:flex;justify-content:center;gap:8px;margin:6px 0;flex-wrap:wrap;}
+.mode-opt{padding:5px 12px;border-radius:10px;border:1px solid #dfe3e8;background:#fff;cursor:pointer;font-size:.82rem;}
+.mode-opt.on{border-color:#4a90d9;background:rgba(74,144,217,.14);color:#2f6fb2;font-weight:700;}
+.mode-opt.dis{opacity:.45;cursor:not-allowed;}
+.boardwrap{text-align:center;margin:6px 0;overflow-x:auto;}
+table.q{border-collapse:separate;border-spacing:0;margin:0 auto;background:#efe6d5;border:3px solid #8b6f47;border-radius:8px;}
+table.q td{width:min(8.6vw,42px);height:min(8.6vw,42px);min-width:26px;min-height:26px;border:1px solid #c9b99b;position:relative;padding:0;text-align:center;vertical-align:middle;}
+table.q td.legal{cursor:pointer;}
+table.q td.legal::after{content:'';position:absolute;inset:34%;border-radius:50%;background:rgba(74,144,217,.6);}
+.pawn{position:absolute;inset:10%;border-radius:50%;overflow:hidden;border:2px solid rgba(0,0,0,.25);background:#fff;display:flex;align-items:center;justify-content:center;}
+.pawn img{width:100%;height:100%;object-fit:contain;}
+.pawn .fb{font-size:.72rem;font-weight:800;}
+.wslot{position:absolute;z-index:6;cursor:pointer;background:rgba(74,144,217,.35);border-radius:4px;}
+.wslot.h{left:1px;right:1px;bottom:-5px;height:9px;}
+.wslot.v{top:1px;bottom:1px;right:-5px;width:9px;}
+.msg{text-align:center;font-size:.86rem;color:#6b7a90;margin:8px 0;min-height:22px;}
+.res{max-width:460px;margin:8px auto;background:rgba(255,255,255,.82);backdrop-filter:blur(12px);border:1px solid rgba(74,144,217,.4);border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 10px 28px rgba(31,45,61,.12);}
+.res-title{font-size:1.05rem;font-weight:800;margin-bottom:8px;}
+.res-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.6);border:1px solid rgba(74,144,217,.2);margin-bottom:5px;font-size:.86rem;}
+.res-row.me{border-color:rgba(230,126,34,.6);background:rgba(255,247,230,.8);}
+.res-btns{display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap;}
+.res-btn{display:inline-block;padding:7px 16px;border-radius:10px;background:#4a90d9;color:#fff;font-size:.84rem;cursor:pointer;border:none;}
+.res-btn.ghost{background:rgba(74,144,217,.14);color:#2f6fb2;}
+.histbar{text-align:center;margin:6px 0;}
+.hist-toggle{font-size:.78rem;color:#4a90d9;cursor:pointer;}
+.histpanel{display:none;max-height:150px;overflow:auto;max-width:420px;margin:6px auto;text-align:left;font-size:.78rem;color:#6b7a90;background:rgba(255,255,255,.7);border:1px solid rgba(74,144,217,.25);border-radius:12px;padding:6px 10px;}
+.histpanel.open{display:block;}
+.histpanel .hstep{cursor:pointer;padding:2px 0;}
+.histpanel .hstep:hover{color:#4a90d9;}
+.toast{position:fixed;left:50%;top:16%;transform:translate(-50%,-10px);background:rgba(255,255,255,.86);border:1px solid rgba(74,144,217,.5);color:#2c3e50;border-radius:12px;padding:9px 18px;font-size:.85rem;font-weight:600;backdrop-filter:blur(10px);opacity:0;transition:opacity .25s;pointer-events:none;z-index:3000;max-width:86vw;text-align:center;}
+.ach-pop{position:fixed;left:50%;top:22%;transform:translate(-50%,0);z-index:6000;background:rgba(255,255,255,.82);border:1px solid rgba(74,144,217,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:16px;padding:12px 22px;text-align:center;font-weight:700;font-size:.95rem;color:#2c3e50;box-shadow:0 10px 30px rgba(31,45,61,.2);pointer-events:none;opacity:0;transition:opacity .25s;max-width:86vw;}
+.ach-pop small{display:block;color:#9aa5b1;font-weight:400;font-size:.75rem;margin-top:3px;}
+body.dyn-pink .ach-pop{border-color:rgba(240,98,146,.6);background:rgba(255,242,247,.82);}
+body.dyn-green .ach-pop{border-color:rgba(111,158,99,.6);background:rgba(241,248,238,.82);}
+body.dyn-gold .ach-pop{border-color:rgba(214,168,67,.6);background:rgba(255,250,238,.84);}
+body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,241,.84);}
+</style>
+</head>
+<body>
+  <div class="head"><b>🧱 路墙棋</b><span><a id="quoCancelLb" onclick="quoCancel()">取消对局</a><a onclick="quoExit()">返回房间</a></span></div>
+  <div class="wrap">
+    <div class="info"><span id="quoStage">连接中…</span><span id="quoStep">第 0 手</span></div>
+    <div class="players" id="quoPlayers"></div>
+    <div class="modebar" id="quoModes"></div>
+    <div class="boardwrap" id="quoBoard"></div>
+    <div class="msg" id="quoMsg"></div>
+    <div class="histbar"><span class="hist-toggle" onclick="toggleHist()">📜 时光墙（走步记录）</span> <span id="quoPreviewLb" style="display:none;font-size:.78rem;color:#e67e22;"></span></div>
+    <div class="histpanel" id="quoHist"></div>
+  </div>
+  <div class="toast" id="quoToast"></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  const myName = sessionStorage.getItem('playerName');
+  if (!myName) location.href = '/index.html';
+  const QUO_IMG = { p1:'/assets/avatars/p1/beijing.png.jpg', p2:'/assets/avatars/p2/zuixin2.jpg', p3:'/assets/avatars/p3/zuixin3.jpg', p4:'/assets/avatars/p4/beijing4.jpg', pomelo:'/assets/avatars/p3/nene.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const QUO_MOB = { p4:'/assets/avatars/p4/zuixin4.jpg', pomelo:'/assets/avatars/p3/nene2.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const QUO_ALPHA = { p1:.82, p2:.75, p3:.75, p4:.82, pomelo:.6, agly:.82, lyff:.8 };
+  // 棋子 = 扫雷 A 的表情包（正式角色）
+  const E = {
+    '玩家1': '/assets/avatars/p1/bqb1/' + encodeURIComponent('绯绯狐-不要小瞧我和小浣熊的羁绊啊！.png'),
+    '玩家2': '/assets/avatars/p2/dan2.png',
+    '玩家3': '/assets/avatars/p3/bqb3/' + encodeURIComponent('千夏-烧烤.png'),
+    '玩家4': '/assets/avatars/p4/bqb4/' + encodeURIComponent('塔神-阅读.png')
+  };
+  function pawnHtml(n, color) {
+    const url = E[n];
+    if (url) return '<span class="pawn"><img src="' + url + '"></span>';
+    const ch = esc(String(n || '?').replace(/^游客/, '').slice(0, 1));
+    return '<span class="pawn" style="border-color:' + color + '"><span class="fb" style="color:' + color + '">' + ch + '</span></span>';
+  }
+  function applyQuoTheme(t){
+    const mobile = window.matchMedia('(max-width: 768px)').matches;
+    document.body.classList.remove('dyn-pink','dyn-green','dyn-gold','dyn-red');
+    if (!t || t === 'initial') { document.body.style.backgroundImage=''; document.body.style.backgroundSize=''; document.body.style.backgroundAttachment=''; document.body.style.backgroundPosition=''; return; }
+    const c = (t==='agly')?'dyn-gold':((t==='lyff')?'dyn-red':((t==='p3'||t==='pomelo')?'dyn-green':'dyn-pink'));
+    document.body.classList.add(c);
+    const img = (mobile && QUO_MOB[t]) ? QUO_MOB[t] : (QUO_IMG[t] || '');
+    if (img) { const a = QUO_ALPHA[t] || .82; document.body.style.backgroundImage = "linear-gradient(rgba(255,255,255,"+a+"),rgba(255,255,255,"+a+")),url('"+img+"')"; document.body.style.backgroundSize='cover'; document.body.style.backgroundAttachment = mobile?'scroll':'fixed'; document.body.style.backgroundPosition='center'; }
+  }
+  applyQuoTheme(localStorage.getItem('myTheme'));
+  const socket = io();
+  const IS_T = sessionStorage.getItem('isTest') === 'true';
+  let S = null, _dm = {}, quoMode = 'move', histOpen = false, preview = null, quoBoardHidden = false, quoToastTimer = null;
+  function dn(n){ return _dm[n] || n; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function toast(m){ const e=document.getElementById('quoToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(quoToastTimer); quoToastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
+  function goalText(goal){
+    return goal === 'row8' ? '目标 第9行' : goal === 'row0' ? '目标 第1行' : goal === 'col8' ? '目标 i列' : '目标 a列';
+  }
+  socket.on('connect', () => {
+    socket.emit('heartbeat', myName, IS_T, true);
+    setTimeout(() => { socket.emit('get_profile', r => { if (r && r.success && r.theme) { localStorage.setItem('myTheme', r.theme); applyQuoTheme(r.theme); } }); }, 200);
+    socket.emit('get_display_names', res => { if (res && res.success) { _dm = res.map; render(); } });
+    setTimeout(() => {
+      socket.emit('quoridor_enter');
+      socket.emit('quoridor_pull', res => { if (res && res.success) { S = res; render(); } });
+    }, 400);
+  });
+  setInterval(() => socket.emit('heartbeat', myName, IS_T, true), 10000);
+  socket.emit('get_display_names', res => { if (res && res.success) _dm = res.map; });
+  socket.on('quoridor_state', s => { S = s; preview = null; render(); });
+  socket.on('quoridor_cancel', () => { location.href = '/room.html?game=quoridor'; });
+  setInterval(() => {
+    if (!socket.connected) return;
+    socket.emit('quoridor_pull', res => {
+      if (res && res.success) { if (!preview) { S = res; render(); } return; }
+      if (!(S && S.over)) location.href = '/room.html?game=quoridor';
+    });
+  }, 2200);
+  function playerAt(i){ return S && S.players ? S.players[i] : null; }
+  function myIdx(){ return S && S.players ? S.players.findIndex(p => p.name === myName) : -1; }
+  function isMyTurn(){ return S && !S.over && myIdx() >= 0 && S.current === myIdx(); }
+  function renderPlayers(){
+    const el = document.getElementById('quoPlayers');
+    if (!S || !S.players) { el.innerHTML = ''; return; }
+    el.innerHTML = S.players.map((p, i) => {
+      const on = !S.over && S.current === i;
+      const rank = p.finished ? ('第' + (p.rank || '?') + '名') : '';
+      return '<div class="pchip' + (on ? ' on' : '') + (p.finished ? ' done' : '') + '">'
+        + '<span class="pawnchip">' + pawnHtml(p.name, p.color) + '</span>'
+        + '<span style="color:' + p.color + ';font-weight:700;">' + esc(dn(p.name)) + (p.name === myName ? '（你）' : '') + '</span>'
+        + '<span class="meta">🧱' + p.wallLeft + '　' + goalText(p.goal) + (rank ? '　✅' + rank : '') + '</span>'
+        + '</div>';
+    }).join('');
+  }
+  function renderModes(){
+    const el = document.getElementById('quoModes');
+    if (!S || !S.players) { el.innerHTML = ''; return; }
+    const me = playerAt(myIdx());
+    const turn = isMyTurn();
+    const wallLeft = me ? me.wallLeft : 0;
+    el.innerHTML = '<span class="mode-opt' + (quoMode === 'move' ? ' on' : '') + (turn ? '' : ' dis') + '" onclick="setMode(\'move\')">移动棋子</span>'
+      + '<span class="mode-opt' + (quoMode === 'wall' ? ' on' : '') + (turn && wallLeft > 0 ? '' : ' dis') + '" onclick="setMode(\'wall\')">放墙（剩 ' + wallLeft + '）</span>'
+      + (preview ? '<span class="mode-opt dis">回放中</span>' : '');
+  }
+  function renderMsg(){
+    const el = document.getElementById('quoMsg');
+    if (!S) { el.innerHTML = ''; return; }
+    if (preview) { el.innerHTML = '<span style="color:#e67e22;">正在回放：' + esc(preview.step || '') + '　（点时光墙里“回到当前”退出）</span>'; return; }
+    if (S.over) {
+      const rows = (S.over.ranking || []).map(r => {
+        const p = playerAt(S.playerOrder.indexOf(r.name));
+        const me = r.name === myName;
+        return '<div class="res-row' + (me ? ' me' : '') + '"><span>第' + r.rank + '名　' + esc(dn(r.name)) + '</span>'
+          + (p ? '<span style="color:' + p.color + ';">🧱 用墙 ' + p.wallsUsed + '</span>' : '') + '</div>';
+      }).join('');
+      el.innerHTML = '<div class="res"><div class="res-title">🏁 游戏结束 · 最终排名</div>' + rows
+        + '<div style="font-size:.78rem;color:#9aa5b1;margin-top:6px;">共用 ' + S.actions + ' 手</div>'
+        + '<div class="res-btns">'
+        + '<button class="res-btn" onclick="copyRecord()">复制走步记录</button>'
+        + '<button class="res-btn ghost" onclick="toggleBoard()">' + (quoBoardHidden ? '展开棋盘' : '收起棋盘') + '</button>'
+        + '<button class="res-btn ghost" onclick="quoExit()">返回房间</button>'
+        + '</div></div>';
+      return;
+    }
+    const cur = playerAt(S.current);
+    el.innerHTML = '<span>' + (isMyTurn() ? '轮到你行动（移动棋子或放墙）' : ('等待 ' + esc(dn(cur ? cur.name : '')) + ' 行动…')) + '</span>';
+  }
+  function renderHist(){
+    const el = document.getElementById('quoHist');
+    el.className = 'histpanel' + (histOpen ? ' open' : '');
+    const lb = document.getElementById('quoPreviewLb');
+    lb.style.display = preview ? 'inline' : 'none';
+    if (preview) lb.textContent = '（回放中，点这里回到当前）';
+    lb.onclick = preview ? (() => { preview = null; render(); }) : null;
+    if (!histOpen || !S) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div style="margin-bottom:4px;"><b style="color:#4a90d9;cursor:pointer;" onclick="preview=null;render()">回到当前</b></div>'
+      + (S.history || []).map((h, i) => '<div class="hstep" onclick="replayStep(' + i + ')">' + esc(h) + '</div>').join('');
+  }
+  function render(){
+    if (!S) return;
+    document.getElementById('quoStage').textContent = S.over ? '游戏结束' : '对局进行中';
+    document.getElementById('quoStep').textContent = '第 ' + (S.actions || 0) + ' 手';
+    const cl = document.getElementById('quoCancelLb');
+    const total = (S.playerOrder || []).length, votes = (S.cancelVotes || []).length;
+    if (cl) cl.textContent = '取消对局' + (votes ? ('（' + votes + '/' + total + '）') : '');
+    renderPlayers();
+    renderModes();
+    renderMsg();
+    renderHist();
+    renderBoard();
+  }
+  function toggleHist(){ histOpen = !histOpen; render(); }
+  function toggleBoard(){ quoBoardHidden = !quoBoardHidden; render(); }
+  function setMode(m){
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+    if (m === 'wall') {
+      const me = playerAt(myIdx());
+      if (!me || me.wallLeft <= 0) { toast('你的墙已用完'); return; }
+    }
+    quoMode = m; render();
+  }
+  function replayStep(i){
+    socket.emit('quoridor_snapshot', { index: i }, res => {
+      if (!res || !res.success) { toast((res && res.msg) || '没有这一步记录'); return; }
+      preview = res; render();
+    });
+  }
+  function copyRecord(){
+    const txt = (S && S.history || []).join(' ');
+    const done = () => toast('走步记录已复制：' + txt);
+    const fb = () => { try { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); done(); } catch (e) { toast('复制失败'); } };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done).catch(fb);
+    else fb();
+  }
+  function quoCancel(){ socket.emit('quoridor_cancel_vote', {}); }
+  function quoExit(){ location.href = '/room.html?game=quoridor'; }
+  function hexA(hex, a){ const h = String(hex||'#4a90d9').replace('#',''); const n = parseInt(h.length===3?h.split('').map(x=>x+x).join(''):h,16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
+  function renderBoard(){
+    const wrap = document.getElementById('quoBoard');
+    if (!S) { wrap.innerHTML = ''; return; }
+    if (S.over && quoBoardHidden) { wrap.innerHTML = ''; return; }
+    let pos, walls, finished, legalMoves = [], legalSlots = [];
+    if (preview) {
+      pos = preview.pos;
+      walls = (preview.wallList || []).map(k => { const [r, c, o] = k.split(','); return { r: +r, c: +c, o, owner: (preview.wallOwner && preview.wallOwner[k]) || 0 }; });
+      finished = preview.finished || [];
+    } else {
+      pos = S.players.map(p => p.pos);
+      walls = S.walls;
+      finished = S.players.map(p => p.finished);
+      if (isMyTurn() && quoMode === 'move') legalMoves = S.legalMoves || [];
+      if (isMyTurn() && quoMode === 'wall') legalSlots = S.legalWalls || [];
+    }
+    const goalMap = {};
+    (S.goalCells || []).forEach(gc => gc.cells.forEach(([r, c]) => { if (goalMap[r + ',' + c] == null) goalMap[r + ',' + c] = gc.color; }));
+    const bBottom = {}, bRight = {};
+    walls.forEach(w => {
+      const col = (S.players[w.owner] || {}).color || '#8b5a2b';
+      if (w.o === 'H') { bBottom[w.r + ',' + w.c] = col; bBottom[w.r + ',' + (w.c + 1)] = col; }
+      else { bRight[w.r + ',' + w.c] = col; bRight[(w.r + 1) + ',' + w.c] = col; }
+    });
+    const moveSet = {}; legalMoves.forEach(m => { moveSet[m[0] + ',' + m[1]] = 1; });
+    const slotMap = {}; legalSlots.forEach(s => { slotMap[s.r + ',' + s.c + ',' + s.o] = 1; });
+    const pawnAt = {}; (pos || []).forEach((p, i) => { if (p) pawnAt[p[0] + ',' + p[1]] = i; });
+    let html = '<table class="q">';
+    for (let r = 0; r < 9; r++) {
+      html += '<tr>';
+      for (let c = 0; c < 9; c++) {
+        const k = r + ',' + c, can = !!moveSet[k], style = [];
+        if (goalMap[k]) style.push('background:' + hexA(goalMap[k], .16));
+        if (bBottom[k]) style.push('border-bottom:5px solid ' + bBottom[k]);
+        if (bRight[k]) style.push('border-right:5px solid ' + bRight[k]);
+        let inner = '';
+        const pi = pawnAt[k];
+        if (pi != null && S.players[pi]) { const p = S.players[pi]; inner = pawnHtml(p.name, p.color); }
+        let slots = '';
+        if (slotMap[k + ',H']) slots += '<span class="wslot h" onclick="placeWall(' + r + ',' + c + ',\'H\')"></span>';
+        if (slotMap[k + ',V']) slots += '<span class="wslot v" onclick="placeWall(' + r + ',' + c + ',\'V\')"></span>';
+        html += '<td class="' + (can ? 'legal' : '') + '" style="' + style.join(';') + '"' + (can ? ' onclick="moveTo(' + r + ',' + c + ')"' : '') + '>' + inner + slots + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</table>';
+    wrap.innerHTML = html;
+  }
+  function moveTo(r, c){
+    if (preview) return;
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+    socket.emit('quoridor_move', { r, c }, res => { if (res && !res.success && res.msg) toast(res.msg); });
+  }
+  function placeWall(r, c, o){
+    if (preview) return;
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+    socket.emit('quoridor_wall', { r, c, o }, res => {
+      if (res && !res.success && res.msg) toast(res.msg);
+      else if (res && res.success) { quoMode = 'move'; }
+    });
+  }
+  const quoAchEl = document.createElement('div'); quoAchEl.className = 'ach-pop'; document.body.appendChild(quoAchEl); let quoAchTimer = null;
+  socket.on('achievement_unlocked', function(d){
+    if (!d || !d.name) return;
+    const qLab = { common:'普通', rare:'稀有', epic:'史诗', legend:'传说', hidden:'隐藏' };
+    quoAchEl.innerHTML = '🏅 解锁成就「' + esc(d.name) + '」<small>' + ((d.quality && (qLab[d.quality] || d.quality)) || '') + (d.playerName ? ' · ' + esc(dn(d.playerName)) : '') + '</small>';
+    quoAchEl.style.opacity = '1'; clearTimeout(quoAchTimer); quoAchTimer = setTimeout(function(){ quoAchEl.style.opacity = '0'; }, 2600);
+  });
+  </script>
+  <script src="/emoji-widget.js"></script>
+</body>
+</html>
+
