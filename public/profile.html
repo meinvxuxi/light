@@ -173,7 +173,9 @@
     let stByGame = [];
     let stAch = [];
     let stCareer = null;
-    let stRoles = null;   // 技能五子棋：角色使用统计
+    let stRoles = null;   // 技能五子棋：角色/人数统计
+    let gmkViewMode = 'players';   // 技能五子棋视图：players=按人数（默认）/ roles=按角色
+    function setGmkView(v) { gmkViewMode = v; renderStatsBox(); }
     let curGame = 'all';
     function setAchVisible() {
       const lab = document.getElementById('achLab');
@@ -280,21 +282,36 @@
         <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">路墙棋战绩（名次分：第1名=人数、第2名=人数-1…）</div>
         ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrQuo(m)}</div>`).join('')}`;
       } else if (curGame === 'gomoku') {
-        const rl = stRoles || { total: 0, roles: [] };
-        const roleRows = (rl.roles || []).length
-          ? (rl.roles || []).map(r => `<div class="st-mode"><span class="mk">${esc(r.role)}</span>使用 <span class="mv">${r.games}</span> 次<span class="st-sep">·</span>Pick率 <span class="mv">${r.pickRate}%</span><span class="st-sep">·</span>胜率 <span class="mv">${r.winRate}%</span><span class="st-sep">·</span>胜 <span class="mv">${r.wins}</span></div>`).join('')
-          : '<div class="empty">还没有角色使用记录</div>';
+        const rl = stRoles || { total: 0, rankModeGames: 0, totalRankScore: 0, byPlayers: [], rolesAll: [] };
+        const byP = rl.byPlayers || [];
+        const rolesAll = rl.rolesAll || [];
+        const totalGames = rl.total || s.games;
+        const chip = (on, label, v) => `<span onclick="setGmkView('${v}')" style="cursor:pointer;font-size:.78rem;padding:3px 10px;border-radius:10px;margin-right:6px;border:1px solid ${on ? 'var(--acc,#4a90d9)' : '#dfe3e8'};background:${on ? 'rgba(74,144,217,.14)' : 'transparent'};font-weight:${on ? 700 : 400};">${label}</span>`;
+        let body = '';
+        if (gmkViewMode === 'players') {
+          body = byP.length ? byP.map(bp => `
+            <div style="margin:8px 0 2px;font-size:.84rem;font-weight:700;color:#2c3e50;">${esc(bp.players)} 模式总战绩</div>
+            <div class="st-mode"><span class="mk">总战绩</span>场次 <span class="mv">${bp.games}</span><span class="st-sep">·</span>胜场 <span class="mv">${bp.wins}</span><span class="st-sep">·</span>胜率 <span class="mv">${bp.winRate}%</span><span class="st-sep">·</span>开启决出排名 <span class="mv">${bp.rankModeGames}</span> 场<span class="st-sep">·</span>名次分 <span class="mv">${bp.rankScore}</span></div>
+            ${bp.roles.length ? bp.roles.map(r => `<div class="st-mode"><span class="mk">${esc(r.role)}</span>使用 <span class="mv">${r.games}</span> 次<span class="st-sep">·</span>Pick率 <span class="mv">${r.pickRate}%</span><span class="st-sep">·</span>胜率 <span class="mv">${r.winRate}%</span><span class="st-sep">·</span>胜 <span class="mv">${r.wins}</span></div>`).join('') : '<div class="empty">该人数下还没有角色记录</div>'}
+          `).join('') : '<div class="empty">还没有角色使用记录</div>';
+        } else {
+          body = rolesAll.length ? rolesAll.map(r => `
+            <div style="margin:8px 0 2px;font-size:.84rem;font-weight:700;color:#2c3e50;">${esc(r.role)}</div>
+            <div class="st-mode"><span class="mk">总数据</span>使用 <span class="mv">${r.games}</span> 次<span class="st-sep">·</span>Pick率 <span class="mv">${r.pickRate}%</span><span class="st-sep">·</span>胜率 <span class="mv">${r.winRate}%</span><span class="st-sep">·</span>胜 <span class="mv">${r.wins}</span></div>
+            ${(r.byPlayers || []).map(x => `<div class="st-mode"><span class="mk">${esc(x.players)}</span>使用 <span class="mv">${x.games}</span> 场</div>`).join('')}
+          `).join('') : '<div class="empty">还没有角色使用记录</div>';
+        }
         html = `
         <div class="st-grid two">
-          ${statCell('总对局数', rl.total || s.games)}
-          ${statCell('游玩场次', s.games)}
+          ${statCell('总对局数', totalGames)}
           ${statCell('胜场', s.wins)}
-          ${statCell('胜率', s.games ? s.winRate + '%' : '—')}
+          ${statCell('胜率', totalGames ? s.winRate + '%' : '—')}
+          ${statCell('开启决出排名场次', rl.rankModeGames || 0)}
+          ${statCell('名次分合计', rl.totalRankScore || 0)}
         </div>
-        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">角色使用统计（8.1）：使用次数 / Pick率 / 胜率</div>
-        ${roleRows}
-        <div style="font-size:.8rem;color:#9aa5b1;margin:6px 0 6px;">各人数模式战绩</div>
-        ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrQuo(m)}</div>`).join('')}`;
+        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">名次分只在开启「继续决出排名」的对局里计（第1名=人数、第2名=人数-1…）；未开启的对局即使拿第一也是 0 分</div>
+        <div style="margin:2px 0 4px;">${chip(gmkViewMode === 'players', '按人数', 'players')}${chip(gmkViewMode === 'roles', '按角色', 'roles')}</div>
+        ${body}`;
       } else {
         html = `
         <div class="st-grid">

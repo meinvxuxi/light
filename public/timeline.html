@@ -98,13 +98,13 @@
           const isOth = it.game === 'othello';
           const isQuo = it.game === 'quoridor';
           const isGmk = it.game === 'gomoku';
-          row.innerHTML = `<span class="tl-time">${fmtTime(it.ts)}</span>${who} 游玩了【${gameName}】${isOth ? (it.draw ? '（平局）' : '') : (isQuo && it.actions ? '（共用 ' + it.actions + ' 手）' : '')}${isGmk && it.winner ? '（' + dn(it.winner) + ' 获胜 · ' + (it.reason || '3次五连') + '）' : ''}<span class="tl-tri" id="${tId}" onclick="toggleDetail(${it.ts})">▸</span>`;
+          row.innerHTML = `<span class="tl-time">${fmtTime(it.ts)}</span>${who} 游玩了【${gameName}】${isOth ? (it.draw ? '（平局）' : '') : (isQuo && it.actions ? '（共用 ' + it.actions + ' 手）' : '')}${isGmk && it.winner ? '（' + dn(it.winner) + ' 获胜 · ' + (it.reason || '3次五连') + (it.rankMode ? ' · 决出全部名次' : '') + '）' : ''}<span class="tl-tri" id="${tId}" onclick="toggleDetail(${it.ts})">▸</span>`;
           const results = (it.results || []).slice()
             .sort((a, b) => isOth ? (b.score - a.score) : (a.rank - b.rank))
             .map(r => {
               if (isGmk) {
                 const rl = (it.roles || []).find(x => x.name === r.name);
-                return `第${r.rank}名　${dn(r.name)}${rl && rl.role ? ('　' + rl.role) : ''}　五连 ${r.score}`;
+                return `第${r.rank}名　${dn(r.name)}${rl && rl.role ? ('　' + rl.role) : ''}　五连 ${r.fives != null ? r.fives : '?'}${it.rankMode ? ('　名次分 ' + (r.score || 0)) : ''}`;
               }
               if (isQuo) {
                 const wl = (it.walls || []).find(x => x.name === r.name);

@@ -410,7 +410,7 @@
         if (gameName === 'minesweeper') msInfo.textContent = '当前赛制：' + (roomState.msTeam ? '2v2 组队（需 4 人，队伍随机）' : '个人赛 · ' + (roomState.maxPlayers || 4) + '人');
         else if (gameName === 'othello') msInfo.textContent = '双人对局 · 固定 2 人（黑棋先手，轮到你落子时棋盘会亮出可下位置）';
         else if (gameName === 'quoridor') msInfo.textContent = '2~4 人对局 · 每回合移动棋子或放一片墙（墙数：2人10 / 3人7 / 4人5，不能堵死任何玩家）';
-        else if (gameName === 'gomoku') msInfo.textContent = '2~4 人对局 · 15×15 棋盘，8 个角色各选其一（先选角色再开赛）· 最先 3 次五连获胜' + (roomState.continueRanking ? ' · 已开启“继续决出排名”' : '');
+        else if (gameName === 'gomoku') msInfo.textContent = '2~4 人对局 · 15×15 棋盘，8 个角色各选其一（先选角色再开赛）· 最先 3 次五连获胜' + (roomState.continueRanking ? ' · 已开启“继续决出排名”（开启后才有名次分）' : ' · 未开启“继续决出排名”（无 名次分）') + ' · 标准局为 4 人，少人开局会影响平衡';
       }
       const gmw = document.getElementById('gmRankWrap');
       const gmc = document.getElementById('gmRankCk');

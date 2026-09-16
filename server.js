@@ -309,30 +309,60 @@ function buildProfileByGame(name) {
   }));
 }
 
-// 技能五子棋角色统计（8.1）：角色使用次数 / Pick率 / 胜率 / 总对局数
+// 技能五子棋角色/人数统计（8.1）：
+// byPlayers：各人数模式的总战绩 + 该人数下各角色数据；
+// rolesAll：各角色总数据 + 该角色在各人数下的场次；
+// 名次分只在“继续决出排名”模式的对局里计（未开启则一律 0）
 function buildGomokuRoles(name) {
-  const map = new Map();
-  let total = 0;
+  const byPlayers = {};
+  const roleAll = {};
+  let total = 0, rankModeGames = 0, totalRankScore = 0;
   for (const e of timelineEntries) {
     if (e.type !== 'game' || e.game !== 'gomoku') continue;
     if (!(e.players || []).includes(name)) continue;
     total++;
-    const r = (e.roles || []).find(x => x.name === name);
-    if (!r || !r.role) continue;
-    const row = map.get(r.role) || { role: r.role, games: 0, wins: 0 };
-    row.games++;
-    if (r.rank === 1) row.wins++;
-    map.set(r.role, row);
+    const mine = (e.roles || []).find(x => x.name === name) || {};
+    const myRes = (e.results || []).find(r => r.name === name) || {};
+    const n = e.totalPlayers || (parseInt(e.mode, 10) || 0);
+    const key = (n ? n + '人' : '未知人数');
+    const bp = byPlayers[key] || (byPlayers[key] = { players: key, games: 0, wins: 0, rankScore: 0, rankModeGames: 0, roles: {} });
+    bp.games++;
+    if (myRes.rank === 1) bp.wins++;
+    const sc = Number(myRes.score) || 0;
+    bp.rankScore += sc;
+    totalRankScore += sc;
+    if (e.rankMode) { bp.rankModeGames++; rankModeGames++; }
+    if (mine.role) {
+      const r = bp.roles[mine.role] || (bp.roles[mine.role] = { role: mine.role, games: 0, wins: 0 });
+      r.games++; if (myRes.rank === 1) r.wins++;
+      const ra = roleAll[mine.role] || (roleAll[mine.role] = { role: mine.role, games: 0, wins: 0, byPlayers: {} });
+      ra.games++; if (myRes.rank === 1) ra.wins++;
+      ra.byPlayers[key] = (ra.byPlayers[key] || 0) + 1;
+    }
   }
-  return {
-    total,
-    roles: [...map.values()].sort((a, b) => b.games - a.games || (a.role < b.role ? -1 : 1)).map(r => ({
-      role: r.role, games: r.games, wins: r.wins,
-      winRate: r.games ? Math.round(r.wins / r.games * 100) : 0,
-      pickRate: total ? Math.round(r.games / total * 100) : 0
+  const rate = (g, w) => (g ? Math.round(w / g * 100) : 0);
+  const numOf = k => (parseInt(k, 10) || 99);
+  const byPlayersArr = Object.keys(byPlayers)
+    .sort((a, b) => numOf(a) - numOf(b))
+    .map(k => {
+      const bp = byPlayers[k];
+      return {
+        players: bp.players, games: bp.games, wins: bp.wins, winRate: rate(bp.games, bp.wins),
+        rankScore: bp.rankScore, rankModeGames: bp.rankModeGames,
+        roles: Object.values(bp.roles)
+          .map(r => ({ role: r.role, games: r.games, wins: r.wins, winRate: rate(r.games, r.wins), pickRate: rate(bp.games, r.games) }))
+          .sort((a, b) => b.games - a.games || (a.role < b.role ? -1 : 1))
+      };
+    });
+  const rolesAll = Object.values(roleAll)
+    .map(ra => ({
+      role: ra.role, games: ra.games, wins: ra.wins, winRate: rate(ra.games, ra.wins), pickRate: rate(total, ra.games),
+      byPlayers: Object.keys(ra.byPlayers).sort((a, b) => numOf(a) - numOf(b)).map(k => ({ players: k, games: ra.byPlayers[k] }))
     }))
-  };
+    .sort((a, b) => b.games - a.games || (a.role < b.role ? -1 : 1));
+  return { total, rankModeGames, totalRankScore, byPlayers: byPlayersArr, rolesAll };
 }
+
 
 // ===== 快艇排行榜：单局最高分（正式/测试/游客的真实对局都会记录；开发期内存，重启清空） =====
 let highScoreBoard = new Map(); // 玩家名 -> 单局最高总分
@@ -794,6 +824,17 @@ function buildDrawingCareer(name) {
 
 // ===== 测试个人空间：仅测试者自己可见的模拟战绩（内存种子，方便预览页面，无需真实打局） =====
 const testProfileSeeds = new Map();
+function gmkProfileRemoveMine(name) {
+  const seed = testProfileSeeds.get(name);
+  if (!seed || !seed.byGame.some(g => g.game === 'gomoku')) return;
+  const byGame = seed.byGame.filter(g => g.game !== 'gomoku');
+  testProfileSeeds.set(name, Object.assign({}, seed, { byGame, totals: recalcSeedTotals(byGame) }));
+}
+function gmkProfileMergeMine(name, modes) {
+  const seed = testProfileSeeds.get(name) || seedTestProfile(name);
+  const byGame = seed.byGame.filter(g => g.game !== 'gomoku').concat([{ game: 'gomoku', modes }]);
+  testProfileSeeds.set(name, Object.assign({}, seed, { byGame, totals: recalcSeedTotals(byGame) }));
+}
 function seedTestProfile(name) {
   const byGame = [{
     game: 'yahtzee',
@@ -2193,7 +2234,7 @@ const GMK_ROLE_DESC = {
   '摸鱼高手': '累计达成 5 次四连直接获胜',
   '截码战专家': '每轮秘密预测两个点：命中 1 人 +1 分、2 人 +3 分；18/36 分减五连需求、54 分直接获胜'
 };
-const GMK_COLORS = ['#e74c3c', '#3f7fd6', '#43a047', '#e6b422'];
+const GMK_COLORS = ['#e7928e', '#8fb2e0', '#9cc79b', '#e2cc94'];   // 淡雅半透明磨砂色（前端再叠光泽与透明度）
 const GMK_DIRS = [[0, 1], [1, 0], [1, 1], [1, -1]];
 function gmkIn(r, c) { return r >= 0 && r < GMK_SIZE && c >= 0 && c < GMK_SIZE; }
 function gmkCell(g, r, c) { return gmkIn(r, c) ? g.board[r * GMK_SIZE + c] : null; }
@@ -2205,7 +2246,7 @@ function gmkInit(room, names, continueRanking) {
     sealCell: null, lastSeal: null, sealCounts: {},
     soulActive: true, soulStones: new Set(), soulFiveFlags: [],
     extraPending: false, extraUsed: false,
-    hintsSeen: false, placedOnHint: false,
+    hintsSeen: false, placedOnHint: false, predictRound: 0,
     cleanCount: 0, finished: false, rank: 0, predict: []
   }));
   const board = Array.from({ length: GMK_TOTAL }, () => []);
@@ -2213,6 +2254,7 @@ function gmkInit(room, names, continueRanking) {
     roomId: room.roomId, playerOrder: names.slice(), players, board,
     phase: 'pick', order: null, turnIdx: 0, round: 1, moved: [],
     seal: null, roundMoves: [], over: null, ranking: [],
+    codeCfg: gmkCodeConfig(names.length),
     continueRanking: !!continueRanking, log: [], cancelVotes: [], _recorded: false, winnerInfo: null
   };
 }
@@ -2225,33 +2267,41 @@ function gmkLineCells(g, idx, r, c, dr, dc) {
   while (gmkIn(rr, cc) && gmkCell(g, rr, cc).includes(idx)) { cells.push([rr, cc]); rr += dr; cc += dc; }
   return cells;
 }
-// 本步形成的五连方向（每个方向最多记一次）
+// 某方向上、以 (r,c) 为中心的两侧连续己方棋子数（不含 (r,c) 本身）
+function gmkSideRuns(g, idx, r, c, dr, dc) {
+  let left = 0, right = 0;
+  let rr = r - dr, cc = c - dc;
+  while (gmkIn(rr, cc) && gmkCell(g, rr, cc).includes(idx)) { left++; rr -= dr; cc -= dc; }
+  rr = r + dr; cc = c + dc;
+  while (gmkIn(rr, cc) && gmkCell(g, rr, cc).includes(idx)) { right++; rr += dr; cc += dc; }
+  return [left, right];
+}
+// 本步“新形成”的五连方向：该方向本次才连成五连（五连以上只算一次，继续延长不再计）
 function gmkFiveDirs(g, idx, r, c) {
-  return GMK_DIRS.filter(([dr, dc]) => gmkLineCells(g, idx, r, c, dr, dc).length >= 5);
+  return GMK_DIRS.filter(([dr, dc]) => {
+    const [l, rt] = gmkSideRuns(g, idx, r, c, dr, dc);
+    if (l >= 5 || rt >= 5) return false;          // 该侧早已是五连 → 只是延长，不计
+    return (l + rt + 1) >= 5;                     // 本步把两侧拼成五连
+  });
 }
-// 本步新形成的四连（连续四子且至少一端可延伸）条数
-function gmkFourCount(g, idx, r, c) {
-  let n = 0;
-  for (const [dr, dc] of GMK_DIRS) {
-    for (let off = 0; off < 4; off++) {
-      const sr = r - dr * off, sc = c - dc * off;
-      const cells = [];
-      let ok = true;
-      for (let k = 0; k < 4; k++) {
-        const rr = sr + dr * k, cc = sc + dc * k;
-        if (!gmkIn(rr, cc) || !gmkCell(g, rr, cc).includes(idx)) { ok = false; break; }
-        cells.push([rr, cc]);
-      }
-      if (!ok) continue;
-      const b1 = gmkIn(sr - dr, sc - dc) && !gmkCell(g, sr - dr, sc - dc).includes(idx);
-      const er = sr + dr * 4, ec = sc + dc * 4;
-      const b2 = gmkIn(er, ec) && !gmkCell(g, er, ec).includes(idx);
-      if (b1 || b2) n++;
-    }
-  }
-  return n;
+// 本步“新形成”的四连方向：连续四子（四连以上也只算一次）；<5 子时要求至少一端可延伸
+function gmkFourDirs(g, idx, r, c) {
+  return GMK_DIRS.filter(([dr, dc]) => {
+    const [l, rt] = gmkSideRuns(g, idx, r, c, dr, dc);
+    if (l >= 4 || rt >= 4) return false;          // 早已四连 → 只是延长，不计
+    const total = l + rt + 1;
+    if (total < 4) return false;
+    if (total >= 5) return true;                  // 直接成五连：只按一次四连计
+    const aIn = gmkIn(r - dr * (l + 1), c - dc * (l + 1));
+    const bIn = gmkIn(r + dr * (rt + 1), c + dc * (rt + 1));
+    const aOpen = aIn && !gmkCell(g, r - dr * (l + 1), c - dc * (l + 1)).includes(idx);
+    const bOpen = bIn && !gmkCell(g, r + dr * (rt + 1), c + dc * (rt + 1)).includes(idx);
+    return aOpen || bOpen;                        // 至少一端为空（可延伸成五连）
+  });
 }
-// 侦探提示：所有“差一子成五连”的空位（可落子处）
+// 四连条数（摸鱼高手计数用：每个方向本步最多 +1）
+function gmkFourCount(g, idx, r, c) { return gmkFourDirs(g, idx, r, c).length; }
+// 侦探提示：所有“差一子成五连”的空位（可落子处，且放下去是新五连）
 function gmkHints(g, idx) {
   const out = [];
   for (let r = 0; r < GMK_SIZE; r++) for (let c = 0; c < GMK_SIZE; c++) {
@@ -2264,6 +2314,13 @@ function gmkHints(g, idx) {
   }
   return out;
 }
+// 截码战专家阈值：随人数缩放（4 人为标准局）
+function gmkCodeConfig(n) {
+  if (n >= 4) return { need2: 18, need1: 36, win: 54, hit1: 1, hit2: 3, label: '18/36/54' };
+  if (n === 3) return { need2: 12, need1: 24, win: 36, hit1: 1, hit2: 3, label: '12/24/36' };
+  return { need2: 15, need1: 30, win: 45, hit1: 3, hit2: 3, label: '15/30/45（命中一处即 +3）' };
+}
+
 function gmkP(g, i) { return g.players[i]; }
 function gmkActiveIdxs(g) { return g.players.map((p, i) => i).filter(i => !g.players[i].finished); }
 // 清洁工：清除本次五连的己方棋子 + 额外移除两颗敌子（尽量不同来源）
@@ -2285,18 +2342,20 @@ function gmkClean(g, idx, dirs, r, c) {
   }
 }
 function gmkRoundEnd(g) {
+  const cfg = g.codeCfg || gmkCodeConfig(g.players.length);
   for (const p of g.players) {
-    if (p.finished || p.role !== '截码战专家') { p.predict = []; continue; }
+    if (p.finished || p.role !== '截码战专家') { p.predict = []; p.predictRound = 0; continue; }
     const preds = p.predict || [];
     const hitPlayers = new Set();
     g.roundMoves.forEach(mv => {
       if (mv.idx === p.index) return;
       if (preds.some(pd => pd.r === mv.r && pd.c === mv.c)) hitPlayers.add(mv.idx);
     });
-    if (hitPlayers.size) { p.hitCount += hitPlayers.size; p.score += (hitPlayers.size >= 2 ? 3 : 1); }
-    p.need = p.score >= 36 ? 1 : (p.score >= 18 ? 2 : 3);
+    if (hitPlayers.size) { p.hitCount += hitPlayers.size; p.score += (hitPlayers.size >= 2 ? cfg.hit2 : cfg.hit1); }
+    p.need = p.score >= cfg.need1 ? 1 : (p.score >= cfg.need2 ? 2 : 3);
     p.predict = [];
-    if (p.score >= 54) gmkWin(g, p.index, '截码战 54 分', 'gm_decode');
+    p.predictRound = 0;
+    if (p.score >= cfg.win) gmkWin(g, p.index, '截码战 ' + cfg.win + ' 分', 'gm_decode');
   }
   g.seal = null;
   g.roundMoves = [];
@@ -2415,6 +2474,7 @@ function gmkPredict(g, name, list) {
   const arr = (Array.isArray(list) ? list : []).slice(0, 2).map(x => ({ r: Number(x.r), c: Number(x.c) })).filter(x => gmkIn(x.r, x.c));
   if (arr.length !== 2) return { ok: false, msg: '需要选择两个预测点' };
   p.predict = arr;
+  p.predictRound = g.round;
   return { ok: true };
 }
 // 选角：全部选完后排序（掌权者固定第 1 顺位，其余随机）
@@ -2453,7 +2513,8 @@ function gmkView(g, name, room) {
       name: p.name, index: p.index, color: p.color, role: p.role,
       five: p.five, four: p.four, score: p.score, need: p.need,
       finished: p.finished, rank: p.rank, extraPending: !!p.extraPending,
-      sealedThisRound: p.sealRound === g.round, online: online[p.name]
+      sealedThisRound: p.sealRound === g.round, online: online[p.name],
+      predictedThisRound: (p.predict || []).length === 2 && p.predictRound === g.round
     })),
     board: g.board.map(cell => cell.slice()),
     seal: g.seal, over: g.over || null, winnerInfo: g.winnerInfo || null,
@@ -2461,6 +2522,9 @@ function gmkView(g, name, room) {
     myPredict: you ? (you.predict || []) : [],
     roleReady: g.phase === 'pick', roles: GMK_ROLES, roleDesc: GMK_ROLE_DESC,
     takenRoles: g.players.map(p => p.role).filter(Boolean),
+    codeCfg: g.codeCfg || gmkCodeConfig(g.players.length),
+    totalPlayers: g.players.length,
+    stdNote: g.players.length < 4 ? '该玩法标准局为四人局，少人开局将会影响游戏性' : '',
     cancelVotes: (g.cancelVotes || []).slice()
   };
 }
@@ -2481,17 +2545,20 @@ function gmkCancel(room, g) {
   broadcastRoom(room);
 }
 // 时光墙：记录角色/名次/获胜方式（个人空间角色统计从这里汇总）
+// 名次分口径：只有开启「继续决出排名」的对局才给名次分（第1名=人数、第2名=人数-1…），否则一律 0
 function recordGomokuGame(g) {
   if (!g || !g.over || g._recorded) return;
   g._recorded = true;
   const officials = g.players.filter(p => isOfficialPlayer(p.name));
   if (!officials.length) return;
+  const rankMode = !!g.continueRanking;
+  const n = g.players.length;
   addTimeline({
-    ts: Date.now(), type: 'game', game: 'gomoku', totalPlayers: g.players.length, mode: g.players.length + '人',
+    ts: Date.now(), type: 'game', game: 'gomoku', totalPlayers: n, mode: n + '人', rankMode,
     players: officials.map(p => p.name),
     winner: g.over.winner, reason: g.over.reason,
     roles: g.players.map(p => ({ name: p.name, role: p.role, rank: p.rank })),
-    results: officials.map(p => ({ name: p.name, rank: p.rank, score: p.five }))
+    results: officials.map(p => ({ name: p.name, rank: p.rank, fives: p.five, score: rankMode ? (n - p.rank + 1) : 0 }))
   });
 }
 
@@ -3925,7 +3992,7 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, msg: '翻转棋生态预览已清除（榜单流水/时光墙/个人战绩），正式真实数据不受影响' });
   });
 
-  // 测试助手：技能五子棋生态一键预览（4 局时光墙，含角色/名次/获胜方式；可清除重造）
+  // 测试助手：技能五子棋生态一键预览（4 局时光墙 + 当前账号个人空间模拟数据；可清除重造）
   socket.on('dev_seed_gomoku_preview', (cb) => {
     const me = socketToUser.get(socket.id);
     if (!me || !TEST_NAMES.includes(me)) {
@@ -3935,20 +4002,43 @@ io.on('connection', (socket) => {
     const peers = TEST_NAMES.filter(n => n !== me);
     const roles = GMK_ROLES.slice();
     const now = Date.now();
-    for (let i = 0; i < 4; i++) {
-      const others = peers.slice(0, i % 2 === 0 ? 1 : 2);
-      const all = [me].concat(others);
-      const used = [roles[(i * 3) % roles.length], roles[(i * 3 + 1) % roles.length], roles[(i * 3 + 2) % roles.length]];
+    const mineModes = {};
+    // 4 局：2 人×2（含 1 局开启决出排名）、3 人×1、4 人×1（4 人局开启决出排名）
+    const plans = [
+      { names: [me, peers[0]], rankMode: false },
+      { names: [me, peers[0]], rankMode: true },
+      { names: [me, peers[0], peers[1]], rankMode: false },
+      { names: [me, peers[0], peers[1], peers[2]], rankMode: true }
+    ];
+    plans.forEach((pl, i) => {
+      const all = pl.names.slice();
+      const n = all.length;
       const myRank = (i % 3) + 1;
-      const results = all.map((n, k) => ({ name: n, rank: k === 0 ? myRank : (myRank === 1 ? 2 + k : (k === 1 && myRank > 1 ? 1 : 2 + k)), score: 3 - (k % 2) }));
+      const others = all.slice(1).map((nm, k) => ({ name: nm, rank: (myRank === 1 ? 2 + k : (k === 0 ? 1 : 2 + k)) }));
+      const results = [{ name: me, rank: myRank, fives: Math.max(1, 3 - (myRank - 1)) }].concat(others.map((o, k) => ({ name: o.name, rank: o.rank, fives: 1 + (k % 2) })))
+        .map(r => Object.assign(r, { score: pl.rankMode ? (n - r.rank + 1) : 0 }));
       addTimeline({
-        ts: now - (4 - i) * 3600000, type: 'game', game: 'gomoku', totalPlayers: all.length, mode: all.length + '人',
-        players: all, winner: results.find(r => r.rank === 1).name, reason: i === 1 ? '双重五连' : '3次五连',
-        roles: all.map((n, k) => ({ name: n, role: used[k] || roles[k], rank: results[k].rank })),
+        ts: now - (plans.length - i) * 3600000, type: 'game', game: 'gomoku', totalPlayers: n, mode: n + '人', rankMode: pl.rankMode,
+        players: all, winner: results.find(r => r.rank === 1).name, reason: i % 2 ? '双重五连' : '3次五连',
+        roles: all.map((nm, k) => ({ name: nm, role: roles[(i * 3 + k) % roles.length] || roles[k], rank: results.find(r => r.name === nm).rank })),
         results, _test: true, _gmkPreview: true
       });
-    }
-    if (cb) cb({ success: true, msg: '技能五子棋预览已生成（4 局）：个人空间角色统计、时光墙明细都可以看了' });
+      // 当前账号在该人数下的模拟战绩
+      const mk = n + '人';
+      const myRes = results.find(r => r.name === me);
+      const m = mineModes[mk] || (mineModes[mk] = { mode: mk, games: 0, wins: 0, totalScore: 0, best: 0, rankModeGames: 0 });
+      m.games++;
+      if (myRes.rank === 1) m.wins++;
+      m.totalScore += myRes.score;
+      if (myRes.score > m.best) m.best = myRes.score;
+      if (pl.rankMode) m.rankModeGames++;
+    });
+    const modes = Object.keys(mineModes).sort().map(k => {
+      const m = mineModes[k];
+      return { mode: m.mode, games: m.games, wins: m.wins, winRate: m.games ? Math.round(m.wins / m.games * 100) : 0, totalScore: m.totalScore, best: m.best, rankModeGames: m.rankModeGames };
+    });
+    gmkProfileMergeMine(me, modes);
+    if (cb) cb({ success: true, msg: '技能五子棋预览已生成（4 局：2/3/4 人，含 2 局决出排名）：个人空间角色/人数统计、时光墙明细都可以看了' });
   });
   socket.on('dev_reset_gomoku_preview', (cb) => {
     const me = socketToUser.get(socket.id);
@@ -3960,7 +4050,8 @@ io.on('connection', (socket) => {
     if (PERSIST_TIMELINE) {
       try { fs.writeFileSync(TIMELINE_FILE, JSON.stringify(timelineEntries, null, 2)); } catch (e) { console.error('❌ 时光墙写入失败：', e.message); }
     }
-    if (cb) cb({ success: true, msg: '技能五子棋预览已清除，正式真实数据不受影响' });
+    gmkProfileRemoveMine(me);
+    if (cb) cb({ success: true, msg: '技能五子棋预览已清除（时光墙与个人空间模拟数据），正式真实数据不受影响' });
   });
 
   // 测试助手：生成几条测试时光墙记录（标记 _test，可一键重置；开发期不落盘）
@@ -5536,6 +5627,7 @@ io.on('connection', (socket) => {
     if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
     const res = gmkPredict(g, name, points);
     if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    gmkBroadcast(room, g);   // 预测点仅自己可见，但要让本人立刻看到标记
     if (cb) cb({ success: true });
   });
   socket.on('gomoku_cancel_vote', ({ revoke } = {}, cb) => {
