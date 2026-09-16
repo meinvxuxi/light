@@ -295,7 +295,9 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     if (m.role === '截码战专家' && gmkMode === 'predict') txt += '　·　点击两个空位自动提交预测';
     if (m.role === '截码战专家' && S.codeCfg) txt += '　·　阈值 ' + esc(S.codeCfg.label || '');
     if (S.myPredict && S.myPredict.length === 2) {
-      txt += '　·　预测点 ' + S.myPredict.map(pt => colLabel(pt.c) + (pt.r + 1)).join('/') + (S.myPredictScored ? '（已结算，可重新提交）' : '（本轮待结算）');
+      const sameRound = !!m && m.predictedRound === S.round;
+      txt += '　·　预测点 ' + S.myPredict.map(pt => colLabel(pt.c) + (pt.r + 1)).join('/')
+        + (sameRound ? '（本轮提交，将在你下次回合结算）' : '（待结算：到你下次回合时结算）');
     }
     if (S.seal) { const sp = pAt(S.seal.by); txt += '　·　本轮封印：' + colLabel(S.seal.c) + (S.seal.r + 1) + (sp ? ('（' + esc(dn(sp.name)) + '）') : ''); }
     if (S.stdNote) txt += '<br><span style="color:#c0392b;">' + esc(S.stdNote) + '</span>';

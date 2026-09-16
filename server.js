@@ -2260,7 +2260,7 @@ function gmkInit(room, names, continueRanking) {
     soulActive: true, soulStones: new Set(), soulFiveFlags: [],
     extraPending: false, extraUsed: false,
     hintsSeen: false, placedOnHint: false, hintRounds: new Set(), hintUsedRounds: new Set(),
-    predictRound: 0, predictScored: false, predictSkipRound: 0, sealSkipRound: 0, placedRound: 0,
+    predictRound: 0, predictScored: false, predictFromSeq: 0, predictSkipRound: 0, sealSkipRound: 0, placedRound: 0,
     cleanCount: 0, finished: false, rank: 0, predict: []
   }));
   const board = Array.from({ length: GMK_TOTAL }, () => []);
@@ -2268,6 +2268,7 @@ function gmkInit(room, names, continueRanking) {
     roomId: room.roomId, playerOrder: names.slice(), players, board,
     phase: 'pick', order: null, turnIdx: 0, round: 1, moved: [],
     seal: null, roundMoves: [], over: null, ranking: [],
+    seq: 0, moveLog: [],
     codeCfg: gmkCodeConfig(names.length),
     cleanPending: null, notice: null, noticeSeq: 0,
     continueRanking: !!continueRanking, log: [], cancelVotes: [], _recorded: false, winnerInfo: null
@@ -2309,7 +2310,35 @@ function gmkMaybeEndTurn(g, idx) {
 function gmkFinishTurn(g, idx) {
   if (!g.moved.includes(idx)) g.moved.push(idx);
   if (gmkActiveIdxs(g).every(i => g.moved.includes(i))) gmkRoundEnd(g);
-  if (!g.over) gmkAdvance(g);
+  if (!g.over) { gmkAdvance(g); gmkSettlePredictions(g); }
+}
+// 截码战专家：预测持续到“下次自己回合”才结算（覆盖这段时间里其他所有人的落子）
+function gmkSettlePredictions(g, force) {
+  if (!g || g.over || g.phase !== 'play') return;
+  for (const p of g.players) {
+    if (p.finished || p.role !== '截码战专家') continue;
+    if (!force && g.turnIdx !== p.index) continue;        // 默认只在自己的回合开始时结算
+    if (!(p.predict.length === 2) || p.predictScored) continue;
+    const hitPlayers = new Set();
+    (g.moveLog || []).forEach(mv => {
+      if (mv.seq <= (p.predictFromSeq || 0)) return;     // 只统计提交之后的落子
+      if (mv.idx === p.index) return;                    // 自己的落子不算
+      if (p.predict.some(pd => pd.r === mv.r && pd.c === mv.c)) hitPlayers.add(mv.idx);
+    });
+    const cfg = g.codeCfg || gmkCodeConfig(g.players.length);
+    const gain = hitPlayers.size ? (hitPlayers.size >= 2 ? cfg.hit2 : cfg.hit1) : 0;
+    if (gain) {
+      p.hitCount += hitPlayers.size;
+      p.score += gain;
+      gmkNotice(g, '截码战专家 ' + p.name + ' 预测命中！+' + gain + ' 分（共 ' + p.score + ' 分）', 'code');
+    }
+    p.need = p.score >= cfg.need1 ? 1 : (p.score >= cfg.need2 ? 2 : 3);
+    p.predict = [];
+    p.predictScored = true;
+    p.predictRound = 0;
+    p.predictFromSeq = 0;
+    if (p.score >= cfg.win) gmkWin(g, p.index, '截码战 ' + cfg.win + ' 分', 'gm_decode');
+  }
 }
 // 可被清洁工移除的敌子（完成名次的玩家棋子不再参与）
 function gmkCleanTargets(g, idx) {
@@ -2513,31 +2542,8 @@ function gmkSettleWinnerRoleAchievements(g, p) {
   }
   if (p.role === '截码战专家' && p.hitCount === 0) announceAchievement(g, g.roomId, p.name, 'gm_fool');
 }
-// 清洁工：五连计分后清除自己的五子（在 gmkCleanChoose 里执行）
+// 轮末：只清理回合数据；预测不在这里结算（改为“下次自己回合”结算）
 function gmkRoundEnd(g) {
-  const cfg = g.codeCfg || gmkCodeConfig(g.players.length);
-  for (const p of g.players) {
-    if (p.finished || p.role !== '截码战专家') continue;
-    // 本轮提交的预测在轮末结算一次，随后清除标记（下一轮需要重新提交）
-    if (p.predict.length === 2 && p.predictRound === g.round) {
-      const hitPlayers = new Set();
-      g.roundMoves.forEach(mv => {
-        if (mv.idx === p.index) return;
-        if (p.predict.some(pd => pd.r === mv.r && pd.c === mv.c)) hitPlayers.add(mv.idx);
-      });
-      const gain = hitPlayers.size ? (hitPlayers.size >= 2 ? cfg.hit2 : cfg.hit1) : 0;
-      if (gain) {
-        p.hitCount += hitPlayers.size;
-        p.score += gain;
-        gmkNotice(g, '截码战专家 ' + p.name + ' 预测命中！+' + gain + ' 分（共 ' + p.score + ' 分）', 'code');
-      }
-      p.need = p.score >= cfg.need1 ? 1 : (p.score >= cfg.need2 ? 2 : 3);
-      if (p.score >= cfg.win) gmkWin(g, p.index, '截码战 ' + cfg.win + ' 分', 'gm_decode');
-    }
-    p.predict = [];
-    p.predictRound = 0;
-    p.predictScored = false;
-  }
   // 封印：持续一轮——本轮末不清除，下一轮末再解除（避免“封完立刻被清掉”）
   if (g.seal && g.seal.round < g.round) g.seal = null;
   g.roundMoves = [];
@@ -2599,10 +2605,12 @@ function gmkWin(g, idx, reason, achId) {
       g.over = { winner: p.name, reason, rankMode: false, ranking: gmkApplyFinalRanking(g) };
     }
     gmkNotice(g, p.name + ' 获胜（' + reason + '）', 'win');
+    gmkSettlePredictions(g, true);           // 终局把未结算的预测一次性结清（用于统计与成就）
     gmkSettleWinnerRoleAchievements(g, p);   // 角色专属成就：仅获胜者可拿
     recordGomokuGame(g);
   } else {
     gmkAdvance(g);
+    gmkSettlePredictions(g);
   }
 }
 function gmkPlace(g, name, r, c) {
@@ -2632,6 +2640,8 @@ function gmkPlace(g, name, r, c) {
   cell.push(idx);
   if (cell.length > 1) p.soulStones.add(r + ',' + c);
   g.roundMoves.push({ idx, r, c });
+  g.moveLog.push({ seq: ++g.seq, idx, r, c });
+  if (g.moveLog.length > 60) g.moveLog.splice(0, g.moveLog.length - 60);
   const dirs = gmkFiveDirs(g, idx, r, c);
   if (dirs.length) {
     p.five += dirs.length;
@@ -2722,7 +2732,8 @@ function gmkPredict(g, name, list) {
   p.predict = arr;
   p.predictRound = g.round;
   p.predictScored = false;
-  gmkNotice(g, '截码战专家 ' + p.name + ' 提交了本轮预测（内容仅自己可见）', 'code');
+  p.predictFromSeq = g.seq;
+  gmkNotice(g, '截码战专家 ' + p.name + ' 提交了本轮预测（持续到下次自己回合才结算，内容仅自己可见）', 'code');
   if (p.placedRound === g.round) gmkMaybeEndTurn(g, idx);   // 已落子 → 预测完成后结束回合
   return { ok: true };
 }
@@ -2765,6 +2776,7 @@ function gmkView(g, name, room) {
       sealedThisRound: p.sealRound === g.round, online: online[p.name],
       sealSkippedThisRound: p.sealSkipRound === g.round,
       placedThisRound: p.placedRound === g.round,
+      predictedRound: p.predictRound,
       predictedThisRound: (p.predict || []).length === 2 && p.predictRound === g.round
     })),
     board: g.board.map(cell => cell.slice()),
