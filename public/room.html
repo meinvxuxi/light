@@ -220,6 +220,9 @@
           <option value="1">2v2 组队（需 4 人）</option>
         </select>
       </div>
+      <div id="gmRankWrap" style="display:none;text-align:center;margin-top:8px;font-size:.8rem;color:#6c757d;">
+        <label style="cursor:pointer;"><input type="checkbox" id="gmRankCk" onchange="changeGmRanking()"> 继续决出排名（产生第一名后剩余玩家继续结算 2/3/4 名）</label>
+      </div>
     </div>
     <div id="msModeInfo" style="display:none;text-align:center;font-size:.8rem;color:#6b7a90;margin:6px 0;"></div>
 
@@ -265,7 +268,7 @@
 
     const params = new URLSearchParams(window.location.search);
     const gameName = params.get('game') || 'yahtzee';
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋' };
     const isDrawing = gameName === 'drawing'; // 画猜接龙固定 4 人，无人数设置
     const isFixedPlayers = gameName === 'drawing' || gameName === 'othello'; // 固定人数游戏：不显示人数设置
     document.getElementById('roomTitle').textContent = (GAME_LABEL[gameName] || '游戏') + ' · 房间';
@@ -403,10 +406,17 @@
       }
       const msInfo = document.getElementById('msModeInfo');
       if (msInfo) {
-        msInfo.style.display = (gameName === 'minesweeper' || gameName === 'othello' || gameName === 'quoridor') ? 'block' : 'none';
+        msInfo.style.display = (gameName === 'minesweeper' || gameName === 'othello' || gameName === 'quoridor' || gameName === 'gomoku') ? 'block' : 'none';
         if (gameName === 'minesweeper') msInfo.textContent = '当前赛制：' + (roomState.msTeam ? '2v2 组队（需 4 人，队伍随机）' : '个人赛 · ' + (roomState.maxPlayers || 4) + '人');
         else if (gameName === 'othello') msInfo.textContent = '双人对局 · 固定 2 人（黑棋先手，轮到你落子时棋盘会亮出可下位置）';
         else if (gameName === 'quoridor') msInfo.textContent = '2~4 人对局 · 每回合移动棋子或放一片墙（墙数：2人10 / 3人7 / 4人5，不能堵死任何玩家）';
+        else if (gameName === 'gomoku') msInfo.textContent = '2~4 人对局 · 15×15 棋盘，8 个角色各选其一（先选角色再开赛）· 最先 3 次五连获胜' + (roomState.continueRanking ? ' · 已开启“继续决出排名”' : '');
+      }
+      const gmw = document.getElementById('gmRankWrap');
+      const gmc = document.getElementById('gmRankCk');
+      if (gmw && gmc) {
+        gmw.style.display = (gameName === 'gomoku' && roomState.hostName === myName) ? 'block' : 'none';
+        if (roomState.hostName === myName) gmc.checked = !!roomState.continueRanking;
       }
 
       const seatsDiv = document.getElementById('seats');
@@ -460,8 +470,8 @@
     }
 
     function enterGame() {
-      const urlMap = { yahtzee: '/yahtzee.html', light: '/light.html', drawing: '/drawing.html', bomber: '/bomber.html', minesweeper: '/minesweeper.html', othello: '/othello.html', quoridor: '/quoridor.html' };
-      const fallback = { yahtzee: 'yahtzee_001', light: 'light_001', drawing: 'drawing_001', bomber: 'bomber_001', minesweeper: 'minesweeper_001', othello: 'othello_001', quoridor: 'quoridor_001' };
+      const urlMap = { yahtzee: '/yahtzee.html', light: '/light.html', drawing: '/drawing.html', bomber: '/bomber.html', minesweeper: '/minesweeper.html', othello: '/othello.html', quoridor: '/quoridor.html', gomoku: '/gomoku.html' };
+      const fallback = { yahtzee: 'yahtzee_001', light: 'light_001', drawing: 'drawing_001', bomber: 'bomber_001', minesweeper: 'minesweeper_001', othello: 'othello_001', quoridor: 'quoridor_001', gomoku: 'gomoku_001' };
       const g = (gameName in urlMap) ? gameName : 'yahtzee';
       const rid = roomId || (latestRoom && latestRoom.roomId) || fallback[g];
       window.location.href = urlMap[g] + '?room=' + rid;
@@ -571,6 +581,16 @@
       const max = parseInt((document.getElementById('maxPlayersSelect') || {}).value || '4') || serverMaxPlayers;
       socket.emit('change_settings', { maxPlayers: max, skipOffline: on }, (res) => {
         if (res && res.success === false && res.msg) showToast('人数：' + res.msg);
+      });
+    }
+
+    // 技能五子棋：是否开启“继续决出排名”
+    function changeGmRanking() {
+      const on = document.getElementById('gmRankCk') && document.getElementById('gmRankCk').checked;
+      const max = parseInt((document.getElementById('maxPlayersSelect') || {}).value || '4') || serverMaxPlayers;
+      socket.emit('change_settings', { maxPlayers: max, continueRanking: !!on }, (res) => {
+        if (res && res.success) showToast(on ? '已开启：继续决出排名' : '已关闭：产生第一名即结束');
+        else if (res && res.msg) showToast(res.msg);
       });
     }
 

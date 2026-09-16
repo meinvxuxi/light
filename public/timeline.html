@@ -48,7 +48,7 @@
     if (!myName) { window.location.href = '/index.html'; }
     if (sessionStorage.getItem('isGuest') === 'true') { window.location.href = '/lobby.html'; }
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋' };
     const quoRecs = {};
     function quoEsc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
     function toggleQuoRecord(id){
@@ -97,10 +97,15 @@
           const gameName = GAME_LABEL[it.game] || it.game;
           const isOth = it.game === 'othello';
           const isQuo = it.game === 'quoridor';
-          row.innerHTML = `<span class="tl-time">${fmtTime(it.ts)}</span>${who} 游玩了【${gameName}】${isOth ? (it.draw ? '（平局）' : '') : (isQuo && it.actions ? '（共用 ' + it.actions + ' 手）' : '')}<span class="tl-tri" id="${tId}" onclick="toggleDetail(${it.ts})">▸</span>`;
+          const isGmk = it.game === 'gomoku';
+          row.innerHTML = `<span class="tl-time">${fmtTime(it.ts)}</span>${who} 游玩了【${gameName}】${isOth ? (it.draw ? '（平局）' : '') : (isQuo && it.actions ? '（共用 ' + it.actions + ' 手）' : '')}${isGmk && it.winner ? '（' + dn(it.winner) + ' 获胜 · ' + (it.reason || '3次五连') + '）' : ''}<span class="tl-tri" id="${tId}" onclick="toggleDetail(${it.ts})">▸</span>`;
           const results = (it.results || []).slice()
             .sort((a, b) => isOth ? (b.score - a.score) : (a.rank - b.rank))
             .map(r => {
+              if (isGmk) {
+                const rl = (it.roles || []).find(x => x.name === r.name);
+                return `第${r.rank}名　${dn(r.name)}${rl && rl.role ? ('　' + rl.role) : ''}　五连 ${r.score}`;
+              }
               if (isQuo) {
                 const wl = (it.walls || []).find(x => x.name === r.name);
                 return `第${r.rank}名　${dn(r.name)}　名次分 ${r.score}${wl ? ('　剩墙 ' + wl.left) : ''}`;

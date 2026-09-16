@@ -137,6 +137,18 @@
         <option value="q_real">真·步步为营（史诗）</option>
         <option value="q_s1">S1导演（传说）</option>
       </optgroup>
+      <optgroup label="技能五子棋">
+        <option value="gm_lucky">好运连连（普通）</option>
+        <option value="gm_seal">此树是我栽此格是我占（普通）</option>
+        <option value="gm_clean">大扫除（普通）</option>
+        <option value="gm_detective">真相不止一个（普通）</option>
+        <option value="gm_destiny">天命所归（稀有）</option>
+        <option value="gm_moyu">摸到深处自然卷（稀有）</option>
+        <option value="gm_soul">中元快乐（稀有）</option>
+        <option value="gm_decode">截码战の传说（史诗）</option>
+        <option value="gm_slow">手慢无（隐藏）</option>
+        <option value="gm_fool">愚言家（隐藏）</option>
+      </optgroup>
     </select>
     <button class="btn-trigger" onclick="triggerAchievement()">触发</button>
     <button class="btn-info" onclick="window.location.href='/achievements.html'">查看荣誉墙</button>
@@ -155,6 +167,9 @@
     <br>
     <button class="btn-trigger" onclick="triggerQuo('me')">🧱 一键触发全部路墙棋成就（当前账号）</button>
     <button class="btn-trigger" onclick="triggerQuo('all')">🧱 给四个测试号各触发全部路墙棋成就</button>
+    <br>
+    <button class="btn-trigger" onclick="triggerGmk('me')">⚫ 一键触发全部技能五子棋成就（当前账号）</button>
+    <button class="btn-trigger" onclick="triggerGmk('all')">⚫ 给四个测试号各触发全部技能五子棋成就</button>
     <br>
     <button class="btn-trigger" onclick="guestAchDemo()">📢 模拟游客稀有成就 → 游客留言板</button>
     <br>
@@ -199,6 +214,19 @@
     <button class="btn-info" onclick="window.location.href='/timeline.html'">查看时光墙</button>
     <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
       生成 4 局 2 人对局（含 1 局平局）：翻转棋榜最佳/流水、时光墙终局棋子数与平局标记、当前账号个人战绩（场次/胜场/平局/胜率/累计与最高终局棋子数）。可反复重造，清除只删预览数据。
+    </p>
+  </div>
+
+  <!-- 技能五子棋生态预览 -->
+  <div class="panel">
+    <h3>⚫ 技能五子棋生态预览（仅测试账号；内存，可清除重造）</h3>
+    <button class="btn-trigger" onclick="seedGmkPreview()">⚫ 一键生成技能五子棋时光墙 + 角色统计</button>
+    <button class="btn-reset" onclick="resetGmkPreview()">🗑️ 清除技能五子棋预览</button>
+    <button class="btn-info" onclick="window.location.href='/profile.html?name=' + encodeURIComponent(sessionStorage.getItem('playerName'))">查看我的个人空间</button>
+    <button class="btn-info" onclick="window.location.href='/timeline.html'">查看时光墙</button>
+    <button class="btn-info" onclick="window.location.href='/achievements.html'">查看荣誉墙</button>
+    <p style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
+      生成 4 局技能五子棋时光墙记录（2/3 人、含角色/名次/获胜方式）：个人空间「技能五子棋」页可见角色使用次数 / Pick率 / 胜率 / 总对局数，时光墙可展开看每人角色与五连数。可反复重造，清除只删预览数据。
     </p>
   </div>
 
@@ -325,6 +353,18 @@
       });
     }
 
+    function triggerGmk(scope) {
+      const ids = ['gm_lucky', 'gm_seal', 'gm_clean', 'gm_detective', 'gm_destiny', 'gm_moyu', 'gm_soul', 'gm_decode', 'gm_slow', 'gm_fool'];
+      const targets = scope === 'all' ? ['测试者1', '测试者2', '测试者3', '测试者4'] : undefined;
+      socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
+        if (res && res.success) {
+          log(`✅ 已批量触发 ${res.count} 条技能五子棋成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
+        } else {
+          log('❌ ' + ((res && res.msg) || '触发失败'));
+        }
+      });
+    }
+
     function seedProfile() {
       socket.emit('dev_seed_profile', (res) => {
         if (res && res.success) {
@@ -368,6 +408,20 @@
         else log('❌ ' + ((res && res.msg) || '生成失败'));
       });
     }
+
+    function seedGmkPreview() {
+      socket.emit('dev_seed_gomoku_preview', (res) => {
+        if (res && res.success) log('✅ ' + ((res && res.msg) || '技能五子棋预览已生成'));
+        else log('❌ ' + ((res && res.msg) || '生成失败'));
+      });
+    }
+    function resetGmkPreview() {
+      socket.emit('dev_reset_gomoku_preview', (res) => {
+        if (res && res.success) log('✅ ' + ((res && res.msg) || '技能五子棋预览已清除'));
+        else log('❌ ' + ((res && res.msg) || '清除失败'));
+      });
+    }
+
     function resetOthPreview() {
       socket.emit('dev_reset_othello_preview', (res) => {
         if (res && res.success) log('✅ ' + ((res && res.msg) || '翻转棋生态预览已清除'));

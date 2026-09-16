@@ -164,7 +164,7 @@
     window.addEventListener('pageshow', () => { paintSaved(); if (socket.connected) applyTheme(); });
     setInterval(sendHeartbeat, 10000);
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋' };
     function gameLabel(k) { return GAME_LABEL[k] || k; }
     function statCell(lab, val) {
       return `<div class="st-cell">${lab}<b>${val}</b></div>`;
@@ -173,6 +173,7 @@
     let stByGame = [];
     let stAch = [];
     let stCareer = null;
+    let stRoles = null;   // 技能五子棋：角色使用统计
     let curGame = 'all';
     function setAchVisible() {
       const lab = document.getElementById('achLab');
@@ -278,6 +279,22 @@
         </div>
         <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">路墙棋战绩（名次分：第1名=人数、第2名=人数-1…）</div>
         ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrQuo(m)}</div>`).join('')}`;
+      } else if (curGame === 'gomoku') {
+        const rl = stRoles || { total: 0, roles: [] };
+        const roleRows = (rl.roles || []).length
+          ? (rl.roles || []).map(r => `<div class="st-mode"><span class="mk">${esc(r.role)}</span>使用 <span class="mv">${r.games}</span> 次<span class="st-sep">·</span>Pick率 <span class="mv">${r.pickRate}%</span><span class="st-sep">·</span>胜率 <span class="mv">${r.winRate}%</span><span class="st-sep">·</span>胜 <span class="mv">${r.wins}</span></div>`).join('')
+          : '<div class="empty">还没有角色使用记录</div>';
+        html = `
+        <div class="st-grid two">
+          ${statCell('总对局数', rl.total || s.games)}
+          ${statCell('游玩场次', s.games)}
+          ${statCell('胜场', s.wins)}
+          ${statCell('胜率', s.games ? s.winRate + '%' : '—')}
+        </div>
+        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">角色使用统计（8.1）：使用次数 / Pick率 / 胜率</div>
+        ${roleRows}
+        <div style="font-size:.8rem;color:#9aa5b1;margin:6px 0 6px;">各人数模式战绩</div>
+        ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrQuo(m)}</div>`).join('')}`;
       } else {
         html = `
         <div class="st-grid">
@@ -311,6 +328,7 @@
       stTotals = st.totals || stTotals;
       stByGame = st.byGame || [];
       stCareer = res.drawingCareer || null;
+      stRoles = res.gomokuRoles || null;
       const status = res.online
         ? '在线'
         : (res.lastSeen ? `离线 · 上次在线 ${fmtShort(res.lastSeen)}` : '离线');

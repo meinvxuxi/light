@@ -136,6 +136,16 @@ const GAME_ROOMS = {
     spectators: [],
     playerMap: new Map(),
     leaveTimers: {}
+  },
+  gomoku: {
+    roomId: 'gomoku_001',
+    gameType: 'gomoku',
+    hostName: null,
+    maxPlayers: 4,
+    seats: { 1: null, 2: null, 3: null, 4: null },
+    spectators: [],
+    playerMap: new Map(),
+    leaveTimers: {}
   }
 };
 
@@ -225,6 +235,11 @@ function playerUnlockedTitles(name) {
     for (const q of ACH_TITLE_ORDER) if (qs.includes(q)) out.push(map[q]);
     if (qs.includes('hidden') && map.hidden) out.push(map.hidden);
   }
+  // 专属“成就 → 头衔”映射（如技能五子棋）
+  const idSet = new Set(mine.map(r => r.achievementId));
+  for (const [id, title] of Object.entries(ACH_TITLE_BY_ID)) {
+    if (idSet.has(id) && title && !out.includes(title)) out.push(title);
+  }
   return out;
 }
 // 当前实际展示的头衔：玩家手动选择了某个已解锁头衔才展示；默认不佩戴
@@ -292,6 +307,31 @@ function buildProfileByGame(name) {
       .map(mode => { const s = games[gk][mode]; return { mode, games: s.games, wins: s.wins, winRate: s.games ? Math.round(s.wins / s.games * 100) : 0, totalScore: s.totalScore, best: s.best, teamScore: s.teamScore || 0, teamBest: s.teamBest || 0, draws: s.draws || 0 }; })
       .sort((a, b) => profileModeRank(a.mode) - profileModeRank(b.mode))
   }));
+}
+
+// 技能五子棋角色统计（8.1）：角色使用次数 / Pick率 / 胜率 / 总对局数
+function buildGomokuRoles(name) {
+  const map = new Map();
+  let total = 0;
+  for (const e of timelineEntries) {
+    if (e.type !== 'game' || e.game !== 'gomoku') continue;
+    if (!(e.players || []).includes(name)) continue;
+    total++;
+    const r = (e.roles || []).find(x => x.name === name);
+    if (!r || !r.role) continue;
+    const row = map.get(r.role) || { role: r.role, games: 0, wins: 0 };
+    row.games++;
+    if (r.rank === 1) row.wins++;
+    map.set(r.role, row);
+  }
+  return {
+    total,
+    roles: [...map.values()].sort((a, b) => b.games - a.games || (a.role < b.role ? -1 : 1)).map(r => ({
+      role: r.role, games: r.games, wins: r.wins,
+      winRate: r.games ? Math.round(r.wins / r.games * 100) : 0,
+      pickRate: total ? Math.round(r.games / total * 100) : 0
+    }))
+  };
 }
 
 // ===== 快艇排行榜：单局最高分（正式/测试/游客的真实对局都会记录；开发期内存，重启清空） =====
@@ -910,7 +950,31 @@ const ACHIEVEMENTS = {
   q_fast:    { name: '镜流与近路',   quality: 'rare',   game: 'quoridor' },
   q_step:    { name: '步步为营',     quality: 'rare',   game: 'quoridor' },
   q_real:    { name: '真·步步为营',  quality: 'epic',   game: 'quoridor' },
-  q_s1:      { name: 'S1导演',       quality: 'legend', game: 'quoridor' }
+  q_s1:      { name: 'S1导演',       quality: 'legend', game: 'quoridor' },
+  // ===== 技能五子棋（gomoku）成就（2026-09-09 定稿，头衔为“成就→头衔”专属映射） =====
+  gm_destiny:   { name: '天命所归',        quality: 'rare',   game: 'gomoku' },
+  gm_moyu:      { name: '摸到深处自然卷',  quality: 'rare',   game: 'gomoku' },
+  gm_decode:    { name: '截码战の传说',    quality: 'epic',   game: 'gomoku' },
+  gm_slow:      { name: '手慢无',          quality: 'hidden', game: 'gomoku' },
+  gm_fool:      { name: '愚言家',          quality: 'hidden', game: 'gomoku' },
+  gm_lucky:     { name: '好运连连',        quality: 'common', game: 'gomoku' },
+  gm_seal:      { name: '此树是我栽此格是我占', quality: 'common', game: 'gomoku' },
+  gm_clean:     { name: '大扫除',          quality: 'common', game: 'gomoku' },
+  gm_detective: { name: '真相不止一个',    quality: 'common', game: 'gomoku' },
+  gm_soul:      { name: '中元快乐',        quality: 'rare',   game: 'gomoku' }
+};
+// 成就 → 专属头衔（技能五子棋）
+const ACH_TITLE_BY_ID = {
+  gm_destiny: '可以撑地了',
+  gm_moyu: 'Tony老师',
+  gm_decode: '破译专家',
+  gm_slow: '五子棋的花语',
+  gm_fool: '愚言家',
+  gm_lucky: 's1幸运儿',
+  gm_seal: '占山为王',
+  gm_clean: 's1清洁工',
+  gm_detective: 's1侦探',
+  gm_soul: 's1降灵师'
 };
 const ACH_QUALITY_NO = { common: 1, rare: 2, epic: 3, legend: 4, hidden: 5 };
 // 旗手升级档位（累计正确插旗数）：同组 id 靠品质最高档展示
@@ -1108,9 +1172,10 @@ const GAME_URL_MAP = {
   bomber: '/bomber.html',
   minesweeper: '/minesweeper.html',
   othello: '/othello.html',
-  quoridor: '/quoridor.html'
+  quoridor: '/quoridor.html',
+  gomoku: '/gomoku.html'
 };
-const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋' };
+const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋' };
 const ACH_Q_LABEL = { common: '普通', rare: '稀有', epic: '史诗', legend: '传说', hidden: '隐藏' };
 
 const yahtzeeGames = {};
@@ -1426,6 +1491,8 @@ const othelloGames = {};      // roomId -> 翻转棋对局
 const othAtGame = new Map();  // playerName -> 当前正打开翻转棋游戏页的 socket.id
 const quoridorGames = {};     // roomId -> 路墙棋对局
 const quoriAtGame = new Map();// playerName -> 当前正打开路墙棋游戏页的 socket.id
+const gomokuGames = {};       // roomId -> 技能五子棋对局
+const gomoAtGame = new Map(); // playerName -> 当前正打开五子棋游戏页的 socket.id
 const MS_SIZE = 8;
 const MS_MINES = 26;
 const MS_BONUS = { 1: 6, 2: 3, 3: 2, 4: 1 };
@@ -2111,6 +2178,325 @@ function recordQuoridorGame(g) {
   });
 }
 
+// ======================== 技能五子棋（gomoku）核心 ========================
+// 规格见 development/制作笔记/SKillGomoku.md：15×15、2~4 人、8 角色各选其一、3 次五连获胜
+const GMK_SIZE = 15;
+const GMK_TOTAL = GMK_SIZE * GMK_SIZE;
+const GMK_ROLES = ['掌权者', '幸运儿', '封印师', '清洁工', '侦探', '灵魂棋手', '摸鱼高手', '截码战专家'];
+const GMK_ROLE_DESC = {
+  '掌权者': '必定先手；一子同时形成两个五连直接获胜',
+  '幸运儿': '每次五连后额外落一子（额外子再成五连不再触发）',
+  '封印师': '每轮可锁定一个空位（本轮双方不可落子，不能连续锁同一位置）',
+  '清洁工': '五连计分后清除这五子，并额外移除两颗敌子（尽量来自不同对手）',
+  '侦探': '仅自己可见地高亮“差一子成五连”的空位',
+  '灵魂棋手': '第一次五连前可在他人棋子上叠加落子（共存）；五连后能力失效',
+  '摸鱼高手': '累计达成 5 次四连直接获胜',
+  '截码战专家': '每轮秘密预测两个点：命中 1 人 +1 分、2 人 +3 分；18/36 分减五连需求、54 分直接获胜'
+};
+const GMK_COLORS = ['#e74c3c', '#3f7fd6', '#43a047', '#e6b422'];
+const GMK_DIRS = [[0, 1], [1, 0], [1, 1], [1, -1]];
+function gmkIn(r, c) { return r >= 0 && r < GMK_SIZE && c >= 0 && c < GMK_SIZE; }
+function gmkCell(g, r, c) { return gmkIn(r, c) ? g.board[r * GMK_SIZE + c] : null; }
+function gmkIndex(g, name) { return g.players.findIndex(p => p.name === name); }
+function gmkInit(room, names, continueRanking) {
+  const players = names.map((n, i) => ({
+    name: n, index: i, color: GMK_COLORS[i], role: null,
+    five: 0, four: 0, score: 0, need: 3, hitCount: 0, predictHitsThisRound: 0,
+    sealCell: null, lastSeal: null, sealCounts: {},
+    soulActive: true, soulStones: new Set(), soulFiveFlags: [],
+    extraPending: false, extraUsed: false,
+    hintsSeen: false, placedOnHint: false,
+    cleanCount: 0, finished: false, rank: 0, predict: []
+  }));
+  const board = Array.from({ length: GMK_TOTAL }, () => []);
+  return {
+    roomId: room.roomId, playerOrder: names.slice(), players, board,
+    phase: 'pick', order: null, turnIdx: 0, round: 1, moved: [],
+    seal: null, roundMoves: [], over: null, ranking: [],
+    continueRanking: !!continueRanking, log: [], cancelVotes: [], _recorded: false, winnerInfo: null
+  };
+}
+// 某方向上以 (r,c) 为中心的连续己方棋子
+function gmkLineCells(g, idx, r, c, dr, dc) {
+  const cells = [];
+  let rr = r, cc = c;
+  while (gmkIn(rr, cc) && gmkCell(g, rr, cc).includes(idx)) { cells.push([rr, cc]); rr -= dr; cc -= dc; }
+  rr = r + dr; cc = c + dc;
+  while (gmkIn(rr, cc) && gmkCell(g, rr, cc).includes(idx)) { cells.push([rr, cc]); rr += dr; cc += dc; }
+  return cells;
+}
+// 本步形成的五连方向（每个方向最多记一次）
+function gmkFiveDirs(g, idx, r, c) {
+  return GMK_DIRS.filter(([dr, dc]) => gmkLineCells(g, idx, r, c, dr, dc).length >= 5);
+}
+// 本步新形成的四连（连续四子且至少一端可延伸）条数
+function gmkFourCount(g, idx, r, c) {
+  let n = 0;
+  for (const [dr, dc] of GMK_DIRS) {
+    for (let off = 0; off < 4; off++) {
+      const sr = r - dr * off, sc = c - dc * off;
+      const cells = [];
+      let ok = true;
+      for (let k = 0; k < 4; k++) {
+        const rr = sr + dr * k, cc = sc + dc * k;
+        if (!gmkIn(rr, cc) || !gmkCell(g, rr, cc).includes(idx)) { ok = false; break; }
+        cells.push([rr, cc]);
+      }
+      if (!ok) continue;
+      const b1 = gmkIn(sr - dr, sc - dc) && !gmkCell(g, sr - dr, sc - dc).includes(idx);
+      const er = sr + dr * 4, ec = sc + dc * 4;
+      const b2 = gmkIn(er, ec) && !gmkCell(g, er, ec).includes(idx);
+      if (b1 || b2) n++;
+    }
+  }
+  return n;
+}
+// 侦探提示：所有“差一子成五连”的空位（可落子处）
+function gmkHints(g, idx) {
+  const out = [];
+  for (let r = 0; r < GMK_SIZE; r++) for (let c = 0; c < GMK_SIZE; c++) {
+    const cell = gmkCell(g, r, c);
+    if (cell.includes(idx)) continue;
+    if (cell.length && !(gmkP(g, idx).role === '灵魂棋手' && gmkP(g, idx).soulActive)) continue;
+    g.board[r * GMK_SIZE + c].push(idx);
+    if (gmkFiveDirs(g, idx, r, c).length) out.push([r, c]);
+    g.board[r * GMK_SIZE + c].pop();
+  }
+  return out;
+}
+function gmkP(g, i) { return g.players[i]; }
+function gmkActiveIdxs(g) { return g.players.map((p, i) => i).filter(i => !g.players[i].finished); }
+// 清洁工：清除本次五连的己方棋子 + 额外移除两颗敌子（尽量不同来源）
+function gmkClean(g, idx, dirs, r, c) {
+  const own = new Set();
+  dirs.forEach(([dr, dc]) => gmkLineCells(g, idx, r, c, dr, dc).forEach(([rr, cc]) => own.add(rr + ',' + cc)));
+  own.forEach(k => { const [rr, cc] = k.split(',').map(Number); g.board[rr * GMK_SIZE + cc] = g.board[rr * GMK_SIZE + cc].filter(x => x !== idx); });
+  const enemies = g.players.filter(p => p.index !== idx && !p.finished).map(p => p.index);
+  let removed = 0;
+  for (const ei of enemies) {
+    if (removed >= 2) break;
+    const pos = g.board.findIndex(cell => cell.includes(ei));
+    if (pos >= 0) { g.board[pos] = g.board[pos].filter(x => x !== ei); removed++; }
+  }
+  for (const ei of enemies) {
+    if (removed >= 2) break;
+    const pos = g.board.findIndex(cell => cell.includes(ei));
+    if (pos >= 0) { g.board[pos] = g.board[pos].filter(x => x !== ei); removed++; }
+  }
+}
+function gmkRoundEnd(g) {
+  for (const p of g.players) {
+    if (p.finished || p.role !== '截码战专家') { p.predict = []; continue; }
+    const preds = p.predict || [];
+    const hitPlayers = new Set();
+    g.roundMoves.forEach(mv => {
+      if (mv.idx === p.index) return;
+      if (preds.some(pd => pd.r === mv.r && pd.c === mv.c)) hitPlayers.add(mv.idx);
+    });
+    if (hitPlayers.size) { p.hitCount += hitPlayers.size; p.score += (hitPlayers.size >= 2 ? 3 : 1); }
+    p.need = p.score >= 36 ? 1 : (p.score >= 18 ? 2 : 3);
+    p.predict = [];
+    if (p.score >= 54) gmkWin(g, p.index, '截码战 54 分', 'gm_decode');
+  }
+  g.seal = null;
+  g.roundMoves = [];
+  g.moved = [];
+  g.round++;
+}
+function gmkAdvance(g) {
+  const act = gmkActiveIdxs(g);
+  if (act.length <= 1) return;
+  for (let k = 1; k <= g.players.length; k++) {
+    const i = (g.turnIdx + k) % g.players.length;
+    if (act.includes(i)) { g.turnIdx = i; return; }
+  }
+}
+function gmkWin(g, idx, reason, achId) {
+  const p = gmkP(g, idx);
+  if (!p || p.finished) return;
+  p.finished = true;
+  p.rank = g.ranking.length + 1;
+  g.ranking.push(idx);
+  if (achId) announceAchievement(g, g.roomId, p.name, achId);
+  if (p.role === '侦探' && p.hintsSeen && !p.placedOnHint) announceAchievement(g, g.roomId, p.name, 'gm_detective');
+  if (p.role === '清洁工' && p.cleanCount >= 2) announceAchievement(g, g.roomId, p.name, 'gm_clean');
+  if (p.role === '灵魂棋手' && p.soulFiveFlags.length >= 3 && p.soulFiveFlags.slice(0, 3).every(Boolean)) announceAchievement(g, g.roomId, p.name, 'gm_soul');
+  g.players.forEach(q => {
+    if (q.index === idx || q.finished) return;
+    if (gmkHints(g, q.index).length) announceAchievement(g, g.roomId, q.name, 'gm_slow');
+  });
+  if (p.role === '截码战专家' && p.hitCount === 0) announceAchievement(g, g.roomId, p.name, 'gm_fool');
+  const remain = gmkActiveIdxs(g);
+  if (!g.continueRanking || remain.length <= 1) {
+    remain.forEach(i => { if (!g.players[i].finished) { g.players[i].finished = true; g.players[i].rank = g.ranking.length + 1; g.ranking.push(i); } });
+    g.winnerInfo = { name: p.name, reason };
+    g.over = { winner: p.name, reason, ranking: g.ranking.map((i, k) => ({ name: g.players[i].name, rank: k + 1, role: g.players[i].role })) };
+    recordGomokuGame(g);
+  } else {
+    gmkAdvance(g);
+  }
+}
+function gmkPlace(g, name, r, c) {
+  if (!g) return { ok: false, msg: '对局不存在' };
+  if (g.phase !== 'play') return { ok: false, msg: '还没开始' };
+  if (g.over) return { ok: false, msg: '对局已结束' };
+  const idx = gmkIndex(g, name);
+  if (idx < 0) return { ok: false, msg: '你不在本局中' };
+  const p = gmkP(g, idx);
+  if (p.finished) return { ok: false, msg: '你已完成，等待其他玩家' };
+  if (g.turnIdx !== idx) return { ok: false, msg: '还没轮到你' };
+  r = Number(r); c = Number(c);
+  if (!gmkIn(r, c)) return { ok: false, msg: '位置不合法' };
+  const cell = gmkCell(g, r, c);
+  if (g.seal && g.seal.r === r && g.seal.c === c) return { ok: false, msg: '该位置被封印' };
+  if (cell.includes(idx)) return { ok: false, msg: '这里已有你的棋子' };
+  const soulOk = p.role === '灵魂棋手' && p.soulActive && cell.length > 0 && !cell.includes(idx);
+  if (cell.length && !soulOk) return { ok: false, msg: '该位置已有棋子' };
+  const isExtra = p.extraPending;
+  if (isExtra) { p.extraPending = false; p.extraUsed = true; }
+  const hintsBefore = gmkHints(g, idx);
+  if (hintsBefore.length) p.hintsSeen = true;
+  if (hintsBefore.some(([hr, hc]) => hr === r && hc === c)) p.placedOnHint = true;
+  cell.push(idx);
+  if (cell.length > 1) p.soulStones.add(r + ',' + c);
+  g.roundMoves.push({ idx, r, c });
+  const dirs = gmkFiveDirs(g, idx, r, c);
+  if (dirs.length) {
+    p.five += dirs.length;
+    if (p.role === '灵魂棋手') {
+      dirs.forEach(([dr, dc]) => {
+        const cells = gmkLineCells(g, idx, r, c, dr, dc);
+        p.soulFiveFlags.push(cells.some(([rr, cc]) => gmkCell(g, rr, cc).length > 1));
+      });
+      p.soulActive = false;
+    }
+    if (p.role === '掌权者' && dirs.length >= 2) { gmkWin(g, idx, '双重五连', 'gm_destiny'); return { ok: true, win: true }; }
+    if (p.role === '幸运儿' && !p.extraUsed && !isExtra) p.extraPending = true;
+    if (p.role === '幸运儿' && isExtra) announceAchievement(g, g.roomId, p.name, 'gm_lucky');
+    if (p.role === '清洁工') { gmkClean(g, idx, dirs, r, c); p.cleanCount++; }
+    if (!g.over && p.five >= p.need) gmkWin(g, idx, '3次五连', '');
+  }
+  if (!g.over && p.role === '摸鱼高手') {
+    const nf = gmkFourCount(g, idx, r, c);
+    if (nf) { p.four += nf; if (p.four >= 5) gmkWin(g, idx, '5次四连', 'gm_moyu'); }
+  }
+  if (g.over) return { ok: true, win: true };
+  if (p.extraPending) return { ok: true, extra: true };
+  if (!g.moved.includes(idx)) g.moved.push(idx);
+  if (gmkActiveIdxs(g).every(i => g.moved.includes(i))) gmkRoundEnd(g);
+  if (!g.over) gmkAdvance(g);
+  return { ok: true };
+}
+function gmkSeal(g, name, r, c) {
+  if (!g || g.phase !== 'play' || g.over) return { ok: false, msg: '当前不能封印' };
+  const idx = gmkIndex(g, name);
+  if (idx < 0) return { ok: false, msg: '你不在本局中' };
+  const p = gmkP(g, idx);
+  if (p.role !== '封印师') return { ok: false, msg: '只有封印师可以锁定位置' };
+  if (g.turnIdx !== idx) return { ok: false, msg: '还没轮到你' };
+  if (p.sealRound === g.round) return { ok: false, msg: '本轮已经封印过了' };
+  r = Number(r); c = Number(c);
+  if (!gmkIn(r, c) || gmkCell(g, r, c).length) return { ok: false, msg: '只能封印空位' };
+  const key = r + ',' + c;
+  if (p.lastSeal === key) return { ok: false, msg: '不能连续两轮封印同一位置' };
+  g.seal = { r, c, by: idx };
+  p.lastSeal = key;
+  p.sealRound = g.round;
+  p.sealCounts[key] = (p.sealCounts[key] || 0) + 1;
+  if (p.sealCounts[key] >= 5) announceAchievement(g, g.roomId, p.name, 'gm_seal');
+  return { ok: true };
+}
+function gmkPredict(g, name, list) {
+  if (!g || g.phase !== 'play' || g.over) return { ok: false, msg: '当前不能预测' };
+  const idx = gmkIndex(g, name);
+  if (idx < 0) return { ok: false, msg: '你不在本局中' };
+  const p = gmkP(g, idx);
+  if (p.role !== '截码战专家') return { ok: false, msg: '只有截码战专家可以预测' };
+  const arr = (Array.isArray(list) ? list : []).slice(0, 2).map(x => ({ r: Number(x.r), c: Number(x.c) })).filter(x => gmkIn(x.r, x.c));
+  if (arr.length !== 2) return { ok: false, msg: '需要选择两个预测点' };
+  p.predict = arr;
+  return { ok: true };
+}
+// 选角：全部选完后排序（掌权者固定第 1 顺位，其余随机）
+function gmkPickRole(g, name, role) {
+  if (!g || g.phase !== 'pick') return { ok: false, msg: '当前不能选角色' };
+  const idx = gmkIndex(g, name);
+  if (idx < 0) return { ok: false, msg: '你不在本局中' };
+  if (!GMK_ROLES.includes(role)) return { ok: false, msg: '角色不存在' };
+  if (g.players.some(p => p.index !== idx && p.role === role)) return { ok: false, msg: '该角色已被选择' };
+  g.players[idx].role = role;
+  if (g.players.every(p => p.role)) {
+    const others = g.players.map(p => p.index).filter(i => g.players[i].role !== '掌权者');
+    for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
+    const order = g.players.some(p => p.role === '掌权者') ? [g.players.findIndex(p => p.role === '掌权者')].concat(others) : others;
+    g.order = order;
+    g.turnIdx = order[0];
+    g.phase = 'play';
+    g.round = 1;
+    g.moved = [];
+  }
+  return { ok: true, started: g.phase === 'play' };
+}
+function gmkView(g, name, room) {
+  const idx = gmkIndex(g, name);
+  const online = {};
+  for (const p of g.players) {
+    const hb = userLastHeartbeat.get(p.name);
+    const sid = room && room.playerMap.get(p.name);
+    online[p.name] = !!(hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT && sid && gomoAtGame.get(p.name) === sid && io.sockets.sockets.has(sid));
+  }
+  const you = idx >= 0 ? g.players[idx] : null;
+  return {
+    phase: g.phase, you: name, round: g.round, turnIdx: g.turnIdx,
+    turn: (g.phase === 'play' && g.players[g.turnIdx]) ? g.players[g.turnIdx].name : '',
+    players: g.players.map(p => ({
+      name: p.name, index: p.index, color: p.color, role: p.role,
+      five: p.five, four: p.four, score: p.score, need: p.need,
+      finished: p.finished, rank: p.rank, extraPending: !!p.extraPending,
+      sealedThisRound: p.sealRound === g.round, online: online[p.name]
+    })),
+    board: g.board.map(cell => cell.slice()),
+    seal: g.seal, over: g.over || null, winnerInfo: g.winnerInfo || null,
+    myHints: (you && you.role === '侦探' && g.phase === 'play') ? gmkHints(g, idx) : [],
+    myPredict: you ? (you.predict || []) : [],
+    roleReady: g.phase === 'pick', roles: GMK_ROLES, roleDesc: GMK_ROLE_DESC,
+    takenRoles: g.players.map(p => p.role).filter(Boolean),
+    cancelVotes: (g.cancelVotes || []).slice()
+  };
+}
+function gmkBroadcast(room, g) {
+  room.playerMap.forEach((sid, n) => {
+    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('gomoku_state', gmkView(g, n, room));
+  });
+}
+function gmkBroadcastFor(roomId) {
+  const room = GAME_ROOMS.gomoku;
+  const g = gomokuGames[roomId];
+  if (room && g && g.roomId === roomId) gmkBroadcast(room, g);
+}
+function gmkCancel(room, g) {
+  delete gomokuGames[room.roomId];
+  io.to(room.roomId).emit('gomoku_cancel');
+  Object.keys(room.seats).forEach(sid => { if (room.seats[sid]) room.seats[sid].ready = false; });
+  broadcastRoom(room);
+}
+// 时光墙：记录角色/名次/获胜方式（个人空间角色统计从这里汇总）
+function recordGomokuGame(g) {
+  if (!g || !g.over || g._recorded) return;
+  g._recorded = true;
+  const officials = g.players.filter(p => isOfficialPlayer(p.name));
+  if (!officials.length) return;
+  addTimeline({
+    ts: Date.now(), type: 'game', game: 'gomoku', totalPlayers: g.players.length, mode: g.players.length + '人',
+    players: officials.map(p => p.name),
+    winner: g.over.winner, reason: g.over.reason,
+    roles: g.players.map(p => ({ name: p.name, role: p.role, rank: p.rank })),
+    results: officials.map(p => ({ name: p.name, rank: p.rank, score: p.five }))
+  });
+}
+
+
+
 
 
 
@@ -2125,6 +2511,7 @@ function activeGameOf(room) {
   if (room.gameType === 'minesweeper') return minesweeperGames[room.roomId] || null;
   if (room.gameType === 'othello') return othelloGames[room.roomId] || null;
   if (room.gameType === 'quoridor') return quoridorGames[room.roomId] || null;
+  if (room.gameType === 'gomoku') return gomokuGames[room.roomId] || null;
   return yahtzeeGames[room.roomId] || null;
 }
 
@@ -2459,7 +2846,7 @@ function syncRoomState(room, selfName) {
   const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === selfName)?.[0] || null;
   const nowGame = activeGameOf(room);
   const data = {
-    roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers, skipOffline: !!room.skipOffline, msTeam: !!room.msTeam,
+    roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers, skipOffline: !!room.skipOffline, msTeam: !!room.msTeam, continueRanking: !!room.continueRanking,
     seats: room.seats, spectators: room.spectators, mySeat,
     myReady: mySeat ? room.seats[mySeat].ready : false,
     gameStarted: !!nowGame,
@@ -2484,7 +2871,8 @@ function broadcastRoom(room) {
     seats: room.seats,
     spectators: room.spectators,
     gameStarted,
-    gamePlayers
+    gamePlayers,
+    continueRanking: !!room.continueRanking
   });
   room.playerMap.forEach((_, uname) => {
     const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === uname)?.[0] || null;
@@ -2500,7 +2888,8 @@ function broadcastRoom(room) {
         mySeat,
         myReady: mySeat ? room.seats[mySeat].ready : false,
         gameStarted,
-        gamePlayers
+        gamePlayers,
+        continueRanking: !!room.continueRanking
       });
     }
   });
@@ -2543,6 +2932,10 @@ function resetRoom(room) {
   if (quoridorGames[room.roomId]) {
     delete quoridorGames[room.roomId];
     console.log(`🔄 房间 ${room.roomId} 的路墙棋已清除`);
+  }
+  if (gomokuGames[room.roomId]) {
+    delete gomokuGames[room.roomId];
+    console.log(`🔄 房间 ${room.roomId} 的技能五子棋已清除`);
   }
   if (gameEndTimers[room.roomId]) {
     clearTimeout(gameEndTimers[room.roomId]);
@@ -2587,7 +2980,7 @@ function removeOfflinePlayer(room, playerName, force) {
     return;
   }
   // 扫雷 / 翻转棋 / 路墙棋：同熟人局规则——离线不除名、原地等待，可重连继续
-  if ((room.gameType === 'minesweeper' && minesweeperGames[room.roomId]) || (room.gameType === 'othello' && othelloGames[room.roomId]) || (room.gameType === 'quoridor' && quoridorGames[room.roomId])) {
+  if ((room.gameType === 'minesweeper' && minesweeperGames[room.roomId]) || (room.gameType === 'othello' && othelloGames[room.roomId]) || (room.gameType === 'quoridor' && quoridorGames[room.roomId]) || (room.gameType === 'gomoku' && gomokuGames[room.roomId])) {
     if (room.leaveTimers[playerName]) {
       clearTimeout(room.leaveTimers[playerName]);
       delete room.leaveTimers[playerName];
@@ -3104,6 +3497,8 @@ io.on('connection', (socket) => {
     }
     if (!room) return;
     if (activeGameOf(room)) return;
+    // 已在座则不再重复占座（避免同一人出现两个座位，导致人数/准备校验错乱）
+    if (Object.values(room.seats).some(s => s && s.name === name)) return;
     let emptySeat = null;
     for (let i=1; i<=room.maxPlayers; i++) {
       if (!room.seats[i]) { emptySeat = i; break; }
@@ -3174,7 +3569,7 @@ io.on('connection', (socket) => {
     broadcastRoom(room);
   });
 
-  socket.on('change_settings', ({ maxPlayers, skipOffline, msTeam }, cb) => {
+  socket.on('change_settings', ({ maxPlayers, skipOffline, msTeam, continueRanking }, cb) => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
     let room = null;
@@ -3201,6 +3596,8 @@ io.on('connection', (socket) => {
     if (typeof skipOffline === 'boolean') room.skipOffline = skipOffline;
     // 扫雷赛制：个人赛/2v2
     if (typeof msTeam === 'boolean') room.msTeam = msTeam;
+    // 技能五子棋：是否继续决出排名
+    if (typeof continueRanking === 'boolean') room.continueRanking = continueRanking;
 
     if (maxPlayers != null) {
       const seatedCount = Object.values(room.seats).filter(Boolean).length;
@@ -3230,7 +3627,7 @@ io.on('connection', (socket) => {
       if (!game) continue;
       const finished = room.gameType === 'drawing'
         ? game.stage === 'result'
-        : (room.gameType === 'bomber' || room.gameType === 'minesweeper' || room.gameType === 'othello' || room.gameType === 'quoridor')
+        : (room.gameType === 'bomber' || room.gameType === 'minesweeper' || room.gameType === 'othello' || room.gameType === 'quoridor' || room.gameType === 'gomoku')
           ? game.phase === 'over'
           : game.phase === 'finished';
       if (!finished) { cleared = false; break; } // 进行中：仅退出页面，对局保留
@@ -3247,6 +3644,7 @@ io.on('connection', (socket) => {
       }
       delete othelloGames[room.roomId];
       delete quoridorGames[room.roomId];
+      delete gomokuGames[room.roomId];
       Object.keys(room.seats).forEach(seatId => {
         if (room.seats[seatId]) room.seats[seatId].ready = false;
       });
@@ -3527,6 +3925,44 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, msg: '翻转棋生态预览已清除（榜单流水/时光墙/个人战绩），正式真实数据不受影响' });
   });
 
+  // 测试助手：技能五子棋生态一键预览（4 局时光墙，含角色/名次/获胜方式；可清除重造）
+  socket.on('dev_seed_gomoku_preview', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（测试者1~测试者4）可使用' });
+      return;
+    }
+    const peers = TEST_NAMES.filter(n => n !== me);
+    const roles = GMK_ROLES.slice();
+    const now = Date.now();
+    for (let i = 0; i < 4; i++) {
+      const others = peers.slice(0, i % 2 === 0 ? 1 : 2);
+      const all = [me].concat(others);
+      const used = [roles[(i * 3) % roles.length], roles[(i * 3 + 1) % roles.length], roles[(i * 3 + 2) % roles.length]];
+      const myRank = (i % 3) + 1;
+      const results = all.map((n, k) => ({ name: n, rank: k === 0 ? myRank : (myRank === 1 ? 2 + k : (k === 1 && myRank > 1 ? 1 : 2 + k)), score: 3 - (k % 2) }));
+      addTimeline({
+        ts: now - (4 - i) * 3600000, type: 'game', game: 'gomoku', totalPlayers: all.length, mode: all.length + '人',
+        players: all, winner: results.find(r => r.rank === 1).name, reason: i === 1 ? '双重五连' : '3次五连',
+        roles: all.map((n, k) => ({ name: n, role: used[k] || roles[k], rank: results[k].rank })),
+        results, _test: true, _gmkPreview: true
+      });
+    }
+    if (cb) cb({ success: true, msg: '技能五子棋预览已生成（4 局）：个人空间角色统计、时光墙明细都可以看了' });
+  });
+  socket.on('dev_reset_gomoku_preview', (cb) => {
+    const me = socketToUser.get(socket.id);
+    if (!me || !TEST_NAMES.includes(me)) {
+      if (cb) cb({ success: false, msg: '仅测试账号（测试者1~测试者4）可使用' });
+      return;
+    }
+    for (let i = timelineEntries.length - 1; i >= 0; i--) if (timelineEntries[i]._gmkPreview) timelineEntries.splice(i, 1);
+    if (PERSIST_TIMELINE) {
+      try { fs.writeFileSync(TIMELINE_FILE, JSON.stringify(timelineEntries, null, 2)); } catch (e) { console.error('❌ 时光墙写入失败：', e.message); }
+    }
+    if (cb) cb({ success: true, msg: '技能五子棋预览已清除，正式真实数据不受影响' });
+  });
+
   // 测试助手：生成几条测试时光墙记录（标记 _test，可一键重置；开发期不落盘）
   socket.on('test_seed_timeline', (cb) => {
     const me = socketToUser.get(socket.id);
@@ -3748,6 +4184,7 @@ io.on('connection', (socket) => {
       lastSeen: online ? (onlineRec && onlineRec.lastSeen) : (userLastOnline.get(target) || null),
       stats,
       drawingCareer,
+      gomokuRoles: buildGomokuRoles(target),
       achievements,
       totalAch: totalAchCount()
     });
@@ -3875,6 +4312,9 @@ io.on('connection', (socket) => {
     } else if (room.gameType === 'quoridor') {
       const playerNames = players.map(p => p.name);
       quoridorGames[room.roomId] = quoInit(room, playerNames);
+    } else if (room.gameType === 'gomoku') {
+      const playerNames = players.map(p => p.name);
+      gomokuGames[room.roomId] = gmkInit(room, playerNames, room.continueRanking === true);
     }
     broadcastRoom(room);
     if (room.gameType === 'drawing') {
@@ -3887,6 +4327,8 @@ io.on('connection', (socket) => {
       othBroadcast(room, othelloGames[room.roomId]);
     } else if (room.gameType === 'quoridor') {
       quoBroadcast(room, quoridorGames[room.roomId]);
+    } else if (room.gameType === 'gomoku') {
+      gmkBroadcast(room, gomokuGames[room.roomId]);
     } else {
       broadcastYahtzeeState(room.roomId);
     }
@@ -5022,6 +5464,109 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
   });
 
+  // ======================== 技能五子棋（gomoku）事件 ========================
+  function gmkFindRoomOf(name) {
+    return Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'gomoku') || null;
+  }
+  socket.on('gomoku_enter', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    gomoAtGame.set(name, socket.id);
+    const room = gmkFindRoomOf(name);
+    const g = room && gomokuGames[room.roomId];
+    if (room && g) gmkBroadcast(room, g);
+  });
+  socket.on('gomoku_pull', (cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? gmkFindRoomOf(name) : null;
+    const g = room && gomokuGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false }); return; }
+    if (cb) cb(Object.assign({ success: true }, gmkView(g, name, room)));
+  });
+  function gmkAfterAction(room, g) {
+    gmkBroadcast(room, g);
+    if (g.over) {
+      broadcastAchievementSummary(room.roomId, g);
+      if (!gameEndTimers[room.roomId]) {
+        gameEndTimers[room.roomId] = setTimeout(() => {
+          if (gomokuGames[room.roomId] !== g) { delete gameEndTimers[room.roomId]; return; }
+          delete gomokuGames[room.roomId];
+          Object.keys(room.seats).forEach(i => { if (room.seats[i]) room.seats[i].ready = false; });
+          broadcastRoom(room);
+          delete gameEndTimers[room.roomId];
+          console.log(`🔄 技能五子棋 ${room.roomId} 已结算，房间已复位`);
+        }, 12000);
+      }
+    }
+  }
+  socket.on('gomoku_pick_role', ({ role } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? gmkFindRoomOf(name) : null;
+    const g = room && gomokuGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = gmkPickRole(g, name, role);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    gmkBroadcast(room, g);
+    if (cb) cb({ success: true, started: !!res.started });
+  });
+  socket.on('gomoku_place', ({ r, c } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? gmkFindRoomOf(name) : null;
+    const g = room && gomokuGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = gmkPlace(g, name, r, c);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    gmkAfterAction(room, g);
+    if (cb) cb({ success: true, win: !!res.win, extra: !!res.extra });
+  });
+  socket.on('gomoku_seal', ({ r, c } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? gmkFindRoomOf(name) : null;
+    const g = room && gomokuGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = gmkSeal(g, name, r, c);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    gmkBroadcast(room, g);
+    if (cb) cb({ success: true });
+  });
+  socket.on('gomoku_predict', ({ points } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? gmkFindRoomOf(name) : null;
+    const g = room && gomokuGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = gmkPredict(g, name, points);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    if (cb) cb({ success: true });
+  });
+  socket.on('gomoku_cancel_vote', ({ revoke } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? gmkFindRoomOf(name) : null;
+    const g = room && gomokuGames[room.roomId];
+    if (!room || !g || !g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const onlineNames = g.playerOrder.filter(n => {
+      const sid = room.playerMap.get(n);
+      const sid2 = gomoAtGame.get(n);
+      const hb = userLastHeartbeat.get(n);
+      return sid && sid === sid2 && io.sockets.sockets.has(sid) && hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT;
+    });
+    if (revoke) {
+      g.cancelVotes = (g.cancelVotes || []).filter(n => n !== name);
+      gmkBroadcast(room, g);
+      if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+      return;
+    }
+    g.cancelVotes = g.cancelVotes || [];
+    if (!g.cancelVotes.includes(name)) g.cancelVotes.push(name);
+    if (onlineNames.length && g.cancelVotes.length >= onlineNames.length) {
+      gmkCancel(room, g);
+      if (cb) cb({ success: true, cancelled: true });
+      return;
+    }
+    gmkBroadcast(room, g);
+    if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+  });
+
+
   socket.on('disconnect', () => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
@@ -5035,6 +5580,7 @@ io.on('connection', (socket) => {
     if (msAtGame.get(name) === socket.id) msAtGame.delete(name);
     if (othAtGame.get(name) === socket.id) othAtGame.delete(name);
     if (quoriAtGame.get(name) === socket.id) quoriAtGame.delete(name);
+    if (gomoAtGame.get(name) === socket.id) gomoAtGame.delete(name);
 
     // 默契空间：离开会话（断线兜底）
     const syncKey = socketSyncKey.get(socket.id);

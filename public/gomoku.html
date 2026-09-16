@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>技能五子棋</title>
+<style>
+/* 主题色变量：所有“开关 / 按钮 / 选中态”统一用 var(--acc)，跟随个人空间主题 */
+:root{--acc:#4a90d9;--accB:rgba(74,144,217,.35);--accBg:rgba(74,144,217,.14);--accTx:#2f6fb2;}
+body.dyn-pink{--acc:#f06292;--accB:rgba(240,98,146,.4);--accBg:rgba(240,98,146,.14);--accTx:#c2185b;}
+body.dyn-green{--acc:#6f9e63;--accB:rgba(111,158,99,.4);--accBg:rgba(111,158,99,.14);--accTx:#4c7042;}
+body.dyn-gold{--acc:#d6a843;--accB:rgba(214,168,67,.45);--accBg:rgba(214,168,67,.15);--accTx:#9a7620;}
+body.dyn-red{--acc:#a6403a;--accB:rgba(166,64,58,.4);--accBg:rgba(166,64,58,.14);--accTx:#8c322c;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-serif;padding:10px;}
+.head{max-width:660px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;font-size:.9rem;}
+.head a{color:var(--acc);cursor:pointer;font-weight:600;margin-left:10px;}
+.wrap{max-width:660px;margin:0 auto;}
+.info{display:flex;justify-content:space-between;gap:8px;margin:8px 0 6px;font-size:.85rem;color:#6b7a90;flex-wrap:wrap;}
+.players{display:flex;justify-content:center;gap:8px;margin:4px 0 6px;flex-wrap:wrap;}
+.pchip{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:14px;border:1px solid var(--accB);background:rgba(255,255,255,.72);font-size:.82rem;backdrop-filter:blur(8px);}
+.pchip.on{border-color:#e67e22;box-shadow:0 0 0 2px rgba(230,126,34,.18) inset;font-weight:700;}
+.pchip.done{opacity:.55;}
+.pchip .meta{color:#7f8fa6;font-size:.72rem;}
+.pchip .role{font-size:.72rem;color:var(--accTx);}
+.modebar{display:flex;justify-content:center;gap:8px;margin:6px 0;flex-wrap:wrap;}
+.mode-opt{padding:5px 12px;border-radius:10px;border:1px solid #dfe3e8;background:#fff;cursor:pointer;font-size:.82rem;}
+.mode-opt.on{border-color:var(--acc);background:var(--accBg);color:var(--accTx);font-weight:700;}
+.mode-opt.dis{opacity:.45;cursor:not-allowed;}
+.bwrap{display:flex;justify-content:center;overflow:auto;margin:6px 0;}
+.board{display:grid;grid-template-columns:repeat(15,1fr);background:#efe6d5;border:2px solid #8b6f47;border-radius:8px;}
+.cell{width:min(5.7vw,28px);height:min(5.7vw,28px);min-width:17px;min-height:17px;border:1px solid #d8caae;position:relative;padding:0;}
+.cell.me{cursor:pointer;}
+.cell.me::after{content:'';position:absolute;inset:38%;border-radius:50%;background:var(--accBg);border:1px solid var(--accB);}
+.cell.sel::before{content:'';position:absolute;inset:22%;border-radius:50%;background:var(--acc);opacity:.75;}
+.cell.pred::before{content:'';position:absolute;inset:30%;border-radius:4px;border:2px dashed var(--acc);}
+.cell.hint{box-shadow:inset 0 0 0 2px rgba(230,126,34,.8);}
+.cell.sealed{background:rgba(44,62,80,.16);}
+.cell.sealed::before{content:'封';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#5d6d7e;}
+.stone{position:absolute;border-radius:50%;box-shadow:inset 0 -2px 3px rgba(0,0,0,.28);}
+.stone.a{left:9%;top:9%;width:82%;height:82%;}
+.stone.b{left:26%;top:26%;width:56%;height:56%;opacity:.82;border:1px solid rgba(255,255,255,.75);}
+.msg{text-align:center;font-size:.86rem;color:#6b7a90;margin:8px 0;min-height:22px;}
+.res{max-width:470px;margin:8px auto;background:rgba(255,255,255,.82);backdrop-filter:blur(12px);border:1px solid var(--accB);border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 10px 28px rgba(31,45,61,.12);}
+.res-title{font-size:1.05rem;font-weight:800;margin-bottom:8px;}
+.res-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.6);border:1px solid var(--accB);margin-bottom:5px;font-size:.86rem;}
+.res-row.me{border-color:rgba(230,126,34,.6);background:rgba(255,247,230,.8);}
+.res-ach{margin-top:10px;border-top:1px dashed var(--accB);padding-top:8px;text-align:left;font-size:.8rem;}
+.res-ach .ra-title{font-weight:700;color:#2c3e50;margin-bottom:4px;}
+.res-ach .ra-row{display:flex;justify-content:space-between;gap:8px;padding:3px 2px;color:#6b7a90;flex-wrap:wrap;}
+.res-btns{display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap;}
+.res-btn{display:inline-block;padding:7px 16px;border-radius:10px;background:var(--acc);color:#fff;font-size:.84rem;cursor:pointer;border:none;}
+.res-btn.ghost{background:var(--accBg);color:var(--accTx);}
+.pickwrap{max-width:560px;margin:8px auto;text-align:center;}
+.pickwrap h3{font-size:.95rem;margin-bottom:6px;}
+.rolepick{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:6px;}
+.rolecard{text-align:left;border:1px solid var(--accB);border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.72);cursor:pointer;font-size:.8rem;}
+.rolecard b{display:block;font-size:.86rem;margin-bottom:2px;}
+.rolecard small{color:#7f8fa6;line-height:1.3;display:block;}
+.rolecard.mine{border-color:var(--acc);background:var(--accBg);}
+.rolecard.taken{opacity:.45;cursor:not-allowed;}
+.tip{font-size:.78rem;color:#7f8fa6;text-align:center;margin:4px 0;}
+.toast{position:fixed;left:50%;top:16%;transform:translate(-50%,-10px);background:rgba(255,255,255,.86);border:1px solid var(--accB);color:#2c3e50;border-radius:12px;padding:9px 18px;font-size:.85rem;font-weight:600;backdrop-filter:blur(10px);opacity:0;transition:opacity .25s;pointer-events:none;z-index:3000;max-width:86vw;text-align:center;}
+.ach-pop{position:fixed;left:50%;top:22%;transform:translate(-50%,0);z-index:6000;background:rgba(255,255,255,.82);border:1px solid var(--accB);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:16px;padding:12px 22px;text-align:center;font-weight:700;font-size:.95rem;color:#2c3e50;box-shadow:0 10px 30px rgba(31,45,61,.2);pointer-events:none;opacity:0;transition:opacity .25s;max-width:86vw;}
+.ach-pop small{display:block;color:#9aa5b1;font-weight:400;font-size:.75rem;margin-top:3px;}
+body.dyn-pink .ach-pop{border-color:rgba(240,98,146,.6);background:rgba(255,242,247,.82);}
+body.dyn-green .ach-pop{border-color:rgba(111,158,99,.6);background:rgba(241,248,238,.82);}
+body.dyn-gold .ach-pop{border-color:rgba(214,168,67,.6);background:rgba(255,250,238,.84);}
+body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,241,.84);}
+</style>
+</head>
+<body>
+  <div class="head"><b>⚫ 技能五子棋</b><span><a id="gmkCancelLb" onclick="gmkCancel()">取消对局</a><a onclick="gmkExit()">返回房间</a></span></div>
+  <div class="wrap">
+    <div class="info"><span id="gmkStage">连接中…</span><span id="gmkStep"></span></div>
+    <div class="players" id="gmkPlayers"></div>
+    <div id="gmkPick"></div>
+    <div class="modebar" id="gmkModes"></div>
+    <div class="tip" id="gmkTip"></div>
+    <div class="bwrap" id="gmkBoardWrap"><div class="board" id="gmkBoard"></div></div>
+    <div class="msg" id="gmkMsg"></div>
+  </div>
+  <div class="toast" id="gmkToast"></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  const myName = sessionStorage.getItem('playerName');
+  if (!myName) location.href = '/index.html';
+  // 主题：与路墙棋同一套身份 → 主题映射
+  const G_IMG = { p1:'/assets/avatars/p1/beijing.png.jpg', p2:'/assets/avatars/p2/zuixin2.jpg', p3:'/assets/avatars/p3/zuixin3.jpg', p4:'/assets/avatars/p4/beijing4.jpg', pomelo:'/assets/avatars/p3/nene.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const G_MOB = { p4:'/assets/avatars/p4/zuixin4.jpg', pomelo:'/assets/avatars/p3/nene2.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const G_ALPHA = { p1:.82, p2:.75, p3:.75, p4:.82, pomelo:.6, agly:.82, lyff:.8 };
+  function applyTheme(t){
+    const mobile = window.matchMedia('(max-width: 768px)').matches;
+    document.body.classList.remove('dyn-pink','dyn-green','dyn-gold','dyn-red');
+    if (!t || t === 'initial') { document.body.style.backgroundImage=''; document.body.style.backgroundSize=''; document.body.style.backgroundAttachment=''; document.body.style.backgroundPosition=''; return; }
+    const cls = (t==='agly')?'dyn-gold':((t==='lyff')?'dyn-red':((t==='p3'||t==='pomelo')?'dyn-green':'dyn-pink'));
+    document.body.classList.add(cls);
+    const img = (mobile && G_MOB[t]) ? G_MOB[t] : (G_IMG[t] || '');
+    if (img) { const a = G_ALPHA[t] || .82; document.body.style.backgroundImage = "linear-gradient(rgba(255,255,255,"+a+"),rgba(255,255,255,"+a+")),url('"+img+"')"; document.body.style.backgroundSize='cover'; document.body.style.backgroundAttachment = mobile?'scroll':'fixed'; document.body.style.backgroundPosition='center'; }
+  }
+  applyTheme(localStorage.getItem('myTheme'));
+  const socket = io();
+  const IS_T = sessionStorage.getItem('isTest') === 'true';
+  let S = null, _dm = {}, gmkMode = 'place', selPts = [], achSum = {}, boardHidden = false, userToggled = false, boardTimer = null, toastTimer = null, lastExtraNotice = 0;
+  function dn(n){ return _dm[n] || n; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function toast(m){ const e=document.getElementById('gmkToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
+  function hexA(hex, a){ const h = String(hex||'#4a90d9').replace('#',''); const n = parseInt(h.length===3?h.split('').map(x=>x+x).join(''):h,16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
+  function colLabel(c){ return String.fromCharCode(65 + c); }
+  socket.on('connect', () => {
+    socket.emit('heartbeat', myName, IS_T, true);
+    setTimeout(() => { socket.emit('get_profile', r => { if (r && r.success && r.theme) { localStorage.setItem('myTheme', r.theme); applyTheme(r.theme); } }); }, 200);
+    socket.emit('get_display_names', res => { if (res && res.success) { _dm = res.map; render(); } });
+    setTimeout(() => {
+      socket.emit('gomoku_enter');
+      socket.emit('gomoku_pull', res => { if (res && res.success) { S = res; selPts = []; render(); } });
+    }, 400);
+  });
+  setInterval(() => socket.emit('heartbeat', myName, IS_T, true), 10000);
+  socket.emit('get_display_names', res => { if (res && res.success) _dm = res.map; });
+  socket.on('gomoku_state', s => {
+    const prevTurn = S && S.turn;
+    S = s;
+    if (!s.over) achSum = {};
+    if (s.phase !== 'play' || s.turn !== myName) { gmkMode = 'place'; selPts = []; }
+    if (s.you && s.players) {
+      const me = s.players.find(p => p.name === myName);
+      if (me && me.extraPending && Date.now() - lastExtraNotice > 3000) { lastExtraNotice = Date.now(); toast('幸运儿：五连！可再落一子'); }
+    }
+    if (s.over && !boardTimer && !userToggled) boardTimer = setTimeout(() => { boardHidden = true; render(); }, 3000);
+    if (!s.over && boardTimer) { clearTimeout(boardTimer); boardTimer = null; boardHidden = false; userToggled = false; }
+    render();
+    if (prevTurn && prevTurn !== s.turn && s.turn === myName && s.phase === 'play') toast('轮到你落子');
+  });
+  socket.on('achievement_summary', d => { if (d && d.players) { achSum = d.players; if (S && S.over) render(); } });
+  socket.on('gomoku_cancel', () => { location.href = '/room.html?game=gomoku'; });
+  setInterval(() => {
+    if (!socket.connected) return;
+    socket.emit('gomoku_pull', res => {
+      if (res && res.success) { S = res; render(); return; }
+      if (!(S && S.over)) location.href = '/room.html?game=gomoku';
+    });
+  }, 2200);
+  function myIdx(){ return S && S.players ? S.players.findIndex(p => p.name === myName) : -1; }
+  function me(){ const i = myIdx(); return (S && S.players && i >= 0) ? S.players[i] : null; }
+  function isMyTurn(){ return !!(S && S.phase === 'play' && !S.over && myIdx() >= 0 && S.turnIdx === myIdx()); }
+  function pAt(i){ return (S && S.players) ? S.players[i] : null; }
+  function roleOf(){ const m = me(); return m ? m.role : null; }
+  let hintShow = true;
+  function render(){
+    if (!S) return;
+    document.getElementById('gmkStage').textContent = S.over ? '游戏结束' : (S.phase === 'pick' ? '选择角色' : '对局进行中');
+    document.getElementById('gmkStep').textContent = S.phase === 'play' ? ('第 ' + (S.round || 1) + ' 轮') : '';
+    const cl = document.getElementById('gmkCancelLb');
+    const total = (S.players || []).length, votes = (S.cancelVotes || []).length;
+    if (cl) cl.textContent = '取消对局' + (votes ? ('（' + votes + '/' + total + '）') : '');
+    renderPlayers();
+    renderPick();
+    renderModes();
+    renderTip();
+    renderMsg();
+    renderBoard();
+  }
+  function renderPlayers(){
+    const el = document.getElementById('gmkPlayers');
+    if (!S || !S.players) { el.innerHTML = ''; return; }
+    el.innerHTML = S.players.map((p, i) => {
+      const on = !S.over && S.phase === 'play' && S.turnIdx === i;
+      const rank = p.finished ? ('第' + (p.rank || '?') + '名') : '';
+      const five = '五连 ' + p.five + '/' + p.need;
+      const extra = p.extraPending ? ' · 额外一子' : '';
+      const four = p.role === '摸鱼高手' ? (' · 四连 ' + p.four + '/5') : '';
+      const sc = p.role === '截码战专家' ? (' · ' + p.score + '分') : '';
+      const seal = p.sealedThisRound ? ' · 已封印' : '';
+      const off = (p.online === false) ? '（离线）' : '';
+      return '<div class="pchip' + (on ? ' on' : '') + (p.finished ? ' done' : '') + '">'
+        + '<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:' + p.color + ';flex:none;"></span>'
+        + '<span style="color:' + p.color + ';font-weight:700;">' + esc(dn(p.name)) + (p.name === myName ? '（你）' : '') + '</span>'
+        + '<span class="role">' + esc(p.role || '未选') + '</span>'
+        + '<span class="meta">' + five + four + sc + seal + extra + (rank ? '　' + rank : '') + off + '</span>'
+        + '</div>';
+    }).join('');
+  }
+  function renderPick(){
+    const el = document.getElementById('gmkPick');
+    if (!S || S.phase !== 'pick') { el.innerHTML = ''; return; }
+    const mine = me();
+    const cards = (S.roles || []).map(r => {
+      const taker = (S.players || []).find(p => p.role === r);
+      const isMine = mine && mine.role === r;
+      const dis = (taker && !isMine) ? ' taken' : '';
+      const by = taker ? ('已选：' + esc(dn(taker.name))) : '可选';
+      return '<div class="rolecard' + (isMine ? ' mine' : '') + dis + '" onclick="pickRole(\'' + r + '\')">'
+        + '<b>' + esc(r) + '</b><small>' + esc((S.roleDesc || {})[r] || '') + '</small><small style="margin-top:3px;">' + by + '</small></div>';
+    }).join('');
+    el.innerHTML = '<div class="pickwrap"><h3>选择你的角色（不可重复）</h3>'
+      + '<div class="tip">' + (mine && mine.role ? ('你已选择：' + esc(mine.role) + '，等待其他玩家…') : '点击卡片选择角色') + '</div>'
+      + '<div class="rolepick">' + cards + '</div></div>';
+  }
+  function renderModes(){
+    const el = document.getElementById('gmkModes');
+    const m = me();
+    if (!S || S.phase !== 'play' || !m) { el.innerHTML = ''; return; }
+    const turn = isMyTurn();
+    const dis = turn ? '' : ' dis';
+    let html = '';
+    html += '<span class="mode-opt' + (gmkMode === 'place' ? ' on' : '') + dis + '" onclick="setMode(\'place\')">' + (m.extraPending ? '额外落子' : '落子') + '</span>';
+    if (m.role === '封印师') html += '<span class="mode-opt' + (gmkMode === 'seal' ? ' on' : '') + (m.sealedThisRound ? ' dis' : dis) + '" onclick="setMode(\'seal\')">封印位置' + (m.sealedThisRound ? '（本轮已用）' : '') + '</span>';
+    if (m.role === '截码战专家') html += '<span class="mode-opt' + (gmkMode === 'predict' ? ' on' : '') + dis + '" onclick="setMode(\'predict\')">预测两点（已选 ' + selPts.length + '/2）</span>';
+    if (m.role === '侦探') html += '<span class="mode-opt' + (hintShow ? ' on' : '') + '" onclick="toggleHint()">差一子提示（仅自己可见）</span>';
+    html += '<span class="mode-opt' + (boardHidden ? '' : ' on') + '" onclick="toggleBoard()">' + (boardHidden ? '展开棋盘' : '收起棋盘') + '</span>';
+    el.innerHTML = html;
+  }
+  function renderTip(){
+    const el = document.getElementById('gmkTip');
+    const m = me();
+    if (!S || !m) { el.innerHTML = ''; return; }
+    if (S.over) { el.innerHTML = '规则：最先 3 次五连获胜（掌权者双五连 / 摸鱼高手 5 次四连 / 截码战 54 分可直接胜）'; return; }
+    let txt = '角色：' + esc(m.role || '未选');
+    if (m.role) txt += '　·　' + esc((S.roleDesc || {})[m.role] || '');
+    if (m.role === '侦探' && hintShow) txt += '　·　橙色描边 = 你差一子成五连的点';
+    if (m.role === '封印师' && gmkMode === 'seal') txt += '　·　点击空位完成封印';
+    if (m.role === '截码战专家' && gmkMode === 'predict') txt += '　·　点击两个空位自动提交预测';
+    if (S.seal) { const sp = pAt(S.seal.by); txt += '　·　本轮封印：' + colLabel(S.seal.c) + (S.seal.r + 1) + (sp ? ('（' + esc(dn(sp.name)) + '）') : ''); }
+    el.innerHTML = txt;
+  }
+  function renderMsg(){
+    const el = document.getElementById('gmkMsg');
+    if (!S) { el.innerHTML = ''; return; }
+    if (S.over) {
+      const rows = (S.over.ranking || []).map(r => {
+        const p = (S.players || []).find(x => x.name === r.name);
+        const mine = r.name === myName;
+        return '<div class="res-row' + (mine ? ' me' : '') + '"><span>第' + r.rank + '名　' + esc(dn(r.name)) + (r.role ? '　<span style="color:#7f8fa6;font-size:.78rem;">' + esc(r.role) + '</span>' : '') + '</span>'
+          + (p ? '<span style="color:' + p.color + ';font-size:.8rem;">五连 ' + p.five + '</span>' : '') + '</div>';
+      }).join('');
+      const qC = { common:'#9aa5b1', rare:'#4caf50', epic:'#9c27b0', legend:'#ff9800', hidden:'#d32f2f' };
+      const achRows = Object.keys(achSum || {}).map(n => {
+        const arr = achSum[n] || [];
+        if (!arr.length) return '';
+        return '<div class="ra-row"><b>' + esc(dn(n)) + '</b><span>'
+          + arr.map(a => '<span style="color:' + (qC[a.quality] || '#2c3e50') + ';font-weight:600;">' + esc(a.name) + '</span>').join('　')
+          + '</span></div>';
+      }).filter(Boolean).join('');
+      el.innerHTML = '<div class="res"><div class="res-title">' + esc(dn(S.over.winner)) + ' 获胜 · ' + esc(S.over.reason || '3次五连') + '</div>'
+        + rows
+        + (achRows ? '<div class="res-ach"><div class="ra-title">本局成就</div>' + achRows + '</div>' : '')
+        + '<div class="res-btns">'
+        + '<button class="res-btn ghost" onclick="toggleBoard()">' + (boardHidden ? '展开棋盘' : '收起棋盘') + '</button>'
+        + '<button class="res-btn ghost" onclick="gmkExit()">返回房间</button>'
+        + '</div></div>';
+      return;
+    }
+    if (S.phase === 'pick') { el.innerHTML = '<span>全部选完角色后自动开赛（掌权者必先手，其余随机排序）</span>'; return; }
+    const m = me();
+    if (m && m.extraPending) { el.innerHTML = '<span style="color:#e67e22;font-weight:700;">幸运儿：五连达成，可再落一子</span>'; return; }
+    const cur = pAt(S.turnIdx);
+    el.innerHTML = '<span>' + (isMyTurn() ? ('轮到你落子' + (gmkMode === 'seal' ? '（选择要封印的空位）' : (gmkMode === 'predict' ? '（选择两个预测点）' : ''))) : ('等待 ' + esc(dn(cur ? cur.name : '')) + ' 落子…')) + '</span>';
+  }
+  function legalFor(cellArr, idx){
+    if (!S || S.phase !== 'play' || S.over) return false;
+    if (gmkMode !== 'place' && gmkMode !== 'seal' && gmkMode !== 'predict') return false;
+    if (!isMyTurn()) return false;
+    if (cellArr.includes(idx)) return false;
+    if (gmkMode === 'seal') return cellArr.length === 0;
+    if (cellArr.length === 0) return true;
+    const m = me();
+    return !!(m && m.role === '灵魂棋手' && cellArr.length === 1 && !cellArr.includes(idx));
+  }
+  function renderBoard(){
+    const el = document.getElementById('gmkBoard');
+    if (!S || !S.board) { el.innerHTML = ''; return; }
+    document.getElementById('gmkBoardWrap').style.display = boardHidden ? 'none' : 'flex';
+    if (boardHidden) { el.innerHTML = ''; return; }
+    const idx = myIdx();
+    const hints = {};
+    if (hintShow && roleOf() === '侦探') (S.myHints || []).forEach(pt => { hints[pt[0] + ',' + pt[1]] = 1; });
+    const preds = {};
+    (S.myPredict || []).forEach(pt => { preds[pt.r + ',' + pt.c] = 1; });
+    const sels = {};
+    selPts.forEach(pt => { sels[pt.r + ',' + pt.c] = 1; });
+    let html = '';
+    for (let r = 0; r < 15; r++) for (let c = 0; c < 15; c++) {
+      const cell = S.board[r * 15 + c] || [];
+      const legal = legalFor(cell, idx);
+      const cls = [];
+      if (legal) cls.push('me');
+      if (hints[r + ',' + c]) cls.push('hint');
+      if (sels[r + ',' + c]) cls.push('sel');
+      else if (preds[r + ',' + c]) cls.push('pred');
+      if (S.seal && S.seal.r === r && S.seal.c === c) cls.push('sealed');
+      let inner = '';
+      cell.forEach((pi, k) => {
+        const p = pAt(pi);
+        if (p) inner += '<span class="stone ' + (k === 0 ? 'a' : 'b') + '" style="background:' + p.color + ';"></span>';
+      });
+      html += '<div class="cell ' + cls.join(' ') + '" title="' + colLabel(c) + (r + 1) + '"'
+        + (legal ? ' onclick="onCell(' + r + ',' + c + ')"' : '') + '>' + inner + '</div>';
+    }
+    el.innerHTML = html;
+  }
+  function onCell(r, c){
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+    if (gmkMode === 'seal') {
+      socket.emit('gomoku_seal', { r, c }, res => { if (res && !res.success) toast(res.msg || '封印失败'); else { gmkMode = 'place'; render(); } });
+      return;
+    }
+    if (gmkMode === 'predict') {
+      const i = selPts.findIndex(pt => pt.r === r && pt.c === c);
+      if (i >= 0) selPts.splice(i, 1);
+      else if (selPts.length < 2) selPts.push({ r, c });
+      if (selPts.length === 2) {
+        const pts = selPts.slice();
+        socket.emit('gomoku_predict', { points: pts }, res => {
+          if (res && !res.success) { toast(res.msg || '预测失败'); selPts = []; render(); return; }
+          toast('预测已提交（仅自己可见）');
+          selPts = []; gmkMode = 'place'; render();
+        });
+      } else render();
+      return;
+    }
+    socket.emit('gomoku_place', { r, c }, res => { if (res && !res.success) toast(res.msg || '落子失败'); });
+  }
+  function pickRole(role){
+    socket.emit('gomoku_pick_role', { role }, res => { if (res && !res.success) toast(res.msg || '选角失败'); });
+  }
+  function setMode(m){
+    if (m !== 'place' && !isMyTurn()) { toast('还没轮到你'); return; }
+    if (m === 'seal') {
+      const mm = me();
+      if (mm && mm.sealedThisRound) { toast('本轮已经封印过了'); return; }
+    }
+    gmkMode = m;
+    selPts = [];
+    render();
+  }
+  function toggleHint(){ hintShow = !hintShow; render(); }
+  function toggleBoard(){ if (boardTimer) { clearTimeout(boardTimer); boardTimer = null; } userToggled = true; boardHidden = !boardHidden; render(); }
+  function gmkCancel(){ socket.emit('gomoku_cancel_vote', {}); }
+  function gmkExit(){ location.href = '/room.html?game=gomoku'; }
+  const gmkAchEl = document.createElement('div'); gmkAchEl.className = 'ach-pop'; document.body.appendChild(gmkAchEl); let gmkAchTimer = null;
+  socket.on('achievement_unlocked', function(d){
+    if (!d || !d.name) return;
+    const qLab = { common:'普通', rare:'稀有', epic:'史诗', legend:'传说', hidden:'隐藏' };
+    gmkAchEl.innerHTML = '🏅 解锁成就「' + esc(d.name) + '」<small>' + ((d.quality && (qLab[d.quality] || d.quality)) || '') + (d.playerName ? ' · ' + esc(dn(d.playerName)) : '') + '</small>';
+    gmkAchEl.style.opacity = '1'; clearTimeout(gmkAchTimer); gmkAchTimer = setTimeout(function(){ gmkAchEl.style.opacity = '0'; }, 2600);
+  });
+  </script>
+  <script src="/emoji-widget.js"></script>
+</body>
+</html>
