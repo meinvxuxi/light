@@ -2983,6 +2983,10 @@ function ppoGarbageOfChain(chain) {
 }
 // 全消奖励（Zenkeshi）：连锁结算后棋盘被彻底清空 → 额外 30 颗干扰（原作关键机制）
 const PPO_ZENKESHI_GARBAGE = 30;
+// 同时消加成：同一波里同时消除多组 → 每多一组额外 2 颗干扰（原版 Fever 的“同时消”简化版）
+const PPO_SIMUL_BONUS_PER_GROUP = 2;
+// AI 加速下落速度（对齐并到位后按此速度下落，避免 AI 瞬移刷局）
+const PPO_AI_SOFT_MS = 150;
 
 function ppoNewPlayer(name, index, colors, ai) {
   return {
@@ -2991,7 +2995,7 @@ function ppoNewPlayer(name, index, colors, ai) {
     pending: 0, pendingAt: 0, score: 0, maxChain: 0, maxCleared: 0,
     alive: true, rank: 0, fallAcc: 0, lockAcc: 0, soft: false,
     offlineSince: 0, heightBeforeChain: 0, played: 0,
-    ai: ai || null, aiPlan: null, aiMoveAt: 0
+    ai: ai || null, aiPlan: null, aiMoveAt: 0, aiSoft: false, aiLastTick: 0, aiStuck: 0, aiLast: ''
   };
 }
 function ppoNotice(g, text, kind) {
@@ -3063,11 +3067,13 @@ function ppoLock(g, p, now) {
 }
 // 连锁结算：BFS 消除 → 重力 → 再检测；返回连锁数
 function ppoResolve(g, p, now) {
-  let chain = 0, totalCleared = 0, totalGarbage = 0, gained = 0;
+  let chain = 0, totalCleared = 0, totalGarbage = 0, gained = 0, simultBonus = 0;
   for (;;) {
     const groups = ppoGroups(p);
     if (!groups.length) break;
     chain++;
+    // 同时消加成：同一波里同时消除多组（多组不同色一起消）→ 额外干扰
+    if (groups.length > 1) simultBonus += (groups.length - 1) * PPO_SIMUL_BONUS_PER_GROUP;
     const remove = new Set();
     groups.forEach(gr => gr.cells.forEach(i => remove.add(i)));
     const cleared = remove.size;
@@ -3095,8 +3101,8 @@ function ppoResolve(g, p, now) {
   g.lastChain = { name: p.name, chain, cleared: totalCleared, ts: now };
   // 全消奖励（Zenkeshi）：棋盘被清空 → 额外 30 颗干扰
   const zenkeshi = p.board.every(v => v === 0);
-  // 干扰气泡：连锁数决定数量；先用本次连锁抵消待落干扰（相杀）
-  const send0 = ppoGarbageOfChain(chain) + (zenkeshi ? PPO_ZENKESHI_GARBAGE : 0);
+  // 干扰气泡：连锁数决定数量（＋同时消加成）；先用本次连锁抵消待落干扰（相杀）
+  const send0 = ppoGarbageOfChain(chain) + simultBonus + (zenkeshi ? PPO_ZENKESHI_GARBAGE : 0);
   let send = send0, offset = 0;
   if (send0 && p.pending > 0) {
     offset = Math.min(p.pending, send0);
@@ -3117,6 +3123,7 @@ function ppoResolve(g, p, now) {
   if (totalGarbage) txt += '、震碎 ' + totalGarbage + ' 颗干扰';
   txt += '，+' + gained + ' 分）';
   if (zenkeshi) txt += '，全消（Zenkeshi）额外 ' + PPO_ZENKESHI_GARBAGE + ' 颗干扰';
+  if (simultBonus) txt += '，同时消加成 ' + simultBonus + ' 颗';
   if (offset) txt += '，相杀抵消 ' + offset + ' 颗';
   if (send) txt += '，发出 ' + send + ' 颗干扰';
   ppoNotice(g, txt, chain >= 3 ? 'chain' : 'info');
@@ -3177,74 +3184,117 @@ function ppoEvalBoard(b, cells) {
   });
   return { clears, adj, threePlus, height: ppoHeight({ board: b }), holes: ppoHoles(b), bump: ppoBump(b) };
 }
+// 在给定棋盘上跑完整连锁，返回连锁数（只算消除，不涉及干扰/分数；AI 评估用）
+function ppoSimChain(b) {
+  let chain = 0;
+  for (;;) {
+    const groups = ppoGroups({ board: b });
+    if (!groups.length) break;
+    chain++;
+    const rm = new Set();
+    groups.forEach(gr => gr.cells.forEach(i => rm.add(i)));
+    rm.forEach(i => { b[i] = 0; });
+    ppoGravity({ board: b });
+  }
+  return chain;
+}
+// 单次落子的完整评估（含“链”潜力）：返回 { chainLen, ev }
+function ppoEvalDrop(board, sim, colors) {
+  const b2 = sim.board.slice();
+  const chainLen = ppoSimChain(b2);
+  const ev = ppoEvalBoard(b2, sim.cells);
+  return { chainLen, ev };
+}
 // 为某个难度挑选落子方案（返回 { col, orient, score }）
 function ppoAiPlan(g, p) {
   const colors = p.piece.colors;
   const diff = p.ai || 'normal';
   const cands = [];
+  const baseScore = (r, diff) => {
+    const { chainLen, ev } = r;
+    if (diff === 'easy') return chainLen * 55 + ev.adj * 2 - ev.height * 3 + Math.random() * 90;
+    // 真·连消最值钱；低堆时只消 4 颗＝浪费弹药，压低这种走法（鼓励攒连锁）
+    const chainReward = chainLen >= 2 ? chainLen * 260 : 0;
+    const waste = (chainLen === 1 && ev.height <= 7) ? (8 - ev.height) * 22 : 0;
+    return chainReward + ev.threePlus * 45 + ev.adj * 6
+      - ev.height * 12 - ev.holes * 34 - ev.bump * 3 - waste
+      - (ev.height > 10 ? 260 : 0) + Math.random() * (diff === 'hard' ? 4 : 12);
+  };
   for (let col = 0; col < PPO_COLS; col++) {
     for (let orient = 0; orient < 4; orient++) {
       const sim = ppoSimDrop(p.board, col, orient, colors);
       if (!sim) continue;
-      const ev = ppoEvalBoard(sim.board, sim.cells);
-      let score;
-      if (diff === 'easy') {
-        score = ev.clears * 60 + ev.adj * 2 + Math.random() * 60;
-      } else if (diff === 'hard') {
-        score = ev.clears * 110 + ev.threePlus * 40 + ev.adj * 5
-          - ev.height * 11 - ev.holes * 32 - ev.bump * 3
-          - (ev.height > 10 ? 200 : 0) + Math.random() * 4;
-        // 困难：再看一眼下一对（1 层前瞻）
-        const nx = p.next ? p.next.colors : null;
-        if (nx) {
-          let best2 = -1e9;
-          for (let c2 = 0; c2 < PPO_COLS; c2++) for (let o2 = 0; o2 < 4; o2++) {
-            const s2 = ppoSimDrop(sim.board, c2, o2, nx);
-            if (!s2) continue;
-            const e2 = ppoEvalBoard(s2.board, s2.cells);
-            const v = e2.clears * 110 + e2.threePlus * 40 + e2.adj * 5 - e2.height * 11 - e2.holes * 32 - e2.bump * 3 - (e2.height > 10 ? 200 : 0);
-            if (v > best2) best2 = v;
-          }
-          if (best2 > -1e8) score += best2 * 0.45;
-        }
-      } else {
-        score = ev.clears * 90 + ev.threePlus * 18 + ev.adj * 4
-          - ev.height * 8 - ev.holes * 22 - ev.bump * 2 + Math.random() * 12;
-      }
-      cands.push({ col, orient, score });
+      cands.push({ col, orient, score: baseScore(ppoEvalDrop(p.board, sim, colors), diff), sim });
     }
   }
   if (!cands.length) return null;
+  if (diff === 'hard') {
+    // 困难：对最好的几个候选再看一眼“下一对”（1 层前瞻）
+    const nx = p.next ? p.next.colors : null;
+    if (nx) {
+      cands.sort((a, b) => b.score - a.score);
+      for (const c of cands.slice(0, 5)) {
+        let best2 = -1e9;
+        for (let c2 = 0; c2 < PPO_COLS; c2++) for (let o2 = 0; o2 < 4; o2++) {
+          const s2 = ppoSimDrop(c.sim.board, c2, o2, nx);
+          if (!s2) continue;
+          const v = baseScore(ppoEvalDrop(c.sim.board, s2, nx), 'hard');
+          if (v > best2) best2 = v;
+        }
+        if (best2 > -1e8) c.score += best2 * 0.45;
+      }
+    }
+  }
   cands.sort((a, b) => b.score - a.score);
   if (diff === 'easy' && cands.length > 2) return cands[Math.floor(Math.random() * Math.min(4, cands.length))];
   return cands[0];
 }
-// AI 每 tick 行动：缓慢移动到目标列/朝向，然后落底（带“卡住兜底”，避免死循环）
+// AI 每 tick 行动：与人类同速下落（不瞬移）→ 对齐目标后加速下落 → 落地缓冲 → 锁定
 function ppoAiTick(g, p, now) {
-  if (!p.piece) { ppoSpawn(g, p, now); return !!p.piece; }   // 兜底：没有气泡对就补一个
+  if (!p.piece) {                       // 兜底：没有气泡对就补一个
+    ppoSpawn(g, p, now);
+    p.aiPlan = null; p.aiSoft = false; p.aiStuck = 0; p.aiLast = ''; p.fallAcc = 0; p.lockAcc = 0;
+    return !!p.piece;
+  }
+  const dt = Math.max(0, Math.min(400, now - (p.aiLastTick || now)));
+  p.aiLastTick = now;
+  // 1) 下落：未对齐用普通速度，对齐后按“加速下落”速度（仍然不是瞬移）
+  const stepMs = p.aiSoft ? PPO_AI_SOFT_MS : ppoFallMs(ppoLevel(g, now));
+  p.fallAcc = (p.fallAcc || 0) + dt;
+  let moved = false;
+  while (p.fallAcc >= stepMs) {
+    p.fallAcc -= stepMs;
+    if (ppoCanFall(p)) { p.piece = Object.assign({}, p.piece, { r: p.piece.r + 1 }); p.lockAcc = 0; moved = true; }
+    else break;
+  }
+  // 2) 落地缓冲（与人类一致 350ms，期间还能微调）
+  if (!ppoCanFall(p)) {
+    p.lockAcc += dt;
+    if (p.lockAcc >= PPO_LOCK_DELAY) {
+      p.aiPlan = null; p.aiSoft = false; p.fallAcc = 0; p.lockAcc = 0;
+      ppoLock(g, p, now);
+      return true;
+    }
+    if (!moved) return false;
+  }
+  // 3) 对齐目标列/朝向
   if (!p.aiPlan) {
     p.aiPlan = ppoAiPlan(g, p);
-    p.aiMoveAt = now + (p.ai === 'easy' ? 380 : p.ai === 'hard' ? 90 : 180);
+    p.aiMoveAt = now;
     p.aiStuck = 0; p.aiLast = '';
+    if (!p.aiPlan) { p.aiSoft = true; return moved; }   // 没有可评估落点：加速直接落下
   }
-  const drop = () => {
-    while (ppoCanFall(p)) p.piece = Object.assign({}, p.piece, { r: p.piece.r + 1 });
-    p.aiPlan = null;
-    ppoLock(g, p, now);
-    return true;
-  };
-  if (!p.aiPlan) return drop();                      // 没有可评估落点：原地落底
-  if (now < p.aiMoveAt) return false;
-  p.aiMoveAt = now + (p.ai === 'easy' ? 210 : p.ai === 'hard' ? 55 : 110);
+  if (now < p.aiMoveAt) return moved;
+  p.aiMoveAt = now + (p.ai === 'easy' ? 260 : p.ai === 'hard' ? 120 : 190);
   const plan = p.aiPlan;
   const key = p.piece.c + ':' + p.piece.orient;
   if (key === p.aiLast) p.aiStuck++; else { p.aiStuck = 0; p.aiLast = key; }
-  if (p.aiStuck > 14) return drop();                 // 目标不可达 → 直接在当前位置落底
+  if (p.aiStuck > 12) { p.aiSoft = true; return moved; }   // 目标不可达 → 就地加速落下
   const needRot = (plan.orient - p.piece.orient + 4) % 4;
   if (needRot !== 0 && ppoRotate(p, needRot === 3 ? -1 : 1)) return true;
   if (p.piece.c !== plan.col && ppoMove(p, p.piece.c < plan.col ? 1 : -1)) return true;
-  if (p.piece.c === plan.col && p.piece.orient === plan.orient) return drop();
-  return false;
+  if (p.piece.c === plan.col && p.piece.orient === plan.orient) p.aiSoft = true;   // 到位 → 加速下落
+  return moved;
 }
 
 function ppoCheckAchievements(g, p) {
@@ -4329,6 +4379,11 @@ io.on('connection', (socket) => {
 
     const isOfficialPlayer = Object.values(VALID_KEYS).includes(playerName);
     const isGuestUser = playerName.startsWith('游客');
+    // 魔法气泡仍在测试阶段：房间入口只对测试账号开放（正式玩家/游客一律挡在门外）
+    if (game === 'puyopuyo' && !isTestAccount(playerName)) {
+      if (typeof cb === 'function') cb({ success: false, msg: '魔法气泡还在测试中，暂时只对测试账号开放～' });
+      return;
+    }
     if (playerName && (isOfficialPlayer || isGuestUser)) {
       onlineUsers.set(playerName, {
         name: playerName,

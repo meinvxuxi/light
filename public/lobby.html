@@ -302,7 +302,7 @@
         <a href="/room.html?game=othello" class="game-link">翻转棋</a>
         <a href="/room.html?game=quoridor" class="game-link">路墙棋</a>
         <a href="/room.html?game=gomoku" class="game-link">技能五子棋</a>
-        <a href="/room.html?game=puyopuyo" class="game-link">魔法气泡</a>
+        <a href="/room.html?game=puyopuyo" class="game-link" id="gamePuyoPuyo" style="display:none;">魔法气泡<span style="font-size:.7rem;color:#9aa5b1;margin-left:4px;">测试中</span></a>
       </div>
     </section>
 
@@ -342,6 +342,9 @@ if (isTest && sessionStorage.getItem('isGuest') !== 'true') {
   devBtn.textContent = '🔧 开发者工具';
   devBtn.style.cssText = 'position:fixed; bottom:10px; right:10px; background:#1a1a2e; color:#f0c040; padding:8px 14px; border-radius:8px; font-size:0.8rem; opacity:0.7; z-index:999; text-decoration:none;';
   document.body.appendChild(devBtn);
+  // 魔法气泡还在测试阶段：入口只对测试账号显示
+  const puyoEntry = document.getElementById('gamePuyoPuyo');
+  if (puyoEntry) puyoEntry.style.display = '';
 }
     const socket = io();
     const myName = sessionStorage.getItem('playerName');

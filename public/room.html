@@ -401,7 +401,9 @@
     socket.emit('join_room', { game: gameName, playerName: myName, isTest }, (res) => {
       console.log('📥 join_room 服务器回复:', JSON.stringify(res));
       if (!res || !res.roomId) {
-        alert('加入房间失败，请重试');
+        // 房间入口被拒（例如魔法气泡仍在测试、只对测试账号开放）
+        showToast(res && res.msg ? ('🚧 ' + res.msg) : '加入房间失败，请重试');
+        setTimeout(() => { location.href = '/lobby.html'; }, 1800);
         return;
       }
       roomId = res.roomId || '';

@@ -47,7 +47,7 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 /* ===== 手机端专用操作层：左侧（左移/逆时针/加速），右侧（右移/顺时针/落底） ===== */
 .pad{display:none;}
 body.mobile .pad{display:block;}
-.pad-col{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;z-index:1200;}
+.pad-col{position:fixed;top:50%;display:flex;flex-direction:column;gap:10px;z-index:1200;}
 .pad-col.left{left:8px;}
 .pad-col.right{right:8px;}
 .pad-btn{width:62px;height:62px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -70,6 +70,10 @@ body.mobile .side .keys{display:none;}
 .chainbar{text-align:center;min-height:20px;font-size:.92rem;font-weight:800;color:var(--accTx);opacity:0;transition:opacity .2s;}
 .chainbar.show{opacity:1;}
 .chainbar.big{font-size:1.25rem;}
+/* 干扰预告：仿原版在自己场地上方堆一排灰色干扰气泡图标 */
+.garb{display:flex;justify-content:center;align-items:center;gap:2px;flex-wrap:wrap;min-height:16px;margin:2px 0 0;}
+.garb .gi{width:11px;height:11px;border-radius:50%;background-color:rgba(138,148,160,.42);border:1px solid rgba(138,148,160,.62);}
+.garb .gt{font-size:.72rem;color:#a5443f;font-weight:700;margin-left:5px;}
 .msg{text-align:center;font-size:.84rem;color:#6b7a90;margin:6px 0;min-height:20px;}
 .res{max-width:480px;margin:8px auto;background:rgba(255,255,255,.86);border:1px solid var(--accB);border-radius:14px;padding:14px;text-align:center;box-shadow:0 6px 18px rgba(31,45,61,.12);}
 .res-title{font-size:1.02rem;font-weight:800;margin-bottom:8px;}
@@ -114,6 +118,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       </div>
     </div>
     <div class="chainbar" id="ppoChain"></div>
+    <div class="garb" id="ppoGarb"></div>
     <div class="opps" id="ppoOpps"></div>
     <div class="msg" id="ppoMsg"></div>
   </div>
@@ -251,7 +256,20 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const cl = document.getElementById('ppoCancelLb');
     const total = (S.players || []).length, votes = (S.cancelVotes || []).length;
     if (cl) cl.textContent = '取消对局' + (votes ? ('（' + votes + '/' + total + '）') : '');
-    renderNotice(); renderSide(); renderBoard(); renderOpps(); renderChain(); renderMsg();
+    renderNotice(); renderSide(); renderBoard(); renderOpps(); renderChain(); renderGarb(); renderMsg();
+  }
+  // 干扰预告：把即将落下的干扰数量用灰色气泡图标堆出来（仿原版）
+  function renderGarb(){
+    const el = document.getElementById('ppoGarb');
+    if (!el) return;
+    const m = me();
+    const n = m ? (m.pending || 0) : 0;
+    if (!n) { el.innerHTML = ''; return; }
+    const show = Math.min(n, 18);
+    let html = '';
+    for (let i = 0; i < show; i++) html += '<span class="gi"></span>';
+    html += '<span class="gt">' + n + ' 颗干扰待落' + (n > show ? '（只显示了 ' + show + ' 颗）' : '') + '，达成连锁可相杀抵消</span>';
+    el.innerHTML = html;
   }
   function renderNotice(){
     const el = document.getElementById('ppoNotice');
