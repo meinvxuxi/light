@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>排行榜</title>
   <style>
+    /* 主题色变量（与游戏页同一套）：头衔胶囊等控件跟随个人空间主题 */
+    :root { --acc: #4a90d9; --accB: rgba(74,144,217,.35); --accBg: rgba(74,144,217,.13); --accTx: #2f6fb2; }
+    body.dyn-pink { --acc: #f06292; --accB: rgba(240,98,146,.42); --accBg: rgba(240,98,146,.13); --accTx: #c2185b; }
+    body.dyn-green { --acc: #6f9e63; --accB: rgba(111,158,99,.42); --accBg: rgba(111,158,99,.13); --accTx: #4c7042; }
+    body.dyn-gold { --acc: #d6a843; --accB: rgba(214,168,67,.46); --accBg: rgba(214,168,67,.14); --accTx: #9a7620; }
+    body.dyn-red { --acc: #a6403a; --accB: rgba(166,64,58,.42); --accBg: rgba(166,64,58,.13); --accTx: #8c322c; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #f0f2f5; color: #2c3e50; font-family: 'Segoe UI', 'PingFang SC', sans-serif; padding: 16px 12px; }
     .headbar { max-width: 620px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; font-size: .9rem; }
@@ -29,7 +35,8 @@
     .lb-rank.top { color: #4a90d9; font-weight: 700; }
     .lb-who { color: #2c3e50; font-weight: 600; }
     .lb-with { font-size: .64rem; font-weight: 400; color: #7a8fa6; background: rgba(120,140,165,.1); border-radius: 999px; padding: 0 6px; margin-left: 6px; line-height: 1.7; letter-spacing: .2px; white-space: nowrap; }
-    .lb-title { font-size: .7rem; color: #b6bec9; background: #eef1f5; border-radius: 20px; padding: 1px 8px; }
+    .lb-title { font-size: .7rem; color: var(--accTx); background: var(--accBg); border: 1px solid var(--accB);
+      border-radius: 20px; padding: 1px 8px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
     .lb-stat { margin-left: auto; color: #7f8fa6; font-size: .82rem; white-space: nowrap; }
     .empty { text-align: center; color: #adb5bd; padding: 46px 0; font-size: .88rem; }
     .err { text-align: center; color: #e74c3c; padding: 34px 0; font-size: .9rem; }

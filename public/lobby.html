@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>🏰 游戏大厅</title>
   <style>
+    /* 主题色变量（与游戏页同一套）：头衔胶囊等控件跟随个人空间主题 */
+    :root { --acc: #4a90d9; --accB: rgba(74,144,217,.35); --accBg: rgba(74,144,217,.13); --accTx: #2f6fb2; }
+    body.dyn-pink { --acc: #f06292; --accB: rgba(240,98,146,.42); --accBg: rgba(240,98,146,.13); --accTx: #c2185b; }
+    body.dyn-green { --acc: #6f9e63; --accB: rgba(111,158,99,.42); --accBg: rgba(111,158,99,.13); --accTx: #4c7042; }
+    body.dyn-gold { --acc: #d6a843; --accB: rgba(214,168,67,.46); --accBg: rgba(214,168,67,.14); --accTx: #9a7620; }
+    body.dyn-red { --acc: #a6403a; --accB: rgba(166,64,58,.42); --accBg: rgba(166,64,58,.13); --accTx: #8c322c; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
@@ -223,8 +229,10 @@
     .player-card:last-child { border-right: none; }
     .player-card.offline { opacity: .7; }
     .player-card .name { font-size: .95rem; }
-    .player-card .p-title { font-size: .68rem; color: #b6bec9; margin-left: 5px; font-weight: 400; letter-spacing: .5px; }
-    .player-card.online .p-title { color: #9aa5b1; }
+    .player-card .p-title { font-size: .68rem; color: var(--accTx); margin-left: 5px; font-weight: 400; letter-spacing: .5px;
+      background: var(--accBg); border: 1px solid var(--accB); border-radius: 20px; padding: 0 7px;
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    .player-card.online .p-title { color: var(--accTx); }
     .player-card.online .status-text { color: #27ae60; font-weight: 600; }
     .guest-toggle { background: none; border: none; color: #6b7a90; font-size: .8rem; padding: 2px 4px; }
     .guest-toggle:hover { color: #4a90d9; }
