@@ -19,65 +19,60 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .info{display:flex;justify-content:space-between;gap:8px;margin:8px 0 4px;font-size:.85rem;color:#6b7a90;flex-wrap:wrap;}
 .remind{max-width:720px;margin:4px auto;text-align:center;font-size:.8rem;color:var(--accTx);background:var(--accBg);border:1px solid var(--accB);border-radius:10px;padding:5px 10px;}
 .remind.hide{display:none;}
-.mainrow{display:flex;justify-content:center;align-items:flex-start;gap:14px;margin:6px 0;flex-wrap:wrap;}
-.boardbox{position:relative;padding:6px;border-radius:12px;background:rgba(255,255,255,.66);border:1px solid var(--accB);backdrop-filter:blur(8px);transition:box-shadow .2s;}
-.boardbox.danger{box-shadow:0 0 0 3px rgba(198,78,78,.35);}
-.board{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;background:linear-gradient(180deg,rgba(44,62,80,.08),rgba(44,62,80,.03));border-radius:10px;padding:3px;box-shadow:inset 0 2px 6px rgba(31,45,61,.08);}
-.cell{width:min(7.2vw,30px);height:min(7.2vw,30px);border-radius:50%;background:rgba(255,255,255,.35);box-shadow:inset 0 1px 3px rgba(31,45,61,.07);}
-/* 磨砂半透明泡泡：半透明色 + 高光 + 内阴影 + 细白环 */
-.c1,.c2,.c3,.c4,.c5,.c9{border:1px solid rgba(255,255,255,.5);position:relative;overflow:hidden;
-  box-shadow:inset 0 -3px 6px rgba(0,0,0,.18),inset 0 3px 7px rgba(255,255,255,.6),0 1px 2px rgba(31,45,61,.18);}
-.board .c1,.board .c2,.board .c3,.board .c4,.board .c5,.board .c9{backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);}
-.c1,.c2,.c3,.c4,.c5,.c9{background-image:radial-gradient(circle at 34% 26%,rgba(255,255,255,.92),rgba(255,255,255,.28) 40%,rgba(255,255,255,0) 64%);}
-.c1{background-color:rgba(230,96,90,.88);} .c2{background-color:rgba(233,193,70,.9);} .c3{background-color:rgba(105,186,105,.9);}
-.c4{background-color:rgba(88,142,216,.9);} .c5{background-color:rgba(168,116,216,.9);}
-.c9{background-color:rgba(150,160,172,.92);background-image:linear-gradient(135deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%);}
-.cell.fall{box-shadow:0 0 0 2px rgba(255,255,255,.95),0 0 8px rgba(31,45,61,.28);}
-.ob .cell{border-width:1px;}
-.side{min-width:132px;display:flex;flex-direction:column;gap:6px;font-size:.8rem;color:#4a5b6d;}
-.panel{background:rgba(255,255,255,.72);border:1px solid var(--accB);border-radius:14px;padding:8px 10px;backdrop-filter:blur(10px);}
+.mainrow{display:flex;justify-content:center;align-items:flex-start;gap:12px;margin:6px 0;flex-wrap:wrap;}
+.boardwrap{display:flex;justify-content:center;overflow-x:auto;}
+/* 棋盘：技能五子棋同款（米色底 + 细线格） */
+.board{display:grid;grid-template-columns:repeat(6,1fr);background:#f6efe2;border:2px solid #b7a184;border-radius:8px;}
+.cell{width:min(9.4vw,34px);height:min(9.4vw,34px);min-width:22px;min-height:22px;border:1px solid #e2d7bf;position:relative;background:transparent;}
+/* 气泡：半透明填充 + 外面一圈细细的淡色描边（与五子棋棋子同款） */
+.cell::after{content:'';position:absolute;inset:8%;border-radius:50%;opacity:0;}
+.cell.b1::after{opacity:1;background-color:rgba(206,86,78,.42);border:1px solid rgba(206,86,78,.62);}
+.cell.b2::after{opacity:1;background-color:rgba(222,180,62,.45);border:1px solid rgba(222,180,62,.66);}
+.cell.b3::after{opacity:1;background-color:rgba(92,166,92,.42);border:1px solid rgba(92,166,92,.62);}
+.cell.b4::after{opacity:1;background-color:rgba(84,138,204,.42);border:1px solid rgba(84,138,204,.62);}
+.cell.b5::after{opacity:1;background-color:rgba(156,110,204,.42);border:1px solid rgba(156,110,204,.62);}
+.cell.b9::after{opacity:1;background-color:rgba(138,148,160,.42);border:1px solid rgba(138,148,160,.62);}
+/* 当前掉落中的气泡对：橙色细圈 */
+.cell.fall::before{content:'';position:absolute;inset:3%;border-radius:50%;box-shadow:0 0 0 2px rgba(230,126,34,.85);}
+.side{min-width:120px;display:flex;flex-direction:column;gap:6px;font-size:.8rem;color:#4a5b6d;}
+.panel{background:rgba(255,255,255,.72);border:1px solid var(--accB);border-radius:12px;padding:8px 10px;}
 .panel b{color:var(--accTx);}
-.nextgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;justify-content:center;width:64px;margin:4px auto 0;}
-.nextgrid .cell{width:28px;height:28px;}
-/* 手机端操作区：大按钮 + 网格布局 */
-.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
-.mode-opt{display:flex;align-items:center;justify-content:center;min-height:46px;border-radius:14px;border:1px solid var(--accB);
-  background:rgba(255,255,255,.78);box-shadow:0 1px 3px rgba(31,45,61,.1);cursor:pointer;font-size:1.05rem;
-  user-select:none;backdrop-filter:blur(10px);color:var(--accTx);font-weight:700;}
-.mode-opt:active,.mode-opt.on{border-color:var(--acc);background:var(--accBg);transform:translateY(1px);}
-.keys .wide{grid-column:span 1;}
-/* ===== 手机端专用操作层：左右两侧大号磨砂主题色箭头 + 底部旋转/落底 ===== */
+.nextgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:2px;justify-content:center;width:68px;margin:4px auto 0;background:#f6efe2;border:1px solid #b7a184;border-radius:6px;padding:2px;}
+.nextgrid .cell{width:28px;height:28px;border:none;background:transparent;}
+.nextgrid .cell::after{inset:10%;}
+/* 控制按钮：五子棋同款主题色小胶囊（桌面用） */
+.keys{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;}
+.mode-opt{padding:6px 12px;border-radius:10px;border:1px solid #dfe3e8;background:#fff;cursor:pointer;font-size:.82rem;user-select:none;text-align:center;}
+.mode-opt:active,.mode-opt.on{border-color:var(--acc);background:var(--accBg);color:var(--accTx);font-weight:700;}
+/* ===== 手机端专用操作层：左侧（左移/逆时针/加速），右侧（右移/顺时针/落底） ===== */
 .pad{display:none;}
 body.mobile .pad{display:block;}
+.pad-col{position:fixed;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;z-index:1200;}
+.pad-col.left{left:8px;}
+.pad-col.right{right:8px;}
+.pad-btn{width:62px;height:62px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:1.5rem;font-weight:800;line-height:1;color:var(--accTx);background:var(--accBg);border:2px solid var(--accB);
+  box-shadow:0 4px 12px rgba(31,45,61,.16);user-select:none;touch-action:none;}
+.pad-btn.big{width:70px;height:70px;font-size:1.9rem;}
+.pad-btn:active{background:var(--acc);color:#fff;transform:scale(.93);}
+body.mobile .wrap{padding:0 84px 12px;}
 body.mobile .side .keys{display:none;}
-body.mobile .board .cell{width:min(11.6vw,36px);height:min(11.6vw,36px);}
-body.mobile .opp .ob .cell{width:min(4vw,14px);height:min(4vw,14px);}
-.pad-side{position:fixed;top:50%;transform:translateY(-40%);width:74px;height:74px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;font-size:2.2rem;font-weight:800;line-height:1;
-  color:var(--accTx);background:var(--accBg);border:2px solid var(--accB);backdrop-filter:blur(12px);
-  box-shadow:0 6px 18px rgba(31,45,61,.18);z-index:1200;user-select:none;touch-action:none;}
-.pad-side:active{background:var(--acc);color:#fff;transform:translateY(-40%) scale(.94);}
-.pad-side.left{left:8px;}
-.pad-side.right{right:8px;}
-.pad-bottom{position:fixed;left:0;right:0;bottom:10px;display:flex;justify-content:center;gap:14px;z-index:1200;}
-.pad-btn{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  font-size:1.5rem;font-weight:800;color:var(--accTx);background:var(--accBg);border:2px solid var(--accB);
-  backdrop-filter:blur(12px);box-shadow:0 6px 18px rgba(31,45,61,.18);user-select:none;touch-action:none;}
-.pad-btn:active{background:var(--acc);color:#fff;transform:scale(.94);}
-body.mobile .wrap{padding-bottom:92px;}
-.opps{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:8px 0;}
-.opp{background:rgba(255,255,255,.66);border:1px solid var(--accB);border-radius:12px;padding:6px;font-size:.72rem;color:#4a5b6d;text-align:center;}
+.opps{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin:6px 0;}
+.opp{background:rgba(255,255,255,.7);border:1px solid var(--accB);border-radius:10px;padding:4px 6px;font-size:.7rem;color:#4a5b6d;text-align:center;}
 .opp.out{opacity:.5;}
 .opp.attack{border-color:rgba(198,78,78,.55);box-shadow:0 0 0 2px rgba(198,78,78,.18);}
-.opp .ob{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;margin:4px 0;}
-.opp .ob .cell{width:min(3.4vw,13px);height:min(3.4vw,13px);border-radius:50%;}
+.opp .ob{display:grid;grid-template-columns:repeat(6,1fr);background:#f6efe2;border:1px solid #b7a184;border-radius:4px;margin:3px 0;}
+.opp .ob .cell{width:min(3vw,11px);height:min(3vw,11px);border:none;}
+.opp .ob .cell::after{inset:9%;}
 .opp .nm{font-weight:700;}
-.chain{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);font-size:1.5rem;font-weight:900;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.45),0 0 2px rgba(0,0,0,.6);pointer-events:none;opacity:0;transition:opacity .2s,transform .2s;white-space:nowrap;}
-.chain.show{opacity:1;transform:translate(-50%,-50%) scale(1.12);}
-.msg{text-align:center;font-size:.86rem;color:#6b7a90;margin:8px 0;min-height:22px;}
-.msg{text-align:center;font-size:.86rem;color:#6b7a90;margin:8px 0;min-height:22px;}
-.res{max-width:480px;margin:8px auto;background:rgba(255,255,255,.84);backdrop-filter:blur(12px);border:1px solid var(--accB);border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 10px 28px rgba(31,45,61,.12);}
-.res-title{font-size:1.05rem;font-weight:800;margin-bottom:8px;}
+.opp .tag{display:inline-block;margin-top:2px;padding:1px 6px;border-radius:8px;background:var(--acc);color:#fff;font-size:.66rem;font-weight:700;}
+/* 连锁提示条：贴在棋盘上方，不挡棋盘 */
+.chainbar{text-align:center;min-height:20px;font-size:.92rem;font-weight:800;color:var(--accTx);opacity:0;transition:opacity .2s;}
+.chainbar.show{opacity:1;}
+.chainbar.big{font-size:1.25rem;}
+.msg{text-align:center;font-size:.84rem;color:#6b7a90;margin:6px 0;min-height:20px;}
+.res{max-width:480px;margin:8px auto;background:rgba(255,255,255,.86);border:1px solid var(--accB);border-radius:14px;padding:14px;text-align:center;box-shadow:0 6px 18px rgba(31,45,61,.12);}
+.res-title{font-size:1.02rem;font-weight:800;margin-bottom:8px;}
 .res-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.6);border:1px solid var(--accB);margin-bottom:5px;font-size:.86rem;}
 .res-row.me{border-color:rgba(230,126,34,.6);background:rgba(255,247,230,.8);}
 .res-ach{margin-top:10px;border-top:1px dashed var(--accB);padding-top:8px;text-align:left;font-size:.8rem;}
@@ -86,9 +81,10 @@ body.mobile .wrap{padding-bottom:92px;}
 .res-btns{display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap;}
 .res-btn{display:inline-block;padding:7px 16px;border-radius:10px;background:var(--acc);color:#fff;font-size:.84rem;cursor:pointer;border:none;}
 .res-btn.ghost{background:var(--accBg);color:var(--accTx);}
-.toast{position:fixed;left:50%;top:16%;transform:translate(-50%,-10px);background:rgba(255,255,255,.88);border:1px solid var(--accB);color:#2c3e50;border-radius:12px;padding:9px 18px;font-size:.85rem;font-weight:600;backdrop-filter:blur(10px);opacity:0;transition:opacity .25s;pointer-events:none;z-index:3000;max-width:86vw;text-align:center;}
-.ach-pop{position:fixed;left:50%;top:22%;transform:translate(-50%,0);z-index:6000;background:rgba(255,255,255,.84);border:1px solid var(--accB);backdrop-filter:blur(14px);border-radius:16px;padding:12px 22px;text-align:center;font-weight:700;font-size:.95rem;color:#2c3e50;box-shadow:0 10px 30px rgba(31,45,61,.2);pointer-events:none;opacity:0;transition:opacity .25s;max-width:86vw;}
-.ach-pop small{display:block;color:#9aa5b1;font-weight:400;font-size:.75rem;margin-top:3px;}
+/* 提示不挡视野：顶部细条 + 短时消失 */
+.toast{position:fixed;left:50%;top:6px;transform:translate(-50%,-6px);background:rgba(255,255,255,.92);border:1px solid var(--accB);color:#2c3e50;border-radius:10px;padding:5px 12px;font-size:.78rem;font-weight:600;opacity:0;transition:opacity .2s;pointer-events:none;z-index:3000;max-width:72vw;text-align:center;}
+.ach-pop{position:fixed;left:50%;top:6px;transform:translate(-50%,-6px);z-index:6000;background:rgba(255,255,255,.92);border:1px solid var(--accB);border-radius:10px;padding:5px 14px;text-align:center;font-weight:700;font-size:.8rem;color:#2c3e50;pointer-events:none;opacity:0;transition:opacity .2s;max-width:72vw;}
+.ach-pop small{display:none;}
 body.dyn-pink .ach-pop{border-color:rgba(240,98,146,.6);background:rgba(255,242,247,.84);}
 body.dyn-green .ach-pop{border-color:rgba(111,158,99,.6);background:rgba(241,248,238,.84);}
 body.dyn-gold .ach-pop{border-color:rgba(214,168,67,.6);background:rgba(255,250,238,.86);}
@@ -101,34 +97,36 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     <div class="info"><span id="ppoStage">连接中…</span><span id="ppoLevel"></span></div>
     <div class="remind hide" id="ppoNotice"></div>
     <div class="mainrow">
-      <div class="boardbox" id="ppoBoardBox">
+      <div class="boardwrap">
         <div class="board" id="ppoBoard"></div>
-        <div class="chain" id="ppoChain"></div>
       </div>
       <div class="side">
         <div class="panel"><b>分数</b> <span id="ppoScore">0</span><br><b>最高连锁</b> <span id="ppoMaxChain">0</span><br><b>待落干扰</b> <span id="ppoPending">0</span></div>
         <div class="panel" style="text-align:center;"><b>下一个</b><div class="nextgrid" id="ppoNext"></div></div>
         <div class="panel"><div class="keys">
-          <span class="mode-opt" onclick="ppoKey('ccw')">↺</span>
-          <span class="mode-opt" onclick="ppoKey('cw')">↻</span>
-          <span class="mode-opt" onclick="ppoKey('hard')">⤓<small style="font-size:.6rem;margin-left:3px;">落底</small></span>
           <span class="mode-opt" onclick="ppoKey('left')">←</span>
-          <span class="mode-opt" ontouchstart="ppoSoft(true)" ontouchend="ppoSoft(false)" onmousedown="ppoSoft(true)" onmouseup="ppoSoft(false)" onmouseleave="ppoSoft(false)">↓<small style="font-size:.6rem;margin-left:3px;">加速</small></span>
+          <span class="mode-opt" onclick="ppoKey('ccw')">↺</span>
+          <span class="mode-opt" ontouchstart="ppoSoft(true)" ontouchend="ppoSoft(false)" onmousedown="ppoSoft(true)" onmouseup="ppoSoft(false)" onmouseleave="ppoSoft(false)">↓</span>
           <span class="mode-opt" onclick="ppoKey('right')">→</span>
+          <span class="mode-opt" onclick="ppoKey('cw')">↻</span>
+          <span class="mode-opt" onclick="ppoKey('hard')">⤓</span>
         </div></div>
       </div>
     </div>
+    <div class="chainbar" id="ppoChain"></div>
     <div class="opps" id="ppoOpps"></div>
     <div class="msg" id="ppoMsg"></div>
   </div>
-  <!-- 手机端操作层（大号磨砂主题色：左右移动 / 旋转 / 加速 / 落底；长按连发） -->
+  <!-- 手机端操作层：左侧（左移/逆时针/加速） · 右侧（右移/顺时针/落底），长按连发 -->
   <div class="pad" id="ppoPad">
-    <div class="pad-side left" data-act="left">‹</div>
-    <div class="pad-side right" data-act="right">›</div>
-    <div class="pad-bottom">
+    <div class="pad-col left">
+      <div class="pad-btn big" data-act="left">‹</div>
       <div class="pad-btn" data-act="ccw">↺</div>
-      <div class="pad-btn" data-act="cw">↻</div>
       <div class="pad-btn" data-act="soft">↓</div>
+    </div>
+    <div class="pad-col right">
+      <div class="pad-btn big" data-act="right">›</div>
+      <div class="pad-btn" data-act="cw">↻</div>
       <div class="pad-btn" data-act="hard">⤓</div>
     </div>
   </div>
@@ -157,7 +155,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   let lastNoticeSeq = 0, lastChainTs = 0, chainTimer = null, toastTimer = null;
   function dn(n){ return _dm[n] || n; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function toast(m){ const e=document.getElementById('ppoToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
+  function toast(m){ const e=document.getElementById('ppoToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>{e.style.opacity='0';},1700); }
   socket.on('connect', () => {
     socket.emit('heartbeat', myName, IS_T, true);
     setTimeout(() => { socket.emit('get_profile', r => { if (r && r.success && r.theme) { localStorage.setItem('myTheme', r.theme); applyPTheme(r.theme); } }); }, 200);
@@ -269,9 +267,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     document.getElementById('ppoScore').textContent = m ? m.score : 0;
     document.getElementById('ppoMaxChain').textContent = m ? m.maxChain : 0;
     document.getElementById('ppoPending').textContent = m ? m.pending : 0;
-    const box = document.getElementById('ppoBoardBox');
-    if (m && m.pending > 0) box.classList.add('danger'); else box.classList.remove('danger');
-    document.getElementById('ppoNext').innerHTML = (nextPair || []).map(v => '<div class="cell' + (v ? ' c' + v : '') + '"></div>').join('');
+    document.getElementById('ppoNext').innerHTML = (nextPair || []).map(v => '<div class="cell' + (v ? ' b' + v : '') + '"></div>').join('');
   }
   function renderBoard(){
     const el = document.getElementById('ppoBoard');
@@ -286,8 +282,8 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     for (let i = 0; i < 72; i++) {
       const v = Number(boardStr[i] || 0);
       const cls = ['cell'];
-      if (v) cls.push('c' + v);
-      else if (fallMap[i]) cls.push('c' + fallMap[i], 'fall');
+      if (v) cls.push('b' + v);
+      else if (fallMap[i]) cls.push('b' + fallMap[i], 'fall');
       html += '<div class="' + cls.join(' ') + '"></div>';
     }
     el.innerHTML = html;
@@ -300,10 +296,10 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       let html = '';
       for (let i = 0; i < 72; i++) {
         const v = Number((p.board || '')[i] || 0);
-        html += '<div class="cell' + (v ? ' c' + v : '') + '"></div>';
+        html += '<div class="cell' + (v ? ' b' + v : '') + '"></div>';
       }
       const rank = p.rank ? ('第 ' + p.rank + ' 名') : '';
-      const chainTag = (lc && lc.name === p.name) ? ('<br><span style="color:#b58a1e;font-weight:700;">' + lc.chain + ' 连锁！</span>') : '';
+      const chainTag = (lc && lc.name === p.name) ? ('<span class="tag">' + lc.chain + ' 连锁</span>') : '';
       return '<div class="opp' + (p.alive ? '' : ' out') + (p.pending > 0 ? ' attack' : '') + '">'
         + '<span class="nm">' + esc(dn(p.name)) + '</span>' + (p.ai ? '<span style="color:var(--accTx);font-size:.62rem;">（AI）</span>' : (p.offline ? '（离线）' : ''))
         + '<div class="ob">' + html + '</div>'
@@ -316,11 +312,12 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function renderChain(){
     const el = document.getElementById('ppoChain');
     const lc = S && S.lastChain;
-    // 只在自己达成连锁时弹大字；对手的连锁在对手小棋盘上以小标签提示（仿原版）
+    // 只在自己达成连锁时提示；对手的连锁在对手小棋盘上以小标签显示（仿原版）
     if (lc && lc.name === myName && lc.ts !== lastChainTs) {
       lastChainTs = lc.ts;
-      el.textContent = lc.chain + ' 连锁！';
+      el.textContent = '✨ ' + lc.chain + ' 连锁！';
       el.classList.add('show');
+      if (lc.chain >= 4) el.classList.add('big'); else el.classList.remove('big');
       clearTimeout(chainTimer);
       chainTimer = setTimeout(() => el.classList.remove('show'), 1400);
     }
@@ -351,7 +348,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const m = me();
     if (!m) { el.innerHTML = ''; return; }
     if (!m.alive) { el.innerHTML = '<span>你已被淘汰，本局名次：第 ' + m.rank + ' 名（等待其他玩家结束）</span>'; return; }
-    let txt = '键盘：←→ 移动　↑/X 顺时针　Z 逆时针　↓ 加速　空格 落底<br>手机：左右滑移动　轻点旋转　下滑加速　上滑落底（也可用右侧按钮）';
+    let txt = '键盘：←→ 移动　↑/X 顺时针　Z 逆时针　↓ 加速　空格 落底<br>手机：屏幕两侧大按钮（‹ › 移动，下面 ↺ ↻ 旋转、↓ 加速、⤓ 落底），长按可连发';
     if (m.pending > 0) txt += '<br><span style="color:#a5443f;font-weight:700;">注意：有 ' + m.pending + ' 颗干扰即将落下，达成连锁可相杀抵消！</span>';
     el.innerHTML = '<span>' + txt + '</span>';
   }
@@ -360,7 +357,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     if (!d || !d.name) return;
     const qLab = { common:'普通', rare:'稀有', epic:'史诗', legend:'传说', hidden:'隐藏' };
     ppoAchEl.innerHTML = '🏅 解锁成就「' + esc(d.name) + '」<small>' + ((d.quality && (qLab[d.quality] || d.quality)) || '') + (d.playerName ? ' · ' + esc(dn(d.playerName)) : '') + '</small>';
-    ppoAchEl.style.opacity = '1'; clearTimeout(ppoAchTimer); ppoAchTimer = setTimeout(function(){ ppoAchEl.style.opacity = '0'; }, 2600);
+    ppoAchEl.style.opacity = '1'; clearTimeout(ppoAchTimer); ppoAchTimer = setTimeout(function(){ ppoAchEl.style.opacity = '0'; }, 1900);
   });
   </script>
   <script src="/emoji-widget.js"></script>

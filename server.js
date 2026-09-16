@@ -2981,6 +2981,8 @@ function ppoGarbageOfChain(chain) {
   if (chain <= 1) return 0;
   return Math.min(30, Math.floor(chain * (chain - 1) / 2));
 }
+// 全消奖励（Zenkeshi）：连锁结算后棋盘被彻底清空 → 额外 30 颗干扰（原作关键机制）
+const PPO_ZENKESHI_GARBAGE = 30;
 
 function ppoNewPlayer(name, index, colors, ai) {
   return {
@@ -3091,8 +3093,10 @@ function ppoResolve(g, p, now) {
   if (!chain) return 0;
   p.maxChain = Math.max(p.maxChain, chain);
   g.lastChain = { name: p.name, chain, cleared: totalCleared, ts: now };
+  // 全消奖励（Zenkeshi）：棋盘被清空 → 额外 30 颗干扰
+  const zenkeshi = p.board.every(v => v === 0);
   // 干扰气泡：连锁数决定数量；先用本次连锁抵消待落干扰（相杀）
-  const send0 = ppoGarbageOfChain(chain);
+  const send0 = ppoGarbageOfChain(chain) + (zenkeshi ? PPO_ZENKESHI_GARBAGE : 0);
   let send = send0, offset = 0;
   if (send0 && p.pending > 0) {
     offset = Math.min(p.pending, send0);
@@ -3112,6 +3116,7 @@ function ppoResolve(g, p, now) {
   let txt = p.name + ' 达成 ' + chain + ' 连锁（消除 ' + totalCleared + ' 颗气泡';
   if (totalGarbage) txt += '、震碎 ' + totalGarbage + ' 颗干扰';
   txt += '，+' + gained + ' 分）';
+  if (zenkeshi) txt += '，全消（Zenkeshi）额外 ' + PPO_ZENKESHI_GARBAGE + ' 颗干扰';
   if (offset) txt += '，相杀抵消 ' + offset + ' 颗';
   if (send) txt += '，发出 ' + send + ' 颗干扰';
   ppoNotice(g, txt, chain >= 3 ? 'chain' : 'info');
