@@ -171,7 +171,7 @@
     window.addEventListener('pageshow', () => { paintSaved(); if (socket.connected) applyTheme(); });
     setInterval(sendHeartbeat, 10000);
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋', puyopuyo: '魔法气泡' };
     function gameLabel(k) { return GAME_LABEL[k] || k; }
     function statCell(lab, val) {
       return `<div class="st-cell">${lab}<b>${val}</b></div>`;
@@ -181,6 +181,7 @@
     let stAch = [];
     let stCareer = null;
     let stRoles = null;   // 技能五子棋：角色/人数统计
+    let stPuyo = null;    // 魔法气泡：总分/最高连锁统计
     let gmkViewMode = 'players';   // 技能五子棋视图：players=按人数（默认）/ roles=按角色
     function setGmkView(v) { gmkViewMode = v; renderStatsBox(); }
     let curGame = 'all';
@@ -288,6 +289,19 @@
         </div>
         <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">路墙棋战绩（名次分：第1名=人数、第2名=人数-1…）</div>
         ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrQuo(m)}</div>`).join('')}`;
+      } else if (curGame === 'puyopuyo') {
+        const py = stPuyo || { games: 0, wins: 0, winRate: 0, totalScore: 0, best: 0, bestChain: 0, totalChain: 0 };
+        html = `
+        <div class="st-grid two">
+          ${statCell('游玩场次', py.games)}
+          ${statCell('胜场', py.wins)}
+          ${statCell('胜率', py.games ? py.winRate + '%' : '—')}
+          ${statCell('累计总分', py.totalScore)}
+          ${statCell('单局最高分', py.best)}
+          ${statCell('最高连锁', py.bestChain)}
+        </div>
+        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">魔法气泡战绩（分数来自连锁消除，干扰气泡不计分）</div>
+        ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStr(m)}</div>`).join('')}`;
       } else if (curGame === 'gomoku') {
         const rl = stRoles || { total: 0, wins: 0, winRate: 0, totalFives: 0, rankModeGames: 0, totalRankScore: 0, byPlayers: [], rolesAll: [] };
         const byP = rl.byPlayers || [];
@@ -354,6 +368,7 @@
       stByGame = st.byGame || [];
       stCareer = res.drawingCareer || null;
       stRoles = res.gomokuRoles || null;
+      stPuyo = res.puyoStats || null;
       const status = res.online
         ? '在线'
         : (res.lastSeen ? `离线 · 上次在线 ${fmtShort(res.lastSeen)}` : '离线');

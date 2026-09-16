@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>魔法气泡</title>
+<style>
+/* 主题色变量：开关 / 按钮 / 选中态跟随个人空间主题 */
+:root{--acc:#4a90d9;--accB:rgba(74,144,217,.35);--accBg:rgba(74,144,217,.14);--accTx:#2f6fb2;}
+body.dyn-pink{--acc:#f06292;--accB:rgba(240,98,146,.42);--accBg:rgba(240,98,146,.14);--accTx:#c2185b;}
+body.dyn-green{--acc:#6f9e63;--accB:rgba(111,158,99,.42);--accBg:rgba(111,158,99,.14);--accTx:#4c7042;}
+body.dyn-gold{--acc:#d6a843;--accB:rgba(214,168,67,.46);--accBg:rgba(214,168,67,.15);--accTx:#9a7620;}
+body.dyn-red{--acc:#a6403a;--accB:rgba(166,64,58,.42);--accBg:rgba(166,64,58,.14);--accTx:#8c322c;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-serif;padding:10px;}
+.head{max-width:720px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;font-size:.9rem;}
+.head a{color:var(--acc);cursor:pointer;font-weight:600;margin-left:10px;}
+.wrap{max-width:720px;margin:0 auto;}
+.info{display:flex;justify-content:space-between;gap:8px;margin:8px 0 4px;font-size:.85rem;color:#6b7a90;flex-wrap:wrap;}
+.remind{max-width:720px;margin:4px auto;text-align:center;font-size:.8rem;color:var(--accTx);background:var(--accBg);border:1px solid var(--accB);border-radius:10px;padding:5px 10px;}
+.remind.hide{display:none;}
+.mainrow{display:flex;justify-content:center;align-items:flex-start;gap:14px;margin:6px 0;flex-wrap:wrap;}
+.boardbox{position:relative;padding:6px;border-radius:12px;background:rgba(255,255,255,.66);border:1px solid var(--accB);backdrop-filter:blur(8px);transition:box-shadow .2s;}
+.boardbox.danger{box-shadow:0 0 0 3px rgba(198,78,78,.35);}
+.board{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;background:rgba(44,62,80,.06);border-radius:8px;padding:3px;}
+.cell{width:min(7.2vw,30px);height:min(7.2vw,30px);border-radius:50%;background:rgba(44,62,80,.05);}
+.c1{background:#e7625c;} .c2{background:#e8c34a;} .c3{background:#6bb96b;}
+.c4{background:#5b8fd8;} .c5{background:#a874d8;} .c9{background:#9aa5b1;box-shadow:inset 0 0 0 2px rgba(255,255,255,.5);}
+.cell.fall{box-shadow:0 0 0 2px rgba(255,255,255,.95),0 0 6px rgba(31,45,61,.25);}
+.side{min-width:126px;display:flex;flex-direction:column;gap:6px;font-size:.8rem;color:#4a5b6d;}
+.panel{background:rgba(255,255,255,.7);border:1px solid var(--accB);border-radius:12px;padding:8px;backdrop-filter:blur(8px);}
+.panel b{color:var(--accTx);}
+.nextgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;justify-content:center;width:64px;margin:4px auto 0;}
+.nextgrid .cell{width:28px;height:28px;}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:2px;}
+.mode-opt{padding:6px 8px;border-radius:10px;border:1px solid #dfe3e8;background:#fff;cursor:pointer;font-size:.82rem;text-align:center;user-select:none;}
+.mode-opt:active,.mode-opt.on{border-color:var(--acc);background:var(--accBg);color:var(--accTx);font-weight:700;}
+.opps{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:8px 0;}
+.opp{background:rgba(255,255,255,.66);border:1px solid var(--accB);border-radius:12px;padding:6px;font-size:.72rem;color:#4a5b6d;text-align:center;}
+.opp.out{opacity:.5;}
+.opp.attack{border-color:rgba(198,78,78,.55);box-shadow:0 0 0 2px rgba(198,78,78,.18);}
+.opp .ob{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;margin:4px 0;}
+.opp .ob .cell{width:min(3.4vw,13px);height:min(3.4vw,13px);border-radius:50%;}
+.opp .nm{font-weight:700;}
+.chain{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);font-size:1.5rem;font-weight:900;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.45),0 0 2px rgba(0,0,0,.6);pointer-events:none;opacity:0;transition:opacity .2s,transform .2s;white-space:nowrap;}
+.chain.show{opacity:1;transform:translate(-50%,-50%) scale(1.12);}
+.msg{text-align:center;font-size:.86rem;color:#6b7a90;margin:8px 0;min-height:22px;}
+.msg{text-align:center;font-size:.86rem;color:#6b7a90;margin:8px 0;min-height:22px;}
+.res{max-width:480px;margin:8px auto;background:rgba(255,255,255,.84);backdrop-filter:blur(12px);border:1px solid var(--accB);border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 10px 28px rgba(31,45,61,.12);}
+.res-title{font-size:1.05rem;font-weight:800;margin-bottom:8px;}
+.res-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.6);border:1px solid var(--accB);margin-bottom:5px;font-size:.86rem;}
+.res-row.me{border-color:rgba(230,126,34,.6);background:rgba(255,247,230,.8);}
+.res-ach{margin-top:10px;border-top:1px dashed var(--accB);padding-top:8px;text-align:left;font-size:.8rem;}
+.res-ach .ra-title{font-weight:700;color:#2c3e50;margin-bottom:4px;}
+.res-ach .ra-row{display:flex;justify-content:space-between;gap:8px;padding:3px 2px;color:#6b7a90;flex-wrap:wrap;}
+.res-btns{display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap;}
+.res-btn{display:inline-block;padding:7px 16px;border-radius:10px;background:var(--acc);color:#fff;font-size:.84rem;cursor:pointer;border:none;}
+.res-btn.ghost{background:var(--accBg);color:var(--accTx);}
+.toast{position:fixed;left:50%;top:16%;transform:translate(-50%,-10px);background:rgba(255,255,255,.88);border:1px solid var(--accB);color:#2c3e50;border-radius:12px;padding:9px 18px;font-size:.85rem;font-weight:600;backdrop-filter:blur(10px);opacity:0;transition:opacity .25s;pointer-events:none;z-index:3000;max-width:86vw;text-align:center;}
+.ach-pop{position:fixed;left:50%;top:22%;transform:translate(-50%,0);z-index:6000;background:rgba(255,255,255,.84);border:1px solid var(--accB);backdrop-filter:blur(14px);border-radius:16px;padding:12px 22px;text-align:center;font-weight:700;font-size:.95rem;color:#2c3e50;box-shadow:0 10px 30px rgba(31,45,61,.2);pointer-events:none;opacity:0;transition:opacity .25s;max-width:86vw;}
+.ach-pop small{display:block;color:#9aa5b1;font-weight:400;font-size:.75rem;margin-top:3px;}
+body.dyn-pink .ach-pop{border-color:rgba(240,98,146,.6);background:rgba(255,242,247,.84);}
+body.dyn-green .ach-pop{border-color:rgba(111,158,99,.6);background:rgba(241,248,238,.84);}
+body.dyn-gold .ach-pop{border-color:rgba(214,168,67,.6);background:rgba(255,250,238,.86);}
+body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,241,.86);}
+</style>
+</head>
+<body>
+  <div class="head"><b>🫧 魔法气泡</b><span><a id="ppoCancelLb" onclick="ppoCancelVote()">取消对局</a><a onclick="ppoExit()">返回房间</a></span></div>
+  <div class="wrap">
+    <div class="info"><span id="ppoStage">连接中…</span><span id="ppoLevel"></span></div>
+    <div class="remind hide" id="ppoNotice"></div>
+    <div class="mainrow">
+      <div class="boardbox" id="ppoBoardBox">
+        <div class="board" id="ppoBoard"></div>
+        <div class="chain" id="ppoChain"></div>
+      </div>
+      <div class="side">
+        <div class="panel"><b>分数</b> <span id="ppoScore">0</span><br><b>最高连锁</b> <span id="ppoMaxChain">0</span><br><b>待落干扰</b> <span id="ppoPending">0</span></div>
+        <div class="panel" style="text-align:center;"><b>下一个</b><div class="nextgrid" id="ppoNext"></div></div>
+        <div class="panel"><div class="keys">
+          <span class="mode-opt" onclick="ppoKey('ccw')">↺</span>
+          <span class="mode-opt" onclick="ppoKey('cw')">↻</span>
+          <span class="mode-opt" onclick="ppoKey('hard')">⤓</span>
+          <span class="mode-opt" onclick="ppoKey('left')">←</span>
+          <span class="mode-opt" ontouchstart="ppoSoft(true)" ontouchend="ppoSoft(false)" onmousedown="ppoSoft(true)" onmouseup="ppoSoft(false)" onmouseleave="ppoSoft(false)">↓</span>
+          <span class="mode-opt" onclick="ppoKey('right')">→</span>
+        </div></div>
+      </div>
+    </div>
+    <div class="opps" id="ppoOpps"></div>
+    <div class="msg" id="ppoMsg"></div>
+  </div>
+  <div class="toast" id="ppoToast"></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  const myName = sessionStorage.getItem('playerName');
+  if (!myName) location.href = '/index.html';
+  // 主题：与其它游戏页同一套身份 → 主题映射
+  const P_IMG = { p1:'/assets/avatars/p1/beijing.png.jpg', p2:'/assets/avatars/p2/zuixin2.jpg', p3:'/assets/avatars/p3/zuixin3.jpg', p4:'/assets/avatars/p4/beijing4.jpg', pomelo:'/assets/avatars/p3/nene.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const P_MOB = { p4:'/assets/avatars/p4/zuixin4.jpg', pomelo:'/assets/avatars/p3/nene2.jpg', agly:'/assets/avatars/p1/agly/aglybj.jpg', lyff:'/assets/avatars/p4/lyff/lyffbj.jpg' };
+  const P_ALPHA = { p1:.82, p2:.75, p3:.75, p4:.82, pomelo:.6, agly:.82, lyff:.8 };
+  function applyPTheme(t){
+    const mobile = window.matchMedia('(max-width: 768px)').matches;
+    document.body.classList.remove('dyn-pink','dyn-green','dyn-gold','dyn-red');
+    if (!t || t === 'initial') { document.body.style.backgroundImage=''; document.body.style.backgroundSize=''; document.body.style.backgroundAttachment=''; document.body.style.backgroundPosition=''; return; }
+    const cls = (t==='agly')?'dyn-gold':((t==='lyff')?'dyn-red':((t==='p3'||t==='pomelo')?'dyn-green':'dyn-pink'));
+    document.body.classList.add(cls);
+    const img = (mobile && P_MOB[t]) ? P_MOB[t] : (P_IMG[t] || '');
+    if (img) { const a = P_ALPHA[t] || .82; document.body.style.backgroundImage = "linear-gradient(rgba(255,255,255,"+a+"),rgba(255,255,255,"+a+")),url('"+img+"')"; document.body.style.backgroundSize='cover'; document.body.style.backgroundAttachment = mobile?'scroll':'fixed'; document.body.style.backgroundPosition='center'; }
+  }
+  applyPTheme(localStorage.getItem('myTheme'));
+  const socket = io();
+  const IS_T = sessionStorage.getItem('isTest') === 'true';
+  let S = null, _dm = {}, piece = null, boardStr = '', nextPair = [0, 0], achSum = {};
+  let lastNoticeSeq = 0, lastChainTs = 0, chainTimer = null, toastTimer = null;
+  function dn(n){ return _dm[n] || n; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function toast(m){ const e=document.getElementById('ppoToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
+  socket.on('connect', () => {
+    socket.emit('heartbeat', myName, IS_T, true);
+    setTimeout(() => { socket.emit('get_profile', r => { if (r && r.success && r.theme) { localStorage.setItem('myTheme', r.theme); applyPTheme(r.theme); } }); }, 200);
+    socket.emit('get_display_names', res => { if (res && res.success) { _dm = res.map; render(); } });
+    setTimeout(() => {
+      socket.emit('puyopuyo_enter');
+      socket.emit('puyopuyo_pull', res => { if (res && res.success) adopt(res); });
+    }, 400);
+  });
+  setInterval(() => socket.emit('heartbeat', myName, IS_T, true), 10000);
+  socket.on('puyopuyo_state', s => adopt(s));
+  socket.on('puyopuyo_cancel', () => { location.href = '/room.html?game=puyopuyo'; });
+  socket.on('achievement_summary', d => { if (d && d.players) { achSum = d.players; render(); } });
+  setInterval(() => {
+    if (!socket.connected) return;
+    socket.emit('puyopuyo_pull', res => {
+      if (res && res.success) { adopt(res); return; }
+      if (!(S && S.over)) location.href = '/room.html?game=puyopuyo';
+    });
+  }, 2000);
+  function adopt(s){
+    S = s;
+    if (s.me) {
+      boardStr = s.me.board || '';
+      piece = s.me.piece ? { r: s.me.piece.r, c: s.me.piece.c, orient: s.me.piece.orient, colors: s.me.piece.colors.slice() } : null;
+      nextPair = (s.me.next && s.me.next.colors) ? s.me.next.colors.slice() : [0, 0];
+    }
+    render();
+  }
+  // ===== 操作 =====
+  function ppoKey(a){
+    socket.emit('puyopuyo_input', { action: a }, res => { if (res && !res.success && res.msg) toast(res.msg); });
+    if (!piece) return;
+    if (a === 'left') piece.c = Math.max(0, piece.c - 1);
+    else if (a === 'right') piece.c = Math.min(5, piece.c + 1);
+    else if (a === 'cw') piece.orient = (piece.orient + 1) % 4;
+    else if (a === 'ccw') piece.orient = (piece.orient + 3) % 4;
+    else if (a === 'hard') piece = null;
+    render();
+  }
+  function ppoSoft(on){ socket.emit('puyopuyo_input', { action: 'soft', on: !!on }); }
+  function ppoCancelVote(){ socket.emit('puyopuyo_cancel_vote', {}); }
+  function ppoExit(){ location.href = '/room.html?game=puyopuyo'; }
+  document.addEventListener('keydown', e => {
+    const k = e.key;
+    if (k === 'ArrowLeft') { ppoKey('left'); e.preventDefault(); }
+    else if (k === 'ArrowRight') { ppoKey('right'); e.preventDefault(); }
+    else if (k === 'ArrowUp' || k === 'x' || k === 'X') { ppoKey('cw'); e.preventDefault(); }
+    else if (k === 'z' || k === 'Z') { ppoKey('ccw'); e.preventDefault(); }
+    else if (k === 'ArrowDown') { if (!e.repeat) ppoSoft(true); e.preventDefault(); }
+    else if (k === ' ') { ppoKey('hard'); e.preventDefault(); }
+  });
+  document.addEventListener('keyup', e => { if (e.key === 'ArrowDown') ppoSoft(false); });
+  // ===== 渲染 =====
+  const ORI = [[-1, 0], [0, 1], [1, 0], [0, -1]];
+  function me(){ return S && S.me ? S.me : null; }
+  function render(){
+    if (!S) return;
+    document.getElementById('ppoStage').textContent = S.over ? '对局结束' : '对局进行中';
+    document.getElementById('ppoLevel').textContent = '关卡 ' + (S.level || 1) + '　·　' + (S.colors === 5 ? '5 色' : '4 色') + '　·　干扰发给' + (S.garbageMode === 'random' ? '随机一人' : '所有对手');
+    const cl = document.getElementById('ppoCancelLb');
+    const total = (S.players || []).length, votes = (S.cancelVotes || []).length;
+    if (cl) cl.textContent = '取消对局' + (votes ? ('（' + votes + '/' + total + '）') : '');
+    renderNotice(); renderSide(); renderBoard(); renderOpps(); renderChain(); renderMsg();
+  }
+  function renderNotice(){
+    const el = document.getElementById('ppoNotice');
+    if (!S || !S.notice) { el.className = 'remind hide'; el.innerHTML = ''; return; }
+    if (S.notice.seq !== lastNoticeSeq) { lastNoticeSeq = S.notice.seq; if (S.notice.text) toast(S.notice.text); }
+    el.className = 'remind';
+    el.style.background = S.notice.kind === 'chain' ? 'rgba(214,168,67,.16)' : '';
+    el.style.borderColor = S.notice.kind === 'chain' ? 'rgba(214,168,67,.5)' : '';
+    el.innerHTML = '📣 ' + esc(S.notice.text);
+  }
+  function renderSide(){
+    const m = me();
+    document.getElementById('ppoScore').textContent = m ? m.score : 0;
+    document.getElementById('ppoMaxChain').textContent = m ? m.maxChain : 0;
+    document.getElementById('ppoPending').textContent = m ? m.pending : 0;
+    const box = document.getElementById('ppoBoardBox');
+    if (m && m.pending > 0) box.classList.add('danger'); else box.classList.remove('danger');
+    document.getElementById('ppoNext').innerHTML = (nextPair || []).map(v => '<div class="cell' + (v ? ' c' + v : '') + '"></div>').join('');
+  }
+  function renderBoard(){
+    const el = document.getElementById('ppoBoard');
+    const fallMap = {};
+    if (piece && S && S.phase === 'play' && !S.over) {
+      const [dr, dc] = ORI[piece.orient];
+      fallMap[piece.r * 6 + piece.c] = piece.colors[0];
+      const cr = piece.r + dr, cc = piece.c + dc;
+      if (cr >= 0 && cr < 12 && cc >= 0 && cc < 6) fallMap[cr * 6 + cc] = piece.colors[1];
+    }
+    let html = '';
+    for (let i = 0; i < 72; i++) {
+      const v = Number(boardStr[i] || 0);
+      const cls = ['cell'];
+      if (v) cls.push('c' + v);
+      else if (fallMap[i]) cls.push('c' + fallMap[i], 'fall');
+      html += '<div class="' + cls.join(' ') + '"></div>';
+    }
+    el.innerHTML = html;
+  }
+  function renderOpps(){
+    const el = document.getElementById('ppoOpps');
+    if (!S || !S.players) { el.innerHTML = ''; return; }
+    el.innerHTML = S.players.filter(p => p.name !== myName).map(p => {
+      let html = '';
+      for (let i = 0; i < 72; i++) {
+        const v = Number((p.board || '')[i] || 0);
+        html += '<div class="cell' + (v ? ' c' + v : '') + '"></div>';
+      }
+      const rank = p.rank ? ('第 ' + p.rank + ' 名') : '';
+      return '<div class="opp' + (p.alive ? '' : ' out') + (p.pending > 0 ? ' attack' : '') + '">'
+        + '<span class="nm">' + esc(dn(p.name)) + '</span>' + (p.offline ? '（离线）' : '')
+        + '<div class="ob">' + html + '</div>'
+        + '<span>' + p.score + ' 分' + (p.maxChain > 1 ? (' · ' + p.maxChain + ' 连锁') : '') + (rank ? (' · ' + rank) : '') + '</span>'
+        + (p.pending > 0 ? ('<br><span style="color:#a5443f;">待落干扰 ' + p.pending + '</span>') : '')
+        + '</div>';
+    }).join('');
+  }
+  function renderChain(){
+    const el = document.getElementById('ppoChain');
+    const lc = S && S.lastChain;
+    if (lc && lc.ts !== lastChainTs) {
+      lastChainTs = lc.ts;
+      el.textContent = lc.chain + ' 连锁！' + (lc.name === myName ? '' : '（' + dn(lc.name) + '）');
+      el.classList.add('show');
+      clearTimeout(chainTimer);
+      chainTimer = setTimeout(() => el.classList.remove('show'), 1400);
+    }
+  }
+  function renderMsg(){
+    const el = document.getElementById('ppoMsg');
+    if (!S) { el.innerHTML = ''; return; }
+    if (S.over) {
+      const qC = { common:'#9aa5b1', rare:'#4caf50', epic:'#9c27b0', legend:'#ff9800', hidden:'#d32f2f' };
+      const rows = (S.over.ranking || []).map(r => {
+        const mine = r.name === myName;
+        return '<div class="res-row' + (mine ? ' me' : '') + '"><span>第 ' + r.rank + ' 名　' + esc(dn(r.name)) + '</span>'
+          + '<span style="font-size:.8rem;color:#6b7a90;">' + r.score + ' 分 · 最高 ' + r.maxChain + ' 连锁</span></div>';
+      }).join('');
+      const achRows = Object.keys(achSum || {}).map(n => {
+        const arr = achSum[n] || [];
+        if (!arr.length) return '';
+        return '<div class="ra-row"><b>' + esc(dn(n)) + '</b><span>'
+          + arr.map(a => '<span style="color:' + (qC[a.quality] || '#2c3e50') + ';font-weight:600;">' + esc(a.name) + '</span>').join('　')
+          + '</span></div>';
+      }).filter(Boolean).join('');
+      el.innerHTML = '<div class="res"><div class="res-title">' + (S.over.winner ? (esc(dn(S.over.winner)) + ' 存活到最后 · 获胜') : '对局结束') + '</div>'
+        + rows
+        + (achRows ? '<div class="res-ach"><div class="ra-title">本局成就</div>' + achRows + '</div>' : '')
+        + '<div class="res-btns"><button class="res-btn ghost" onclick="ppoExit()">返回房间</button></div></div>';
+      return;
+    }
+    const m = me();
+    if (!m) { el.innerHTML = ''; return; }
+    if (!m.alive) { el.innerHTML = '<span>你已被淘汰，本局名次：第 ' + m.rank + ' 名（等待其他玩家结束）</span>'; return; }
+    let txt = '←→ 移动　↑/X 顺时针　Z 逆时针　↓ 加速　空格 直接落底';
+    if (m.pending > 0) txt += '<br><span style="color:#a5443f;font-weight:700;">注意：有 ' + m.pending + ' 颗干扰即将落下，达成连锁可相杀抵消！</span>';
+    el.innerHTML = '<span>' + txt + '</span>';
+  }
+  const ppoAchEl = document.createElement('div'); ppoAchEl.className = 'ach-pop'; document.body.appendChild(ppoAchEl); let ppoAchTimer = null;
+  socket.on('achievement_unlocked', function(d){
+    if (!d || !d.name) return;
+    const qLab = { common:'普通', rare:'稀有', epic:'史诗', legend:'传说', hidden:'隐藏' };
+    ppoAchEl.innerHTML = '🏅 解锁成就「' + esc(d.name) + '」<small>' + ((d.quality && (qLab[d.quality] || d.quality)) || '') + (d.playerName ? ' · ' + esc(dn(d.playerName)) : '') + '</small>';
+    ppoAchEl.style.opacity = '1'; clearTimeout(ppoAchTimer); ppoAchTimer = setTimeout(function(){ ppoAchEl.style.opacity = '0'; }, 2600);
+  });
+  </script>
+  <script src="/emoji-widget.js"></script>
+</body>
+</html>
+

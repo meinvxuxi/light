@@ -149,6 +149,15 @@
         <option value="gm_slow">手慢无（隐藏）</option>
         <option value="gm_fool">愚言家（隐藏）</option>
       </optgroup>
+      <optgroup label="魔法气泡">
+        <option value="pp_chain3">连锁大师·铜（普通）</option>
+        <option value="pp_chain5">连锁大师·银（稀有）</option>
+        <option value="pp_gun">泡泡枪（稀有）</option>
+        <option value="pp_chain7">连锁大师·金（史诗）</option>
+        <option value="pp_empty">世界一无所有（史诗）</option>
+        <option value="pp_save">扶大厦于将倾（史诗）</option>
+        <option value="pp_chain9">连锁大师·钻（传说）</option>
+      </optgroup>
     </select>
     <button class="btn-trigger" onclick="triggerAchievement()">触发</button>
     <button class="btn-info" onclick="window.location.href='/achievements.html'">查看荣誉墙</button>
@@ -170,6 +179,9 @@
     <br>
     <button class="btn-trigger" onclick="triggerGmk('me')">⚫ 一键触发全部技能五子棋成就（当前账号）</button>
     <button class="btn-trigger" onclick="triggerGmk('all')">⚫ 给四个测试号各触发全部技能五子棋成就</button>
+    <br>
+    <button class="btn-trigger" onclick="triggerPuyo('me')">🫧 一键触发全部魔法气泡成就（当前账号）</button>
+    <button class="btn-trigger" onclick="triggerPuyo('all')">🫧 给四个测试号各触发全部魔法气泡成就</button>
     <br>
     <button class="btn-trigger" onclick="guestAchDemo()">📢 模拟游客稀有成就 → 游客留言板</button>
     <br>
@@ -359,6 +371,18 @@
       socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
         if (res && res.success) {
           log(`✅ 已批量触发 ${res.count} 条技能五子棋成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
+        } else {
+          log('❌ ' + ((res && res.msg) || '触发失败'));
+        }
+      });
+    }
+
+    function triggerPuyo(scope) {
+      const ids = ['pp_chain3', 'pp_chain5', 'pp_chain7', 'pp_chain9', 'pp_gun', 'pp_empty', 'pp_save'];
+      const targets = scope === 'all' ? ['测试者1', '测试者2', '测试者3', '测试者4'] : undefined;
+      socket.emit('test_trigger_achievements', { ids, targets }, (res) => {
+        if (res && res.success) {
+          log(`✅ 已批量触发 ${res.count} 条魔法气泡成就记录` + (scope === 'all' ? '（四名测试号）' : '（当前账号）') + '，可去个人空间/荣誉墙查看头衔');
         } else {
           log('❌ ' + ((res && res.msg) || '触发失败'));
         }

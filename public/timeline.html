@@ -48,7 +48,7 @@
     if (!myName) { window.location.href = '/index.html'; }
     if (sessionStorage.getItem('isGuest') === 'true') { window.location.href = '/lobby.html'; }
 
-    const GAME_LABEL = { yahtzee: '快艇骰子', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋', puyopuyo: '魔法气泡' };
     const quoRecs = {};
     function quoEsc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
     function toggleQuoRecord(id){
@@ -105,6 +105,9 @@
               if (isGmk) {
                 const rl = (it.roles || []).find(x => x.name === r.name);
                 return `第${r.rank}名　${dn(r.name)}${rl && rl.role ? ('　' + rl.role) : ''}　五连 ${r.fives != null ? r.fives : '?'}${it.rankMode ? ('　名次分 ' + (r.score || 0)) : ''}`;
+              }
+              if (it.game === 'puyopuyo') {
+                return `第${r.rank}名　${dn(r.name)}　${r.score || 0} 分　最高 ${r.maxChain || 0} 连锁`;
               }
               if (isQuo) {
                 const wl = (it.walls || []).find(x => x.name === r.name);

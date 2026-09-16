@@ -146,6 +146,16 @@ const GAME_ROOMS = {
     spectators: [],
     playerMap: new Map(),
     leaveTimers: {}
+  },
+  puyopuyo: {
+    roomId: 'puyopuyo_001',
+    gameType: 'puyopuyo',
+    hostName: null,
+    maxPlayers: 4,
+    seats: { 1: null, 2: null, 3: null, 4: null },
+    spectators: [],
+    playerMap: new Map(),
+    leaveTimers: {}
   }
 };
 
@@ -216,6 +226,13 @@ const ACH_TITLES_BY_GAME = {
     rare: '敢问路在何方',
     epic: '不可一世的堵徒',
     legend: '终将抵达的彼岸'
+  },
+  // 魔法气泡系列（2026-09-16 按 puyopuyo.md 九.1）
+  puyopuyo: {
+    common: '漂流手札',
+    rare: '天际万彩斑斓',
+    epic: '连结万物之诗',
+    legend: '彩虹糖，彩虹桥'
   }
 };
 const ACH_TITLE_ORDER = ['common', 'rare', 'epic', 'legend'];
@@ -365,6 +382,23 @@ function buildGomokuRoles(name) {
   return { total, wins, winRate: rate(total, wins), totalFives, rankModeGames, totalRankScore, byPlayers: byPlayersArr, rolesAll };
 }
 
+
+// 魔法气泡个人战绩：场次/胜场/胜率/累计总分/单局最高分/最高连锁
+function buildPuyoStats(name) {
+  let games = 0, wins = 0, totalScore = 0, best = 0, bestChain = 0, totalChain = 0;
+  for (const e of timelineEntries) {
+    if (e.type !== 'game' || e.game !== 'puyopuyo') continue;
+    const my = (e.results || []).find(r => r.name === name);
+    if (!my) continue;
+    games++;
+    const sc = Number(my.score) || 0, ch = Number(my.maxChain) || 0;
+    totalScore += sc; totalChain += ch;
+    if (sc > best) best = sc;
+    if (ch > bestChain) bestChain = ch;
+    if (my.rank === 1) wins++;
+  }
+  return { games, wins, winRate: games ? Math.round(wins / games * 100) : 0, totalScore, best, bestChain, totalChain };
+}
 
 // ===== 快艇排行榜：单局最高分（正式/测试/游客的真实对局都会记录；开发期内存，重启清空） =====
 let highScoreBoard = new Map(); // 玩家名 -> 单局最高总分
@@ -1004,7 +1038,15 @@ const ACHIEVEMENTS = {
   gm_seal:      { name: '此树是我栽此格是我占', quality: 'common', game: 'gomoku' },
   gm_clean:     { name: '大扫除',          quality: 'common', game: 'gomoku' },
   gm_detective: { name: '真相不止一个',    quality: 'common', game: 'gomoku' },
-  gm_soul:      { name: '中元快乐',        quality: 'rare',   game: 'gomoku' }
+  gm_soul:      { name: '中元快乐',        quality: 'rare',   game: 'gomoku' },
+  // ===== 魔法气泡（puyopuyo）成就（按 puyopuyo.md 第九章） =====
+  pp_chain3:    { name: '连锁大师·铜',    quality: 'common', game: 'puyopuyo' },
+  pp_chain5:    { name: '连锁大师·银',    quality: 'rare',   game: 'puyopuyo' },
+  pp_chain7:    { name: '连锁大师·金',    quality: 'epic',   game: 'puyopuyo' },
+  pp_chain9:    { name: '连锁大师·钻',    quality: 'legend', game: 'puyopuyo' },
+  pp_gun:       { name: '泡泡枪',          quality: 'rare',   game: 'puyopuyo' },
+  pp_empty:     { name: '世界一无所有',    quality: 'epic',   game: 'puyopuyo' },
+  pp_save:      { name: '扶大厦于将倾',    quality: 'epic',   game: 'puyopuyo' }
 };
 // 成就 → 专属头衔（技能五子棋）
 const ACH_TITLE_BY_ID = {
@@ -1216,9 +1258,10 @@ const GAME_URL_MAP = {
   minesweeper: '/minesweeper.html',
   othello: '/othello.html',
   quoridor: '/quoridor.html',
-  gomoku: '/gomoku.html'
+  gomoku: '/gomoku.html',
+  puyopuyo: '/puyopuyo.html'
 };
-const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋' };
+const GAME_NAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋', puyopuyo: '魔法气泡' };
 const ACH_Q_LABEL = { common: '普通', rare: '稀有', epic: '史诗', legend: '传说', hidden: '隐藏' };
 
 const yahtzeeGames = {};
@@ -2843,6 +2886,382 @@ function recordGomokuGame(g) {
 
 
 
+// ======================== 魔法气泡 PuyoPuyo 核心 ========================
+// 规格见 development/制作笔记/puyopuyo.md：6×12、2~4 人独立棋盘、连锁→干扰气泡→相杀
+const PPO_COLS = 6;
+const PPO_ROWS = 12;
+const PPO_CELLS = PPO_COLS * PPO_ROWS;
+const PPO_TICK_MS = 80;              // 服务端节拍（≈12.5Hz）
+const PPO_GARBAGE = 9;               // 干扰气泡
+const PPO_ORIENT = [[-1, 0], [0, 1], [1, 0], [0, -1]];   // 附属气泡：上/右/下/左
+const PPO_CHAIN_MULT = [1, 2, 4, 8, 16];                 // 连锁倍率（5 连锁及以上 ×16）
+const PPO_LOCK_DELAY = 350;          // 落地缓冲（ms）
+const PPO_GARBAGE_DELAY = 1200;      // 干扰气泡延迟落地（ms）＝相杀窗口
+const PPO_OFFLINE_ELIM_MS = 45000;   // 离线超过该时长判定淘汰（实时对战防卡）
+const PPO_DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const puyopuyoGames = {};            // roomId -> 对局
+const puyoAtGame = new Map();        // playerName -> 当前打开气泡页的 socket.id
+
+function ppoIn(r, c) { return r >= 0 && r < PPO_ROWS && c >= 0 && c < PPO_COLS; }
+function ppoI(r, c) { return r * PPO_COLS + c; }
+function ppoRand(colors) { return 1 + Math.floor(Math.random() * colors); }
+function ppoMakePiece(colors) { return { r: 1, c: 2, orient: 0, colors: [ppoRand(colors), ppoRand(colors)] }; }
+function ppoLevel(g, now) { return Math.max(1, Math.min(10, 1 + Math.floor(((now || Date.now()) - g.startedAt) / 30000))); }
+function ppoFallMs(level) { return Math.max(140, 820 - (level - 1) * 70); }
+function ppoHeight(p) {
+  for (let r = 0; r < PPO_ROWS; r++) for (let c = 0; c < PPO_COLS; c++) if (p.board[ppoI(r, c)]) return PPO_ROWS - r;
+  return 0;
+}
+function ppoPieceCells(piece) {
+  const [dr, dc] = PPO_ORIENT[piece.orient];
+  return [piece.r, piece.c, piece.r + dr, piece.c + dc];
+}
+function ppoFits(p, piece) {
+  const [ar, ac, cr, cc] = ppoPieceCells(piece);
+  if (!ppoIn(ar, ac) || !ppoIn(cr, cc)) return false;
+  return p.board[ppoI(ar, ac)] === 0 && p.board[ppoI(cr, cc)] === 0;
+}
+function ppoCanFall(p) {
+  if (!p.piece) return false;
+  return ppoFits(p, Object.assign({}, p.piece, { r: p.piece.r + 1 }));
+}
+function ppoMove(p, dc) {
+  if (!p.piece) return false;
+  const np = Object.assign({}, p.piece, { c: p.piece.c + dc });
+  if (!ppoFits(p, np)) return false;
+  p.piece = np; p.lockAcc = 0; return true;
+}
+// 旋转（顺/逆时针），带简单踢墙：原位 → 左右 1 格 → 左右 2 格
+function ppoRotate(p, dir) {
+  if (!p.piece) return false;
+  const o = (p.piece.orient + (dir > 0 ? 1 : 3)) % 4;
+  for (const off of [0, -1, 1, -2, 2]) {
+    const np = Object.assign({}, p.piece, { orient: o, c: p.piece.c + off });
+    if (ppoFits(p, np)) { p.piece = np; p.lockAcc = 0; return true; }
+  }
+  return false;
+}
+// 重力：每列向下压实
+function ppoGravity(p) {
+  for (let c = 0; c < PPO_COLS; c++) {
+    const col = [];
+    for (let r = PPO_ROWS - 1; r >= 0; r--) if (p.board[ppoI(r, c)]) col.push(p.board[ppoI(r, c)]);
+    for (let r = PPO_ROWS - 1, k = 0; r >= 0; r--, k++) p.board[ppoI(r, c)] = k < col.length ? col[k] : 0;
+  }
+}
+// BFS 找出所有 ≥4 的同色连通组（干扰气泡不参与）
+function ppoGroups(p) {
+  const seen = new Array(PPO_CELLS).fill(false);
+  const groups = [];
+  for (let i = 0; i < PPO_CELLS; i++) {
+    const col = p.board[i];
+    if (!col || col === PPO_GARBAGE || seen[i]) continue;
+    const stack = [i], cells = [];
+    seen[i] = true;
+    while (stack.length) {
+      const cur = stack.pop();
+      cells.push(cur);
+      const r = Math.floor(cur / PPO_COLS), c = cur % PPO_COLS;
+      for (const [dr, dc] of PPO_DIRS4) {
+        const nr = r + dr, nc = c + dc;
+        if (!ppoIn(nr, nc)) continue;
+        const ni = ppoI(nr, nc);
+        if (seen[ni] || p.board[ni] !== col) continue;
+        seen[ni] = true; stack.push(ni);
+      }
+    }
+    if (cells.length >= 4) groups.push({ color: col, cells });
+  }
+  return groups;
+}
+// 连锁 → 发送干扰数（1连锁 0、2连锁 1、3连锁 3、4连锁 6、5连锁 10，之后每级 +4，上限 30）
+function ppoGarbageOfChain(chain) {
+  if (chain <= 1) return 0;
+  if (chain === 2) return 1;
+  if (chain === 3) return 3;
+  if (chain === 4) return 6;
+  if (chain === 5) return 10;
+  return Math.min(30, 10 + (chain - 5) * 4);
+}
+
+function ppoNewPlayer(name, index, colors) {
+  return {
+    name, index, board: new Array(PPO_CELLS).fill(0),
+    piece: null, next: ppoMakePiece(colors),
+    pending: 0, pendingAt: 0, score: 0, maxChain: 0, maxCleared: 0,
+    alive: true, rank: 0, fallAcc: 0, lockAcc: 0, soft: false,
+    offlineSince: 0, heightBeforeChain: 0, played: 0
+  };
+}
+function ppoNotice(g, text, kind) {
+  g.seq = (g.seq || 0) + 1;
+  g.notice = { text, kind: kind || 'info', seq: g.seq, ts: Date.now() };
+}
+function ppoInit(room, names, opts) {
+  const colors = (opts && opts.colors === 5) ? 5 : 4;
+  const now = Date.now();
+  const g = {
+    roomId: room.roomId, gameType: 'puyopuyo', phase: 'play',
+    playerOrder: names.slice(), colors,
+    garbageMode: (opts && opts.garbageMode === 'random') ? 'random' : 'all',
+    startedAt: now, lastTick: now, lastBroadcast: 0,
+    players: names.map((n, i) => ppoNewPlayer(n, i, colors)),
+    ranking: [], over: null, notice: null, seq: 0, cancelVotes: [], _recorded: false
+  };
+  g.players.forEach(p => ppoSpawn(g, p, now));
+  return g;
+}
+// 生成下一对（用 next 的颜色）；生成位被占 → 该玩家失败
+function ppoSpawn(g, p, now) {
+  const src = p.next || ppoMakePiece(g.colors);
+  p.piece = { r: 1, c: 2, orient: 0, colors: src.colors.slice() };
+  p.next = ppoMakePiece(g.colors);
+  p.fallAcc = 0; p.lockAcc = 0; p.soft = false;
+  if (!ppoFits(p, p.piece)) {
+    p.piece = null;
+    ppoEliminate(g, p, 'stack', now);
+    return false;
+  }
+  return true;
+}
+// 干扰气泡落地（每 tick 最多 2 颗；随机列、落在该列堆顶）
+function ppoDropGarbage(p, now) {
+  if (!p.pending || now < p.pendingAt) return false;
+  let dropped = 0;
+  const n = Math.min(p.pending, 2);
+  for (let k = 0; k < n; k++) {
+    const cols = [];
+    for (let c = 0; c < PPO_COLS; c++) if (p.board[ppoI(0, c)] === 0) cols.push(c);
+    if (!cols.length) break;
+    const c = cols[Math.floor(Math.random() * cols.length)];
+    let r = -1;
+    for (let rr = PPO_ROWS - 1; rr >= 0; rr--) if (p.board[ppoI(rr, c)] === 0) { r = rr; break; }
+    if (r < 0) break;
+    p.board[ppoI(r, c)] = PPO_GARBAGE;
+    p.pending--; dropped++;
+  }
+  if (p.pending <= 0) { p.pending = 0; p.pendingAt = 0; }
+  return dropped > 0;
+}
+// 落地 → 连锁结算 → 生成新对
+function ppoLock(g, p, now) {
+  if (!p.piece) return;
+  const [ar, ac, cr, cc] = ppoPieceCells(p.piece);
+  p.board[ppoI(ar, ac)] = p.piece.colors[0];
+  p.board[ppoI(cr, cc)] = p.piece.colors[1];
+  p.piece = null;
+  p.played++;
+  p.heightBeforeChain = ppoHeight(p);
+  ppoResolve(g, p, now);
+  if (g.over) return;
+  ppoSpawn(g, p, now);
+}
+// 连锁结算：BFS 消除 → 重力 → 再检测；返回连锁数
+function ppoResolve(g, p, now) {
+  let chain = 0, totalCleared = 0, totalGarbage = 0, gained = 0;
+  for (;;) {
+    const groups = ppoGroups(p);
+    if (!groups.length) break;
+    chain++;
+    const remove = new Set();
+    groups.forEach(gr => gr.cells.forEach(i => remove.add(i)));
+    const cleared = remove.size;
+    const gb = new Set();
+    remove.forEach(i => {
+      const r = Math.floor(i / PPO_COLS), c = i % PPO_COLS;
+      for (const [dr, dc] of PPO_DIRS4) {
+        const nr = r + dr, nc = c + dc;
+        if (!ppoIn(nr, nc)) continue;
+        const ni = ppoI(nr, nc);
+        if (p.board[ni] === PPO_GARBAGE) gb.add(ni);
+      }
+    });
+    const mult = PPO_CHAIN_MULT[Math.min(chain, PPO_CHAIN_MULT.length) - 1];
+    const add = cleared * 10 * mult;
+    p.score += add; gained += add;
+    p.maxCleared = Math.max(p.maxCleared, cleared);
+    totalCleared += cleared; totalGarbage += gb.size;
+    remove.forEach(i => { p.board[i] = 0; });
+    gb.forEach(i => { p.board[i] = 0; });
+    ppoGravity(p);
+  }
+  if (!chain) return 0;
+  p.maxChain = Math.max(p.maxChain, chain);
+  g.lastChain = { name: p.name, chain, cleared: totalCleared, ts: now };
+  // 干扰气泡：连锁数决定数量；先用本次连锁抵消待落干扰（相杀）
+  const send0 = ppoGarbageOfChain(chain);
+  let send = send0, offset = 0;
+  if (send0 && p.pending > 0) {
+    offset = Math.min(p.pending, send0);
+    p.pending -= offset;
+    send = send0 - offset;
+    if (p.pending <= 0) { p.pending = 0; p.pendingAt = 0; }
+  }
+  if (send > 0) {
+    const others = g.players.filter(q => q.alive && q.index !== p.index);
+    const targets = (g.garbageMode === 'random' && others.length > 1)
+      ? [others[Math.floor(Math.random() * others.length)]] : others;
+    targets.forEach(q => {
+      q.pending += send;
+      if (!q.pendingAt || q.pendingAt < now) q.pendingAt = now + PPO_GARBAGE_DELAY;
+    });
+  }
+  let txt = p.name + ' 达成 ' + chain + ' 连锁（消除 ' + totalCleared + ' 颗气泡';
+  if (totalGarbage) txt += '、震碎 ' + totalGarbage + ' 颗干扰';
+  txt += '，+' + gained + ' 分）';
+  if (offset) txt += '，相杀抵消 ' + offset + ' 颗';
+  if (send) txt += '，发出 ' + send + ' 颗干扰';
+  ppoNotice(g, txt, chain >= 3 ? 'chain' : 'info');
+  ppoCheckAchievements(g, p);
+  return chain;
+}
+// 成就：连锁档位 / 泡泡枪 / 清空棋盘 / 扶大厦于将倾
+function ppoCheckAchievements(g, p) {
+  const c = p.maxChain;
+  if (c >= 3) announceAchievement(g, g.roomId, p.name, 'pp_chain3');
+  if (c >= 5) announceAchievement(g, g.roomId, p.name, 'pp_chain5');
+  if (c >= 7) announceAchievement(g, g.roomId, p.name, 'pp_chain7');
+  if (c >= 9) announceAchievement(g, g.roomId, p.name, 'pp_chain9');
+  if (p.maxCleared >= 20) announceAchievement(g, g.roomId, p.name, 'pp_gun');
+  if (p.board.every(x => x === 0)) announceAchievement(g, g.roomId, p.name, 'pp_empty');
+  if (p.heightBeforeChain >= 10 && ppoHeight(p) <= 3) announceAchievement(g, g.roomId, p.name, 'pp_save');
+}
+
+function ppoIsOffline(g, p) {
+  const room = GAME_ROOMS.puyopuyo;
+  const sid = room && room.playerMap.get(p.name);
+  const sid2 = puyoAtGame.get(p.name);
+  const hb = userLastHeartbeat.get(p.name);
+  return !(sid && sid === sid2 && io.sockets.sockets.has(sid) && hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT);
+}
+function ppoEliminate(g, p, reason, now) {
+  if (!p.alive) return;
+  p.alive = false; p.piece = null;
+  p.rank = g.ranking.length + 1;
+  g.ranking.push(p.index);
+  ppoNotice(g, p.name + ' 的棋盘堆满，以第 ' + p.rank + ' 名结束对局', 'out');
+  const alive = g.players.filter(q => q.alive);
+  if (alive.length <= 1) ppoFinish(g, alive[0] || null, now);
+}
+function ppoFinish(g, winner, now) {
+  if (g.over) return;
+  if (winner && !winner.rank) { winner.rank = 1; g.ranking.unshift(winner.index); }
+  g.players.forEach(p => { if (!p.rank) { p.rank = g.ranking.length + 1; g.ranking.push(p.index); } });
+  g.phase = 'over';
+  g.over = {
+    winner: winner ? winner.name : null,
+    ranking: g.ranking.map(i => ({ name: g.players[i].name, rank: g.players[i].rank, score: g.players[i].score, maxChain: g.players[i].maxChain }))
+  };
+  ppoNotice(g, winner ? (winner.name + ' 存活到最后，获得胜利！') : '对局结束', 'win');
+  recordPuyoGame(g);
+}
+function ppoView(g, name, room) {
+  const me = g.players.find(p => p.name === name) || null;
+  const info = p => ({
+    name: p.name, index: p.index, board: p.board.join(''), alive: p.alive, rank: p.rank,
+    score: p.score, pending: p.pending, maxChain: p.maxChain, played: p.played, offline: ppoIsOffline(g, p),
+    piece: p.piece, next: p.next
+  });
+  return {
+    phase: g.phase, over: g.over || null, you: name, colors: g.colors, garbageMode: g.garbageMode,
+    level: ppoLevel(g), notice: g.notice || null,
+    lastChain: (g.lastChain && (Date.now() - g.lastChain.ts) < 1600) ? g.lastChain : null,
+    ranking: (g.ranking || []).map(i => g.players[i].name),
+    me: me ? info(me) : null,
+    players: g.players.map(info),
+    cancelVotes: (g.cancelVotes || []).slice()
+  };
+}
+function ppoBroadcast(room, g) {
+  room.playerMap.forEach((sid, n) => {
+    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('puyopuyo_state', ppoView(g, n, room));
+  });
+}
+function ppoBroadcastFor(roomId) {
+  const room = GAME_ROOMS.puyopuyo;
+  const g = puyopuyoGames[roomId];
+  if (room && g && g.roomId === roomId) ppoBroadcast(room, g);
+}
+function ppoCancel(room, g) {
+  delete puyopuyoGames[room.roomId];
+  io.to(room.roomId).emit('puyopuyo_cancel');
+  Object.keys(room.seats).forEach(sid => { if (room.seats[sid]) room.seats[sid].ready = false; });
+  broadcastRoom(room);
+}
+// 玩家输入：left / right / cw / ccw / soft(on) / hard
+function ppoInput(g, name, data) {
+  if (!g || g.phase !== 'play' || g.over) return { ok: false, msg: '对局已结束' };
+  const p = g.players.find(x => x.name === name);
+  if (!p) return { ok: false, msg: '你不在本局中' };
+  if (!p.alive) return { ok: false, msg: '你已被淘汰' };
+  const action = data && data.action;
+  if (action === 'soft') { p.soft = !!data.on; return { ok: true }; }
+  if (!p.piece) return { ok: false, msg: '等待新气泡' };
+  const now = Date.now();
+  switch (action) {
+    case 'left': ppoMove(p, -1); break;
+    case 'right': ppoMove(p, 1); break;
+    case 'cw': ppoRotate(p, 1); break;
+    case 'ccw': ppoRotate(p, -1); break;
+    case 'hard':
+      while (ppoCanFall(p)) p.piece = Object.assign({}, p.piece, { r: p.piece.r + 1 });
+      ppoLock(g, p, now);
+      break;
+    default: return { ok: false, msg: '未知操作' };
+  }
+  ppoBroadcastFor(g.roomId);
+  return { ok: true };
+}
+// 服务端节拍：干扰落地 → 下落/锁定 → 淘汰检查 → 广播
+function ppoTick(now) {
+  for (const roomId of Object.keys(puyopuyoGames)) {
+    const g = puyopuyoGames[roomId];
+    if (!g || g.phase !== 'play' || g.over) continue;
+    const dt = Math.max(0, Math.min(400, now - (g.lastTick || now)));
+    g.lastTick = now;
+    let changed = false;
+    for (const p of g.players) {
+      if (!p.alive) continue;
+      if (ppoIsOffline(g, p)) {
+        if (!p.offlineSince) p.offlineSince = now;
+        if (now - p.offlineSince > PPO_OFFLINE_ELIM_MS) { ppoEliminate(g, p, 'offline', now); changed = true; }
+        continue;
+      }
+      p.offlineSince = 0;
+      if (ppoDropGarbage(p, now)) changed = true;
+      if (!p.piece) continue;
+      const fallMs = p.soft ? 45 : ppoFallMs(ppoLevel(g, now));
+      p.fallAcc += dt;
+      while (p.fallAcc >= fallMs) {
+        p.fallAcc -= fallMs;
+        if (ppoCanFall(p)) { p.piece = Object.assign({}, p.piece, { r: p.piece.r + 1 }); p.lockAcc = 0; changed = true; }
+        else break;
+      }
+      if (!ppoCanFall(p)) {
+        p.lockAcc += dt;
+        if (p.lockAcc >= PPO_LOCK_DELAY) { ppoLock(g, p, now); changed = true; }
+      } else p.lockAcc = 0;
+      if (g.over) break;
+    }
+    if (changed || now - (g.lastBroadcast || 0) >= 400) {
+      g.lastBroadcast = now;
+      ppoBroadcastFor(roomId);
+    }
+  }
+}
+// 时光墙：记录名次/分数/最高连锁
+function recordPuyoGame(g) {
+  if (!g || !g.over || g._recorded) return;
+  g._recorded = true;
+  const officials = g.players.filter(p => isOfficialPlayer(p.name));
+  if (!officials.length) return;
+  addTimeline({
+    ts: Date.now(), type: 'game', game: 'puyopuyo', totalPlayers: g.players.length, mode: g.players.length + '人',
+    players: officials.map(p => p.name),
+    winner: g.over.winner, reason: '独立棋盘下落对战',
+    results: officials.map(p => ({ name: p.name, rank: p.rank || 0, score: p.score, maxChain: p.maxChain }))
+  });
+}
 const drawingAtGame = new Map(); // playerName -> 当前正打开“画猜接龙游戏页”的 socket.id（用于判定谁真正在对局内）
 const lobbyViewers = new Map(); // playerName -> 正在大厅页的 socket.id（表情包跨页互发用）
 const bomberAtGame = new Map(); // playerName -> 正在炸飞机游戏页的 socket.id（离开/返回与取消判定）
@@ -2855,6 +3274,7 @@ function activeGameOf(room) {
   if (room.gameType === 'othello') return othelloGames[room.roomId] || null;
   if (room.gameType === 'quoridor') return quoridorGames[room.roomId] || null;
   if (room.gameType === 'gomoku') return gomokuGames[room.roomId] || null;
+  if (room.gameType === 'puyopuyo') return puyopuyoGames[room.roomId] || null;
   return yahtzeeGames[room.roomId] || null;
 }
 
@@ -3190,6 +3610,7 @@ function syncRoomState(room, selfName) {
   const nowGame = activeGameOf(room);
   const data = {
     roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers, skipOffline: !!room.skipOffline, msTeam: !!room.msTeam, continueRanking: !!room.continueRanking,
+    puyoColors: room.puyoColors === 5 ? 5 : 4, puyoGarbage: room.puyoGarbage === 'random' ? 'random' : 'all',
     seats: room.seats, spectators: room.spectators, mySeat,
     myReady: mySeat ? room.seats[mySeat].ready : false,
     gameStarted: !!nowGame,
@@ -3215,7 +3636,9 @@ function broadcastRoom(room) {
     spectators: room.spectators,
     gameStarted,
     gamePlayers,
-    continueRanking: !!room.continueRanking
+    continueRanking: !!room.continueRanking,
+    puyoColors: room.puyoColors === 5 ? 5 : 4,
+    puyoGarbage: room.puyoGarbage === 'random' ? 'random' : 'all'
   });
   room.playerMap.forEach((_, uname) => {
     const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === uname)?.[0] || null;
@@ -3232,7 +3655,9 @@ function broadcastRoom(room) {
         myReady: mySeat ? room.seats[mySeat].ready : false,
         gameStarted,
         gamePlayers,
-        continueRanking: !!room.continueRanking
+        continueRanking: !!room.continueRanking,
+        puyoColors: room.puyoColors === 5 ? 5 : 4,
+        puyoGarbage: room.puyoGarbage === 'random' ? 'random' : 'all'
       });
     }
   });
@@ -3280,6 +3705,10 @@ function resetRoom(room) {
     delete gomokuGames[room.roomId];
     console.log(`🔄 房间 ${room.roomId} 的技能五子棋已清除`);
   }
+  if (puyopuyoGames[room.roomId]) {
+    delete puyopuyoGames[room.roomId];
+    console.log(`🔄 房间 ${room.roomId} 的魔法气泡已清除`);
+  }
   if (gameEndTimers[room.roomId]) {
     clearTimeout(gameEndTimers[room.roomId]);
     delete gameEndTimers[room.roomId];
@@ -3323,7 +3752,7 @@ function removeOfflinePlayer(room, playerName, force) {
     return;
   }
   // 扫雷 / 翻转棋 / 路墙棋：同熟人局规则——离线不除名、原地等待，可重连继续
-  if ((room.gameType === 'minesweeper' && minesweeperGames[room.roomId]) || (room.gameType === 'othello' && othelloGames[room.roomId]) || (room.gameType === 'quoridor' && quoridorGames[room.roomId]) || (room.gameType === 'gomoku' && gomokuGames[room.roomId])) {
+  if ((room.gameType === 'minesweeper' && minesweeperGames[room.roomId]) || (room.gameType === 'othello' && othelloGames[room.roomId]) || (room.gameType === 'quoridor' && quoridorGames[room.roomId]) || (room.gameType === 'gomoku' && gomokuGames[room.roomId]) || (room.gameType === 'puyopuyo' && puyopuyoGames[room.roomId])) {
     if (room.leaveTimers[playerName]) {
       clearTimeout(room.leaveTimers[playerName]);
       delete room.leaveTimers[playerName];
@@ -3912,7 +4341,7 @@ io.on('connection', (socket) => {
     broadcastRoom(room);
   });
 
-  socket.on('change_settings', ({ maxPlayers, skipOffline, msTeam, continueRanking }, cb) => {
+  socket.on('change_settings', ({ maxPlayers, skipOffline, msTeam, continueRanking, puyoColors, puyoGarbage }, cb) => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
     let room = null;
@@ -3941,6 +4370,9 @@ io.on('connection', (socket) => {
     if (typeof msTeam === 'boolean') room.msTeam = msTeam;
     // 技能五子棋：是否继续决出排名
     if (typeof continueRanking === 'boolean') room.continueRanking = continueRanking;
+    // 魔法气泡：气泡颜色数（4/5）与干扰发送模式（所有人/随机一人）
+    if (puyoColors === 4 || puyoColors === 5) room.puyoColors = puyoColors;
+    if (puyoGarbage === 'all' || puyoGarbage === 'random') room.puyoGarbage = puyoGarbage;
 
     if (maxPlayers != null) {
       const seatedCount = Object.values(room.seats).filter(Boolean).length;
@@ -3970,7 +4402,7 @@ io.on('connection', (socket) => {
       if (!game) continue;
       const finished = room.gameType === 'drawing'
         ? game.stage === 'result'
-        : (room.gameType === 'bomber' || room.gameType === 'minesweeper' || room.gameType === 'othello' || room.gameType === 'quoridor' || room.gameType === 'gomoku')
+        : (room.gameType === 'bomber' || room.gameType === 'minesweeper' || room.gameType === 'othello' || room.gameType === 'quoridor' || room.gameType === 'gomoku' || room.gameType === 'puyopuyo')
           ? game.phase === 'over'
           : game.phase === 'finished';
       if (!finished) { cleared = false; break; } // 进行中：仅退出页面，对局保留
@@ -3988,6 +4420,7 @@ io.on('connection', (socket) => {
       delete othelloGames[room.roomId];
       delete quoridorGames[room.roomId];
       delete gomokuGames[room.roomId];
+      delete puyopuyoGames[room.roomId];
       Object.keys(room.seats).forEach(seatId => {
         if (room.seats[seatId]) room.seats[seatId].ready = false;
       });
@@ -4552,6 +4985,7 @@ io.on('connection', (socket) => {
       stats,
       drawingCareer,
       gomokuRoles: buildGomokuRoles(target),
+      puyoStats: buildPuyoStats(target),
       achievements,
       totalAch: totalAchCount()
     });
@@ -4682,6 +5116,9 @@ io.on('connection', (socket) => {
     } else if (room.gameType === 'gomoku') {
       const playerNames = players.map(p => p.name);
       gomokuGames[room.roomId] = gmkInit(room, playerNames, room.continueRanking === true);
+    } else if (room.gameType === 'puyopuyo') {
+      const playerNames = players.map(p => p.name);
+      puyopuyoGames[room.roomId] = ppoInit(room, playerNames, { colors: room.puyoColors === 5 ? 5 : 4, garbageMode: room.puyoGarbage === 'random' ? 'random' : 'all' });
     }
     broadcastRoom(room);
     if (room.gameType === 'drawing') {
@@ -4696,6 +5133,8 @@ io.on('connection', (socket) => {
       quoBroadcast(room, quoridorGames[room.roomId]);
     } else if (room.gameType === 'gomoku') {
       gmkBroadcast(room, gomokuGames[room.roomId]);
+    } else if (room.gameType === 'puyopuyo') {
+      ppoBroadcast(room, puyopuyoGames[room.roomId]);
     } else {
       broadcastYahtzeeState(room.roomId);
     }
@@ -5966,6 +6405,79 @@ io.on('connection', (socket) => {
     if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
   });
 
+  // ======================== 魔法气泡（puyopuyo）事件 ========================
+  function ppoFindRoomOf(name) {
+    return Object.values(GAME_ROOMS).find(r => r.playerMap.has(name) && r.gameType === 'puyopuyo') || null;
+  }
+  socket.on('puyopuyo_enter', () => {
+    const name = socketToUser.get(socket.id);
+    if (!name) return;
+    puyoAtGame.set(name, socket.id);
+    const room = ppoFindRoomOf(name);
+    const g = room && puyopuyoGames[room.roomId];
+    if (room && g) ppoBroadcast(room, g);
+  });
+  socket.on('puyopuyo_pull', (cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? ppoFindRoomOf(name) : null;
+    const g = room && puyopuyoGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false }); return; }
+    if (cb) cb(Object.assign({ success: true }, ppoView(g, name, room)));
+  });
+  function ppoAfterAction(room, g) {
+    ppoBroadcast(room, g);
+    if (g.over) {
+      broadcastAchievementSummary(room.roomId, g);
+      if (!gameEndTimers[room.roomId]) {
+        gameEndTimers[room.roomId] = setTimeout(() => {
+          if (puyopuyoGames[room.roomId] !== g) { delete gameEndTimers[room.roomId]; return; }
+          delete puyopuyoGames[room.roomId];
+          Object.keys(room.seats).forEach(i => { if (room.seats[i]) room.seats[i].ready = false; });
+          broadcastRoom(room);
+          delete gameEndTimers[room.roomId];
+          console.log(`🔄 魔法气泡 ${room.roomId} 已结算，房间已复位`);
+        }, 12000);
+      }
+    }
+  }
+  socket.on('puyopuyo_input', (data = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? ppoFindRoomOf(name) : null;
+    const g = room && puyopuyoGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = ppoInput(g, name, data);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    if (g.over) ppoAfterAction(room, g);
+    if (cb) cb({ success: true });
+  });
+  socket.on('puyopuyo_cancel_vote', ({ revoke } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? ppoFindRoomOf(name) : null;
+    const g = room && puyopuyoGames[room.roomId];
+    if (!room || !g || !g.playerOrder.includes(name)) { if (cb) cb({ success: false, msg: '未在对局中' }); return; }
+    const onlineNames = g.playerOrder.filter(n => {
+      const sid = room.playerMap.get(n);
+      const sid2 = puyoAtGame.get(n);
+      const hb = userLastHeartbeat.get(n);
+      return sid && sid === sid2 && io.sockets.sockets.has(sid) && hb && (Date.now() - hb) < HEARTBEAT_TIMEOUT;
+    });
+    if (revoke) {
+      g.cancelVotes = (g.cancelVotes || []).filter(n => n !== name);
+      ppoBroadcast(room, g);
+      if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+      return;
+    }
+    g.cancelVotes = g.cancelVotes || [];
+    if (!g.cancelVotes.includes(name)) g.cancelVotes.push(name);
+    if (onlineNames.length && g.cancelVotes.length >= onlineNames.length) {
+      ppoCancel(room, g);
+      if (cb) cb({ success: true, cancelled: true });
+      return;
+    }
+    ppoBroadcast(room, g);
+    if (cb) cb({ success: true, votes: g.cancelVotes.slice(), total: onlineNames.length });
+  });
+
 
   socket.on('disconnect', () => {
     const name = socketToUser.get(socket.id);
@@ -5981,6 +6493,7 @@ io.on('connection', (socket) => {
     if (othAtGame.get(name) === socket.id) othAtGame.delete(name);
     if (quoriAtGame.get(name) === socket.id) quoriAtGame.delete(name);
     if (gomoAtGame.get(name) === socket.id) gomoAtGame.delete(name);
+    if (puyoAtGame.get(name) === socket.id) puyoAtGame.delete(name);
 
     // 默契空间：离开会话（断线兜底）
     const syncKey = socketSyncKey.get(socket.id);
@@ -6012,6 +6525,9 @@ io.on('connection', (socket) => {
     broadcast();
   });
 });
+
+// 魔法气泡：服务端节拍（气泡下落 / 干扰落地 / 败北判定 / 状态广播）
+setInterval(() => ppoTick(Date.now()), PPO_TICK_MS);
 
 setInterval(() => {
   for (const room of Object.values(GAME_ROOMS)) {

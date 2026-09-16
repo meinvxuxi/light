@@ -223,6 +223,17 @@
       <div id="gmRankWrap" style="display:none;text-align:center;margin-top:8px;font-size:.8rem;color:#6c757d;">
         <label style="cursor:pointer;"><input type="checkbox" id="gmRankCk" onchange="changeGmRanking()"> 继续决出排名（产生第一名后剩余玩家继续结算 2/3/4 名）</label>
       </div>
+      <div id="ppoWrap" style="display:none;text-align:center;margin-top:8px;font-size:.8rem;color:#6c757d;">
+        气泡颜色：<select id="ppoColorsSel" onchange="changePuyo()">
+          <option value="4">4 色（红黄绿蓝·标准）</option>
+          <option value="5">5 色（加紫色·高难）</option>
+        </select>
+        <br style="line-height:1.6;">
+        干扰发送：<select id="ppoGarbageSel" onchange="changePuyo()">
+          <option value="all">发给所有对手</option>
+          <option value="random">随机发给一人</option>
+        </select>
+      </div>
     </div>
     <div id="msModeInfo" style="display:none;text-align:center;font-size:.8rem;color:#6b7a90;margin:6px 0;"></div>
 
@@ -268,7 +279,7 @@
 
     const params = new URLSearchParams(window.location.search);
     const gameName = params.get('game') || 'yahtzee';
-    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋' };
+    const GAME_LABEL = { yahtzee: '快艇骰子', light: '拍灯大作战', drawing: '画猜接龙', bomber: '炸飞机', minesweeper: '扫雷', othello: '翻转棋', quoridor: '路墙棋', gomoku: '技能五子棋', puyopuyo: '魔法气泡' };
     const isDrawing = gameName === 'drawing'; // 画猜接龙固定 4 人，无人数设置
     const isFixedPlayers = gameName === 'drawing' || gameName === 'othello'; // 固定人数游戏：不显示人数设置
     document.getElementById('roomTitle').textContent = (GAME_LABEL[gameName] || '游戏') + ' · 房间';
@@ -411,12 +422,22 @@
         else if (gameName === 'othello') msInfo.textContent = '双人对局 · 固定 2 人（黑棋先手，轮到你落子时棋盘会亮出可下位置）';
         else if (gameName === 'quoridor') msInfo.textContent = '2~4 人对局 · 每回合移动棋子或放一片墙（墙数：2人10 / 3人7 / 4人5，不能堵死任何玩家）';
         else if (gameName === 'gomoku') msInfo.textContent = '2~4 人对局 · 15×15 棋盘，8 个角色各选其一（先选角色再开赛）· 最先 3 次五连获胜' + (roomState.continueRanking ? ' · 已开启“继续决出排名”（开启后才有名次分）' : ' · 未开启“继续决出排名”（无 名次分）') + ' · 标准局为 4 人，少人开局会影响平衡';
+        else if (gameName === 'puyopuyo') msInfo.textContent = '2~4 人对局 · 6×12 独立棋盘，气泡对下落、4 连消除、连锁越高干扰越多（连锁可相杀抵消）· 棋盘堆满即淘汰，最后存活者获胜 · 操作：←→ 移动 / ↑或X 顺时针 / Z 逆时针 / ↓ 加速 / 空格 落底';
       }
       const gmw = document.getElementById('gmRankWrap');
       const gmc = document.getElementById('gmRankCk');
       if (gmw && gmc) {
         gmw.style.display = (gameName === 'gomoku' && roomState.hostName === myName) ? 'block' : 'none';
         if (roomState.hostName === myName) gmc.checked = !!roomState.continueRanking;
+      }
+      const pw = document.getElementById('ppoWrap');
+      if (pw) {
+        pw.style.display = (gameName === 'puyopuyo' && roomState.hostName === myName) ? 'block' : 'none';
+        const pc = document.getElementById('ppoColorsSel'), pg = document.getElementById('ppoGarbageSel');
+        if (roomState.hostName === myName && pc && pg) {
+          pc.value = String(roomState.puyoColors === 5 ? 5 : 4);
+          pg.value = roomState.puyoGarbage === 'random' ? 'random' : 'all';
+        }
       }
 
       const seatsDiv = document.getElementById('seats');
@@ -470,8 +491,8 @@
     }
 
     function enterGame() {
-      const urlMap = { yahtzee: '/yahtzee.html', light: '/light.html', drawing: '/drawing.html', bomber: '/bomber.html', minesweeper: '/minesweeper.html', othello: '/othello.html', quoridor: '/quoridor.html', gomoku: '/gomoku.html' };
-      const fallback = { yahtzee: 'yahtzee_001', light: 'light_001', drawing: 'drawing_001', bomber: 'bomber_001', minesweeper: 'minesweeper_001', othello: 'othello_001', quoridor: 'quoridor_001', gomoku: 'gomoku_001' };
+      const urlMap = { yahtzee: '/yahtzee.html', light: '/light.html', drawing: '/drawing.html', bomber: '/bomber.html', minesweeper: '/minesweeper.html', othello: '/othello.html', quoridor: '/quoridor.html', gomoku: '/gomoku.html', puyopuyo: '/puyopuyo.html' };
+      const fallback = { yahtzee: 'yahtzee_001', light: 'light_001', drawing: 'drawing_001', bomber: 'bomber_001', minesweeper: 'minesweeper_001', othello: 'othello_001', quoridor: 'quoridor_001', gomoku: 'gomoku_001', puyopuyo: 'puyopuyo_001' };
       const g = (gameName in urlMap) ? gameName : 'yahtzee';
       const rid = roomId || (latestRoom && latestRoom.roomId) || fallback[g];
       window.location.href = urlMap[g] + '?room=' + rid;
@@ -590,6 +611,17 @@
       const max = parseInt((document.getElementById('maxPlayersSelect') || {}).value || '4') || serverMaxPlayers;
       socket.emit('change_settings', { maxPlayers: max, continueRanking: !!on }, (res) => {
         if (res && res.success) showToast(on ? '已开启：继续决出排名' : '已关闭：产生第一名即结束');
+        else if (res && res.msg) showToast(res.msg);
+      });
+    }
+
+    // 魔法气泡：气泡颜色数 / 干扰发送模式
+    function changePuyo() {
+      const c = parseInt((document.getElementById('ppoColorsSel') || {}).value || '4');
+      const g = (document.getElementById('ppoGarbageSel') || {}).value || 'all';
+      const max = parseInt((document.getElementById('maxPlayersSelect') || {}).value || '4') || serverMaxPlayers;
+      socket.emit('change_settings', { maxPlayers: max, puyoColors: c, puyoGarbage: g }, (res) => {
+        if (res && res.success) showToast('魔法气泡设置已更新：' + (c === 5 ? '5 色' : '4 色') + ' · 干扰' + (g === 'random' ? '随机一人' : '所有对手'));
         else if (res && res.msg) showToast(res.msg);
       });
     }
