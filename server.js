@@ -2457,7 +2457,7 @@ function gmkHints(g, idx) {
   }
   return out;
 }
-// 掌权者：找出该玩家所有连续五子窗口（同一方向不同起点也算不同“五连”）
+// 掌权者：找出该玩家所有连续五子窗口，并记录方向
 function gmkFiveWindows(g, idx) {
   const wins = [];
   for (const [dr, dc] of GMK_DIRS) {
@@ -2469,17 +2469,19 @@ function gmkFiveWindows(g, idx) {
         if (!gmkIn(rr, cc) || !gmkCell(g, rr, cc).includes(idx)) { ok = false; break; }
         cells.push(rr * GMK_SIZE + cc);
       }
-      if (ok) wins.push(cells);
+      if (ok) wins.push({ dir: dr + ',' + dc, cells });
     }
   }
   return wins;
 }
-// 双重五连：存在两个五连共用至少一枚棋子（不要求共用的是刚落下的那颗棋子）
+// 双重五连：两条“不同方向”的五连共用至少一枚棋子（不要求共用的是刚落下的那颗）
+// 同方向的长连（6、7 连）只算一个五连，不算双重五连
 function gmkHasDoubleFive(g, idx) {
   const wins = gmkFiveWindows(g, idx);
   for (let i = 0; i < wins.length; i++) {
     for (let j = i + 1; j < wins.length; j++) {
-      if (wins[i].some(x => wins[j].includes(x))) return true;
+      if (wins[i].dir === wins[j].dir) continue;                    // 同方向的窗口不算“两个五连”
+      if (wins[i].cells.some(x => wins[j].cells.includes(x))) return true;
     }
   }
   return false;
