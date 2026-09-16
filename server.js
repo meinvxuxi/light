@@ -2457,6 +2457,33 @@ function gmkHints(g, idx) {
   }
   return out;
 }
+// 掌权者：找出该玩家所有连续五子窗口（同一方向不同起点也算不同“五连”）
+function gmkFiveWindows(g, idx) {
+  const wins = [];
+  for (const [dr, dc] of GMK_DIRS) {
+    for (let r = 0; r < GMK_SIZE; r++) for (let c = 0; c < GMK_SIZE; c++) {
+      const cells = [];
+      let ok = true;
+      for (let k = 0; k < 5; k++) {
+        const rr = r + dr * k, cc = c + dc * k;
+        if (!gmkIn(rr, cc) || !gmkCell(g, rr, cc).includes(idx)) { ok = false; break; }
+        cells.push(rr * GMK_SIZE + cc);
+      }
+      if (ok) wins.push(cells);
+    }
+  }
+  return wins;
+}
+// 双重五连：存在两个五连共用至少一枚棋子（不要求共用的是刚落下的那颗棋子）
+function gmkHasDoubleFive(g, idx) {
+  const wins = gmkFiveWindows(g, idx);
+  for (let i = 0; i < wins.length; i++) {
+    for (let j = i + 1; j < wins.length; j++) {
+      if (wins[i].some(x => wins[j].includes(x))) return true;
+    }
+  }
+  return false;
+}
 // 截码战专家阈值：随人数缩放（4 人为标准局）
 function gmkCodeConfig(n) {
   if (n >= 4) return { need2: 18, need1: 36, win: 54, hit1: 1, hit2: 3, label: '18/36/54' };
@@ -2509,7 +2536,8 @@ function gmkRoundEnd(g) {
     p.predictRound = 0;
     p.predictScored = false;
   }
-  g.seal = null;
+  // 封印：持续一轮——本轮末不清除，下一轮末再解除（避免“封完立刻被清掉”）
+  if (g.seal && g.seal.round < g.round) g.seal = null;
   g.roundMoves = [];
   g.moved = [];
   g.round++;
@@ -2592,6 +2620,8 @@ function gmkPlace(g, name, r, c) {
   const soulOk = p.role === '灵魂棋手' && p.soulActive && cell.length > 0 && !cell.includes(idx);
   if (cell.length && !soulOk) return { ok: false, msg: '该位置已有棋子' };
   const isExtra = p.extraPending;
+  // 每回合只能落一子（幸运儿的额外落子除外）；技能未完成时回合仍在自己身上，不能重复落子
+  if (p.placedRound === g.round && !isExtra) return { ok: false, msg: '本轮已经落子了，请完成本回合技能' };
   if (isExtra) { p.extraPending = false; p.extraUsed = true; }
   const hintsBefore = gmkHints(g, idx);
   // 本回合存在“差一子”提示 → 记下这轮；若本轮里落子在任何提示点上，则把这轮标记为“已点提示”
@@ -2612,7 +2642,6 @@ function gmkPlace(g, name, r, c) {
       });
       p.soulActive = false;
     }
-    if (p.role === '掌权者' && dirs.length >= 2) { gmkWin(g, idx, '双重五连', 'gm_destiny'); return { ok: true, win: true }; }
     // 幸运儿：每次五连都给一次额外落子；额外回合里再成五连不再追加
     if (p.role === '幸运儿' && !isExtra) {
       p.extraPending = true;
@@ -2628,6 +2657,8 @@ function gmkPlace(g, name, r, c) {
     }
     if (!g.over && p.five >= p.need) gmkWin(g, idx, '3次五连', '');
   }
+  // 掌权者：任意一次落子后，只要棋盘上存在“共用至少一枚棋子的两个五连”即直接获胜
+  if (!g.over && p.role === '掌权者' && gmkHasDoubleFive(g, idx)) { gmkWin(g, idx, '双重五连', 'gm_destiny'); return { ok: true, win: true }; }
   if (!g.over && p.role === '摸鱼高手') {
     const nf = gmkFourCount(g, idx, r, c);
     if (nf) {
@@ -2655,7 +2686,7 @@ function gmkSeal(g, name, r, c) {
   if (!gmkIn(r, c) || gmkCell(g, r, c).length) return { ok: false, msg: '只能封印空位' };
   const key = r + ',' + c;
   if (p.lastSeal === key) return { ok: false, msg: '不能连续两轮封印同一位置' };
-  g.seal = { r, c, by: idx };
+  g.seal = { r, c, by: idx, round: g.round };
   p.lastSeal = key;
   p.sealRound = g.round;
   p.sealCounts[key] = (p.sealCounts[key] || 0) + 1;
@@ -2731,6 +2762,7 @@ function gmkView(g, name, room) {
       finished: p.finished, rank: p.rank, extraPending: !!p.extraPending,
       sealedThisRound: p.sealRound === g.round, online: online[p.name],
       sealSkippedThisRound: p.sealSkipRound === g.round,
+      placedThisRound: p.placedRound === g.round,
       predictedThisRound: (p.predict || []).length === 2 && p.predictRound === g.round
     })),
     board: g.board.map(cell => cell.slice()),

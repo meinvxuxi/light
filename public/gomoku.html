@@ -427,6 +427,11 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     if (myClean()) return cleanTargets()[r + ',' + c] != null;
     if (gmkMode !== 'place' && gmkMode !== 'seal' && gmkMode !== 'predict') return false;
     if (!isMyTurn()) return false;
+    // 落子模式：本轮已落子（且不是幸运儿的额外落子）就不再显示可下点
+    if (gmkMode === 'place') {
+      const mm = me();
+      if (mm && mm.placedThisRound && !mm.extraPending) return false;
+    }
     if (cellArr.includes(idx)) return false;
     if (gmkMode === 'seal') return cellArr.length === 0;
     if (cellArr.length === 0) return true;
