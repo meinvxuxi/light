@@ -2259,7 +2259,8 @@ function gmkInit(room, names, continueRanking) {
     sealCell: null, lastSeal: null, sealCounts: {},
     soulActive: true, soulStones: new Set(), soulFiveFlags: [],
     extraPending: false, extraUsed: false,
-    hintsSeen: false, placedOnHint: false, hintRounds: new Set(), hintUsedRounds: new Set(), predictRound: 0, predictScored: false,
+    hintsSeen: false, placedOnHint: false, hintRounds: new Set(), hintUsedRounds: new Set(),
+    predictRound: 0, predictScored: false, predictSkipRound: 0, sealSkipRound: 0, placedRound: 0,
     cleanCount: 0, finished: false, rank: 0, predict: []
   }));
   const board = Array.from({ length: GMK_TOTAL }, () => []);
@@ -2280,17 +2281,35 @@ function gmkNotice(g, text, kind) {
   if (g.noticeSeq > 1e9) g.noticeSeq = 1;
 }
 function gmkCoord(r, c) { return String.fromCharCode(65 + c) + (r + 1); }
+// 回合结束前必须完成的技能：截码战专家每轮必须提交预测；封印师每轮必须封印或“空封”
+function gmkSkillPending(g, p) {
+  if (!p) return '';
+  if (p.role === '截码战专家') {
+    const done = (p.predict.length === 2 && p.predictRound === g.round) || p.predictSkipRound === g.round;
+    if (!done) return 'predict';
+  }
+  if (p.role === '封印师' && p.sealRound !== g.round && p.sealSkipRound !== g.round) return 'seal';
+  return '';
+}
+// 技能都做完才结束该玩家的回合；否则回合留在本人身上
+function gmkMaybeEndTurn(g, idx) {
+  const p = gmkP(g, idx);
+  const need = gmkSkillPending(g, p);
+  if (need) {
+    if (!g.skillWaitFor || g.skillWaitFor.idx !== idx || g.skillWaitFor.need !== need) {
+      g.skillWaitFor = { idx, need, since: Date.now() };
+    }
+    return false;
+  }
+  g.skillWaitFor = null;
+  gmkFinishTurn(g, idx);
+  return true;
+}
 // 落子后的回合推进（清洁工选完棋子后也走这里）
 function gmkFinishTurn(g, idx) {
   if (!g.moved.includes(idx)) g.moved.push(idx);
   if (gmkActiveIdxs(g).every(i => g.moved.includes(i))) gmkRoundEnd(g);
   if (!g.over) gmkAdvance(g);
-}
-// 清洁工：五连计分后清除自己的五子，然后由本人点选移除两颗敌子
-function gmkCleanOwn(g, idx, dirs, r, c) {
-  const own = new Set();
-  dirs.forEach(([dr, dc]) => gmkLineCells(g, idx, r, c, dr, dc).forEach(([rr, cc]) => own.add(rr + ',' + cc)));
-  own.forEach(k => { const [rr, cc] = k.split(',').map(Number); g.board[rr * GMK_SIZE + cc] = g.board[rr * GMK_SIZE + cc].filter(x => x !== idx); });
 }
 // 可被清洁工移除的敌子（完成名次的玩家棋子不再参与）
 function gmkCleanTargets(g, idx) {
@@ -2307,23 +2326,57 @@ function gmkCleanTargets(g, idx) {
   return out;
 }
 function gmkStartClean(g, idx, dirs, r, c) {
-  gmkCleanOwn(g, idx, dirs, r, c);
   const targets = gmkCleanTargets(g, idx);
   const owners = new Set(targets.map(t => t.owner));
   const p = gmkP(g, idx);
-  if (!targets.length) {
-    gmkNotice(g, '清洁工 ' + gmkP(g, idx).name + ' 清除了自己的五连（场上没有可移除的敌子）', 'clean');
-    return false;
-  }
-  g.cleanPending = { by: idx, need: Math.min(2, targets.length), picks: [], multiOwner: owners.size >= 2, startedAt: Date.now() };
-  gmkNotice(g, '清洁工 ' + p.name + ' 清除了自己的五连，正在选择要移除的敌子（' + g.cleanPending.need + ' 颗）', 'clean');
+  // 先问本人是否发动技能；发动后才清除自己的五子并进入点选
+  g.cleanPending = {
+    by: idx, phase: 'ask', need: Math.min(2, targets.length), picks: [],
+    multiOwner: owners.size >= 2, startedAt: Date.now(),
+    lines: dirs.map(([dr, dc]) => gmkLineCells(g, idx, r, c, dr, dc))
+  };
+  gmkNotice(g, '清洁工 ' + p.name + ' 达成五连：可选择是否发动清洁技能（清除自己五子并移除两颗敌子）', 'clean');
   return true;
+}
+// 清洁工决定是否发动技能
+function gmkCleanChoose(g, name, use) {
+  if (!g || g.over) return { ok: false, msg: '对局已结束' };
+  const cp = g.cleanPending;
+  if (!cp || cp.phase !== 'ask') return { ok: false, msg: '当前不需要选择' };
+  const idx = gmkIndex(g, name);
+  if (idx !== cp.by) return { ok: false, msg: '当前不是你在选择' };
+  const p = gmkP(g, idx);
+  if (!use) {
+    g.cleanPending = null;
+    gmkNotice(g, '清洁工 ' + p.name + ' 选择不发动清洁技能（自己五连保留在棋盘上）', 'clean');
+    gmkMaybeEndTurn(g, idx);
+    return { ok: true, declined: true };
+  }
+  // 发动：清除自己五连的棋子
+  (cp.lines || []).forEach(line => line.forEach(([rr, cc]) => {
+    g.board[rr * GMK_SIZE + cc] = g.board[rr * GMK_SIZE + cc].filter(x => x !== idx);
+  }));
+  cp.lines = [];
+  p.cleanCount++;
+  const targets = gmkCleanTargets(g, idx);
+  if (!targets.length) {
+    g.cleanPending = null;
+    gmkNotice(g, '清洁工 ' + p.name + ' 清除了自己的五连（场上没有可移除的敌子）', 'clean');
+    gmkMaybeEndTurn(g, idx);
+    return { ok: true, done: true };
+  }
+  cp.phase = 'pick';
+  cp.need = Math.min(2, targets.length);
+  cp.multiOwner = new Set(targets.map(t => t.owner)).size >= 2;
+  cp.startedAt = Date.now();
+  gmkNotice(g, '清洁工 ' + p.name + ' 发动技能：正在选择要移除的敌子（' + cp.need + ' 颗）', 'clean');
+  return { ok: true, picking: true };
 }
 // 清洁工点选要移除的敌子
 function gmkCleanPick(g, name, r, c) {
   if (!g || g.over) return { ok: false, msg: '对局已结束' };
   const cp = g.cleanPending;
-  if (!cp) return { ok: false, msg: '当前不需要选择棋子' };
+  if (!cp || cp.phase !== 'pick') return { ok: false, msg: '当前不需要选择棋子' };
   const idx = gmkIndex(g, name);
   if (idx !== cp.by) return { ok: false, msg: '当前不是你在选择' };
   r = Number(r); c = Number(c);
@@ -2343,7 +2396,7 @@ function gmkCleanPick(g, name, r, c) {
     : gmkCleanTargets(g, idx).length;
   if (cp.picks.length >= cp.need || remain === 0) {
     g.cleanPending = null;
-    gmkFinishTurn(g, idx);
+    gmkMaybeEndTurn(g, idx);
     return { ok: true, done: true };
   }
   return { ok: true };
@@ -2431,12 +2484,13 @@ function gmkSettleWinnerRoleAchievements(g, p) {
   }
   if (p.role === '截码战专家' && p.hitCount === 0) announceAchievement(g, g.roomId, p.name, 'gm_fool');
 }
+// 清洁工：五连计分后清除自己的五子（在 gmkCleanChoose 里执行）
 function gmkRoundEnd(g) {
   const cfg = g.codeCfg || gmkCodeConfig(g.players.length);
   for (const p of g.players) {
     if (p.finished || p.role !== '截码战专家') continue;
-    // 预测点保留显示（不会消失），但同一组预测只结算一次
-    if (p.predict && p.predict.length === 2 && p.predictRound === g.round && !p.predictScored) {
+    // 本轮提交的预测在轮末结算一次，随后清除标记（下一轮需要重新提交）
+    if (p.predict.length === 2 && p.predictRound === g.round) {
       const hitPlayers = new Set();
       g.roundMoves.forEach(mv => {
         if (mv.idx === p.index) return;
@@ -2448,10 +2502,12 @@ function gmkRoundEnd(g) {
         p.score += gain;
         gmkNotice(g, '截码战专家 ' + p.name + ' 预测命中！+' + gain + ' 分（共 ' + p.score + ' 分）', 'code');
       }
-      p.predictScored = true;
       p.need = p.score >= cfg.need1 ? 1 : (p.score >= cfg.need2 ? 2 : 3);
       if (p.score >= cfg.win) gmkWin(g, p.index, '截码战 ' + cfg.win + ' 分', 'gm_decode');
     }
+    p.predict = [];
+    p.predictRound = 0;
+    p.predictScored = false;
   }
   g.seal = null;
   g.roundMoves = [];
@@ -2565,11 +2621,10 @@ function gmkPlace(g, name, r, c) {
     if (p.role === '幸运儿' && isExtra) announceAchievement(g, g.roomId, p.name, 'gm_lucky');
     // 清洁工：清自己的五子 + 由本人点选移除两颗敌子
     if (p.role === '清洁工') {
-      p.cleanCount++;
       const needPick = gmkStartClean(g, idx, dirs, r, c);
       if (!g.over && p.five >= p.need) gmkWin(g, idx, '3次五连', '');
       if (g.over) return { ok: true, win: true };
-      if (needPick && g.cleanPending) return { ok: true, cleaning: true };
+      if (needPick && g.cleanPending) { p.placedRound = g.round; return { ok: true, cleaning: true }; }
     }
     if (!g.over && p.five >= p.need) gmkWin(g, idx, '3次五连', '');
   }
@@ -2582,9 +2637,10 @@ function gmkPlace(g, name, r, c) {
     }
   }
   if (g.over) return { ok: true, win: true };
-  if (g.cleanPending) return { ok: true, cleaning: true };
-  if (p.extraPending) return { ok: true, extra: true };
-  gmkFinishTurn(g, idx);
+  if (g.cleanPending) { p.placedRound = g.round; return { ok: true, cleaning: true }; }
+  if (p.extraPending) { p.placedRound = g.round; return { ok: true, extra: true }; }
+  p.placedRound = g.round;
+  if (!gmkMaybeEndTurn(g, idx)) return { ok: true, waitSkill: true };
   return { ok: true };
 }
 function gmkSeal(g, name, r, c) {
@@ -2605,6 +2661,21 @@ function gmkSeal(g, name, r, c) {
   p.sealCounts[key] = (p.sealCounts[key] || 0) + 1;
   if (p.sealCounts[key] >= 5) announceAchievement(g, g.roomId, p.name, 'gm_seal');
   gmkNotice(g, '封印师 ' + p.name + ' 封印了 ' + gmkCoord(r, c) + '（本轮双方不可落子）', 'seal');
+  if (p.placedRound === g.round) gmkMaybeEndTurn(g, idx);   // 已落子 → 技能完成后结束回合
+  return { ok: true };
+}
+// 封印师“空封”：本轮不封锁，但仍视为完成本轮技能
+function gmkSealSkip(g, name) {
+  if (!g || g.phase !== 'play' || g.over) return { ok: false, msg: '当前不能操作' };
+  const idx = gmkIndex(g, name);
+  if (idx < 0) return { ok: false, msg: '你不在本局中' };
+  const p = gmkP(g, idx);
+  if (p.role !== '封印师') return { ok: false, msg: '只有封印师可以封锁位置' };
+  if (g.turnIdx !== idx) return { ok: false, msg: '还没轮到你' };
+  if (p.sealRound === g.round || p.sealSkipRound === g.round) return { ok: false, msg: '本轮已经处理过了' };
+  p.sealSkipRound = g.round;
+  gmkNotice(g, '封印师 ' + p.name + ' 本轮选择不封锁（空封）', 'seal');
+  if (p.placedRound === g.round) gmkMaybeEndTurn(g, idx);
   return { ok: true };
 }
 function gmkPredict(g, name, list) {
@@ -2619,6 +2690,7 @@ function gmkPredict(g, name, list) {
   p.predictRound = g.round;
   p.predictScored = false;
   gmkNotice(g, '截码战专家 ' + p.name + ' 提交了本轮预测（内容仅自己可见）', 'code');
+  if (p.placedRound === g.round) gmkMaybeEndTurn(g, idx);   // 已落子 → 预测完成后结束回合
   return { ok: true };
 }
 // 选角：全部选完后排序（掌权者固定第 1 顺位，其余随机）
@@ -2658,6 +2730,7 @@ function gmkView(g, name, room) {
       five: p.five, four: p.four, score: p.score, need: p.need,
       finished: p.finished, rank: p.rank, extraPending: !!p.extraPending,
       sealedThisRound: p.sealRound === g.round, online: online[p.name],
+      sealSkippedThisRound: p.sealSkipRound === g.round,
       predictedThisRound: (p.predict || []).length === 2 && p.predictRound === g.round
     })),
     board: g.board.map(cell => cell.slice()),
@@ -2671,11 +2744,16 @@ function gmkView(g, name, room) {
     notice: g.notice || null,
     cleanPending: g.cleanPending ? {
       by: g.players[g.cleanPending.by].name,
+      phase: g.cleanPending.phase || 'pick',
       need: g.cleanPending.need,
       picks: g.cleanPending.picks.map(k => ({ r: k.r, c: k.c, name: k.name })),
       multiOwner: !!g.cleanPending.multiOwner
     } : null,
     myPredictScored: you ? !!you.predictScored : false,
+    waitingSkill: (function () {
+      if (!you || g.over || g.phase !== 'play' || g.turnIdx !== idx) return '';
+      return gmkSkillPending(g, you);
+    })(),
     stdNote: g.players.length < 4 ? '该玩法标准局为四人局，少人开局将会影响游戏性' : '',
     cancelVotes: (g.cancelVotes || []).slice()
   };
@@ -5792,6 +5870,28 @@ io.on('connection', (socket) => {
     gmkBroadcast(room, g);
     if (cb) cb({ success: true, done: !!res.done });
   });
+  // 清洁工：是否发动技能（二选一）
+  socket.on('gomoku_clean_choice', ({ use } = {}, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? gmkFindRoomOf(name) : null;
+    const g = room && gomokuGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = gmkCleanChoose(g, name, use !== false);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    gmkBroadcast(room, g);
+    if (cb) cb({ success: true, declined: !!res.declined, picking: !!res.picking });
+  });
+  // 封印师：本轮空封（不封锁）
+  socket.on('gomoku_seal_skip', (_p, cb) => {
+    const name = socketToUser.get(socket.id);
+    const room = name ? gmkFindRoomOf(name) : null;
+    const g = room && gomokuGames[room.roomId];
+    if (!room || !g) { if (cb) cb({ success: false, msg: '对局不存在' }); return; }
+    const res = gmkSealSkip(g, name);
+    if (!res.ok) { if (cb) cb({ success: false, msg: res.msg }); return; }
+    gmkBroadcast(room, g);
+    if (cb) cb({ success: true });
+  });
   socket.on('gomoku_cancel_vote', ({ revoke } = {}, cb) => {
     const name = socketToUser.get(socket.id);
     const room = name ? gmkFindRoomOf(name) : null;
@@ -5874,22 +5974,38 @@ setInterval(() => {
   broadcast();
 }, 3000);
 
-// 技能五子棋兜底：清洁工长时间未点选要移除的棋子时自动帮选，避免全桌卡住
+// 技能五子棋兜底：清洁工决定/选子、以及“技能未完成”导致的卡轮，超时自动放行
 setInterval(() => {
   for (const roomId of Object.keys(gomokuGames)) {
     const g = gomokuGames[roomId];
-    if (!g || !g.cleanPending || g.over) continue;
+    if (!g || g.over) continue;
+    // 1) 清洁工：60 秒未决定 → 视为不发动；45 秒未选子 → 自动代选
     const cp = g.cleanPending;
-    const started = cp.startedAt || (cp.startedAt = Date.now());
-    if (Date.now() - started < 45000) continue;
-    const idx = cp.by;
-    const targets = gmkCleanTargets(g, idx);
-    if (!targets.length) { g.cleanPending = null; gmkFinishTurn(g, idx); continue; }
-    const t = cp.picks.length
-      ? (targets.find(x => x.owner !== cp.picks[0].owner) || targets[0])
-      : targets[0];
-    gmkCleanPick(g, g.players[idx].name, t.r, t.c);
-    gmkBroadcastFor(roomId);
+    if (cp) {
+      const started = cp.startedAt || (cp.startedAt = Date.now());
+      const idx = cp.by;
+      if (cp.phase === 'ask') {
+        if (Date.now() - started > 60000) { gmkCleanChoose(g, g.players[idx].name, false); gmkBroadcastFor(roomId); }
+        continue;
+      }
+      if (Date.now() - started < 45000) continue;
+      const targets = gmkCleanTargets(g, idx);
+      if (!targets.length) { g.cleanPending = null; gmkMaybeEndTurn(g, idx); gmkBroadcastFor(roomId); continue; }
+      const t = cp.picks.length ? (targets.find(x => x.owner !== cp.picks[0].owner) || targets[0]) : targets[0];
+      gmkCleanPick(g, g.players[idx].name, t.r, t.c);
+      gmkBroadcastFor(roomId);
+      continue;
+    }
+    // 2) 回合卡在“必须用技能”：90 秒后自动完成（截码战放弃本轮预测 / 封印师空封）
+    const sw = g.skillWaitFor;
+    if (sw && g.phase === 'play' && g.turnIdx === sw.idx && Date.now() - sw.since > 90000) {
+      const p = g.players[sw.idx];
+      if (sw.need === 'predict') p.predictSkipRound = g.round;
+      if (sw.need === 'seal') p.sealSkipRound = g.round;
+      gmkNotice(g, (sw.need === 'predict' ? '截码战专家 ' + p.name + ' 超时未预测，本轮视为放弃' : '封印师 ' + p.name + ' 超时未操作，本轮视为空封'), 'info');
+      gmkMaybeEndTurn(g, sw.idx);
+      gmkBroadcastFor(roomId);
+    }
   }
 }, 5000);
 

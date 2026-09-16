@@ -182,7 +182,9 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   let hintShow = true;
   let lastNoticeSeq = 0;
   // 是否轮到我做“清洁工选子”
-  function myClean(){ return !!(S && S.cleanPending && S.cleanPending.by === myName && !S.over); }
+  function myClean(){ return !!(S && S.cleanPending && S.cleanPending.phase === 'pick' && S.cleanPending.by === myName && !S.over); }
+  // 是否轮到我决定“是否发动清洁工技能”
+  function myCleanAsk(){ return !!(S && S.cleanPending && S.cleanPending.phase === 'ask' && S.cleanPending.by === myName && !S.over); }
   // 可作为移除对象的敌子（遵守“两颗要来自不同玩家”）
   function cleanTargets(){
     const out = {};
@@ -258,6 +260,11 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const el = document.getElementById('gmkModes');
     const m = me();
     if (!S || !m) { el.innerHTML = ''; return; }
+    if (myCleanAsk()) {
+      el.innerHTML = '<span class="mode-opt on" onclick="gmkCleanChoice(true)">发动清洁技能（清除自己五子+移除两颗敌子）</span>'
+        + '<span class="mode-opt" onclick="gmkCleanChoice(false)">不发动（保留五连）</span>';
+      return;
+    }
     if (myClean()) {
       const cp = S.cleanPending;
       el.innerHTML = '<span class="mode-opt on">清洁工：点选要移除的敌子（' + (cp.picks || []).length + '/' + cp.need + '）'
@@ -269,7 +276,8 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const dis = turn ? '' : ' dis';
     let html = '';
     html += '<span class="mode-opt' + (gmkMode === 'place' ? ' on' : '') + dis + '" onclick="setMode(\'place\')">' + (m.extraPending ? '额外落子' : '落子') + '</span>';
-    if (m.role === '封印师') html += '<span class="mode-opt' + (gmkMode === 'seal' ? ' on' : '') + (m.sealedThisRound ? ' dis' : dis) + '" onclick="setMode(\'seal\')">封印位置' + (m.sealedThisRound ? '（本轮已用）' : '') + '</span>';
+    if (m.role === '封印师') html += '<span class="mode-opt' + (gmkMode === 'seal' ? ' on' : '') + (m.sealedThisRound ? ' dis' : dis) + '" onclick="setMode(\'seal\')">封印位置' + (m.sealedThisRound ? '（本轮已用）' : '') + '</span>'
+      + ((!m.sealedThisRound && !m.sealSkippedThisRound) ? '<span class="mode-opt' + dis + '" onclick="gmkSealSkip()">本轮不封印（空封）</span>' : '');
     if (m.role === '截码战专家') html += '<span class="mode-opt' + (gmkMode === 'predict' ? ' on' : '') + dis + '" onclick="setMode(\'predict\')">预测两点（已选 ' + selPts.length + '/2）</span>';
     if (m.role === '侦探') html += '<span class="mode-opt' + (hintShow ? ' on' : '') + '" onclick="toggleHint()">差一子提示（仅自己可见）</span>';
     html += '<span class="mode-opt' + (boardHidden ? '' : ' on') + '" onclick="toggleBoard()">' + (boardHidden ? '展开棋盘' : '收起棋盘') + '</span>';
@@ -300,18 +308,20 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const m = me();
     if (!S || S.over || S.phase !== 'play' || !m) { el.className = 'remind hide'; el.innerHTML = ''; return; }
     const tips = [];
-    if (myClean()) {
+    if (myCleanAsk()) {
+      tips.push('清洁工技能：请选择是否发动（发动会清除你的五连并移除两颗敌子）');
+    } else if (myClean()) {
       const cp = S.cleanPending;
       tips.push('清洁工技能：请点选要移除的敌子（还可移除 ' + Math.max(0, cp.need - (cp.picks || []).length) + ' 颗'
         + (cp.multiOwner ? '，两颗需来自不同玩家' : '') + '）');
+    } else if (S.waitingSkill === 'predict') {
+      tips.push('本轮必须完成「落子 + 提交两个预测点」才能结束回合');
+    } else if (S.waitingSkill === 'seal') {
+      tips.push('本轮必须完成「落子 + 封印或空封」才能结束回合');
     } else if (isMyTurn()) {
-      if (m.role === '封印师' && !m.sealedThisRound) tips.push('别忘了用【封印】技能：本轮可锁定一个空位（点「封印位置」再点空位）');
-      if (m.role === '截码战专家' && !m.predictedThisRound) tips.push('别忘了提交【预测】：本轮两个预测点，猜中可加分（点「预测两点」）');
+      if (m.role === '封印师' && !m.sealedThisRound && !m.sealSkippedThisRound) tips.push('别忘了用【封印】（或点“本轮不封印”空封）');
+      if (m.role === '截码战专家' && !m.predictedThisRound) tips.push('别忘了提交【预测】：本轮两个预测点，猜中可加分');
       if (m.extraPending) tips.push('【幸运儿】五连达成，现在可以额外落一子');
-    } else if (m.role === '封印师' && !m.sealedThisRound) {
-      tips.push('你的【封印】本轮还没使用（轮到你时可用）');
-    } else if (m.role === '截码战专家' && !m.predictedThisRound) {
-      tips.push('你的【预测】本轮还没提交（轮到你时可用）');
     }
     if (!tips.length) { el.className = 'remind hide'; el.innerHTML = ''; return; }
     el.className = 'remind';
@@ -344,7 +354,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     if (p.role === '封印师') meta += '　·　本轮' + (p.sealedThisRound ? '已封印' : '未封印');
     if (p.finished) meta += '　·　第 ' + p.rank + ' 名（已完成）';
     const extra = {
-      '侦探': '提示只有你自己能看到；只要在某个有提示的轮次里没点橙色提示位、并且最终获胜，就能解锁「真相不止一个」。',
+      '侦探': '提示（差一子成五连的空位）只有你自己能看到，用不用由你决定。',
       '灵魂棋手': '共存棋子在棋盘上显示为居中、小一圈的半透明子。',
       '掌权者': '两个五连必须共用至少一枚棋子（同一手落子自然共用），达成即刻获胜。',
       '幸运儿': '每次达成五连都能再落一子；额外那一子若又成五连，只计分、不再追加额外落子。',
@@ -390,6 +400,10 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       return;
     }
     if (S.phase === 'pick') { el.innerHTML = '<span>全部选完角色后自动开赛（掌权者必先手，其余随机排序）</span>'; return; }
+    if (myCleanAsk()) {
+      el.innerHTML = '<span style="color:#a5443f;font-weight:700;">清洁工技能：请选择是否发动（发动＝清除你的五连 + 移除两颗敌子）</span>';
+      return;
+    }
     if (myClean()) {
       const cp = S.cleanPending;
       el.innerHTML = '<span style="color:#a5443f;font-weight:700;">清洁工技能：请在棋盘上点选要移除的敌子（' + (cp.picks || []).length + '/' + cp.need + '）'
@@ -397,7 +411,10 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       return;
     }
     if (S.cleanPending) {
-      el.innerHTML = '<span>' + esc(dn(S.cleanPending.by)) + ' 正在选择要移除的棋子…（' + (S.cleanPending.picks || []).length + '/' + S.cleanPending.need + '）</span>';
+      const cp = S.cleanPending;
+      el.innerHTML = cp.phase === 'ask'
+        ? '<span>' + esc(dn(cp.by)) + ' 正在决定是否发动清洁工技能…</span>'
+        : '<span>' + esc(dn(cp.by)) + ' 正在选择要移除的棋子…（' + (cp.picks || []).length + '/' + cp.need + '）</span>';
       return;
     }
     const m = me();
@@ -496,6 +513,8 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     render();
   }
   function toggleHint(){ hintShow = !hintShow; render(); }
+  function gmkSealSkip(){ socket.emit('gomoku_seal_skip', {}, res => { if (res && !res.success) toast(res.msg || '操作失败'); }); }
+  function gmkCleanChoice(use){ socket.emit('gomoku_clean_choice', { use: !!use }, res => { if (res && !res.success) toast(res.msg || '操作失败'); }); }
   function toggleBoard(){ if (boardTimer) { clearTimeout(boardTimer); boardTimer = null; } userToggled = true; boardHidden = !boardHidden; render(); }
   function gmkCancel(){ socket.emit('gomoku_cancel_vote', {}); }
   function gmkExit(){ location.href = '/room.html?game=gomoku'; }
