@@ -45,6 +45,9 @@ table.q td.legal::after{content:'';position:absolute;inset:34%;border-radius:50%
 .res-title{font-size:1.05rem;font-weight:800;margin-bottom:8px;}
 .res-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.6);border:1px solid rgba(74,144,217,.2);margin-bottom:5px;font-size:.86rem;}
 .res-row.me{border-color:rgba(230,126,34,.6);background:rgba(255,247,230,.8);}
+.res-ach{margin-top:10px;border-top:1px dashed rgba(74,144,217,.35);padding-top:8px;text-align:left;font-size:.8rem;}
+.res-ach .ra-title{font-weight:700;color:#2c3e50;margin-bottom:4px;}
+.res-ach .ra-row{display:flex;justify-content:space-between;gap:8px;padding:3px 2px;color:#6b7a90;flex-wrap:wrap;}
 .res-btns{display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap;}
 .res-btn{display:inline-block;padding:7px 16px;border-radius:10px;background:#4a90d9;color:#fff;font-size:.84rem;cursor:pointer;border:none;}
 .res-btn.ghost{background:rgba(74,144,217,.14);color:#2f6fb2;}
@@ -108,7 +111,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   applyQuoTheme(localStorage.getItem('myTheme'));
   const socket = io();
   const IS_T = sessionStorage.getItem('isTest') === 'true';
-  let S = null, _dm = {}, quoMode = 'move', histOpen = false, preview = null, quoBoardHidden = false, quoToastTimer = null, quoBoardTimer = null, quoUserToggled = false, quoWallConfirm = true, armedWall = null, quoWallUni = false;
+  let S = null, _dm = {}, quoMode = 'move', histOpen = false, preview = null, quoBoardHidden = false, quoToastTimer = null, quoBoardTimer = null, quoUserToggled = false, quoWallConfirm = true, armedWall = null, quoWallUni = false, quoAchSummary = {};
   function dn(n){ return _dm[n] || n; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function toast(m){ const e=document.getElementById('quoToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(quoToastTimer); quoToastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
@@ -123,7 +126,8 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   });
   setInterval(() => socket.emit('heartbeat', myName, IS_T, true), 10000);
   socket.emit('get_display_names', res => { if (res && res.success) _dm = res.map; });
-  socket.on('quoridor_state', s => { S = s; preview = null; armedWall = null; render(); });
+  socket.on('quoridor_state', s => { S = s; preview = null; armedWall = null; if (!s.over) quoAchSummary = {}; render(); });
+  socket.on('achievement_summary', d => { if (d && d.players) { quoAchSummary = d.players; if (S && S.over) render(); } });
   socket.on('quoridor_cancel', () => { location.href = '/room.html?game=quoridor'; });
   setInterval(() => {
     if (!socket.connected) return;
@@ -144,7 +148,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       return '<div class="pchip' + (on ? ' on' : '') + (p.finished ? ' done' : '') + '">'
         + '<span class="pawnchip">' + pawnHtml(p.name, p.color, true) + '</span>'
         + '<span style="color:' + p.color + ';font-weight:700;">' + esc(dn(p.name)) + (p.name === myName ? '（你）' : '') + '</span>'
-        + '<span class="meta">剩墙 ' + p.wallLeft + (rank ? '　✅' + rank : '') + '</span>'
+        + '<span class="meta">剩墙 ' + p.wallLeft + (rank ? '　' + rank : '') + '</span>'
         + '</div>';
     }).join('');
   }
@@ -152,7 +156,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const el = document.getElementById('quoLegend');
     if (!S || !S.players) { el.innerHTML = ''; return; }
     el.innerHTML = S.players.map(p => '<span><i style="background:' + p.color + ';"></i>'
-      + esc(dn(p.name)) + (p.finished ? ' ✅' : '') + '</span>').join('');
+      + esc(dn(p.name)) + (p.finished ? '（已完成）' : '') + '</span>').join('');
   }
   function renderModes(){
     const el = document.getElementById('quoModes');
@@ -179,7 +183,16 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
         return '<div class="res-row' + (me ? ' me' : '') + '"><span>第' + r.rank + '名　' + esc(dn(r.name)) + '</span>'
           + (p ? '<span style="color:' + p.color + ';">剩墙 ' + p.wallLeft + '</span>' : '') + '</div>';
       }).join('');
-      el.innerHTML = '<div class="res"><div class="res-title">🏁 游戏结束 · 最终排名</div>' + rows
+      const qC = { common: '#9aa5b1', rare: '#4caf50', epic: '#9c27b0', legend: '#ff9800', hidden: '#d32f2f' };
+      const achRows = Object.keys(quoAchSummary || {}).map(p => {
+        const arr = quoAchSummary[p] || [];
+        if (!arr.length) return '';
+        return '<div class="ra-row"><b>' + esc(dn(p)) + '</b><span>'
+          + arr.map(a => '<span style="color:' + (qC[a.quality] || '#2c3e50') + ';font-weight:600;">' + esc(a.name) + '</span>').join('　')
+          + '</span></div>';
+      }).filter(Boolean).join('');
+      const achHtml = achRows ? '<div class="res-ach"><div class="ra-title">本局成就</div>' + achRows + '</div>' : '';
+      el.innerHTML = '<div class="res"><div class="res-title">游戏结束 · 最终排名</div>' + rows + achHtml
         + '<div style="font-size:.78rem;color:#9aa5b1;margin-top:6px;">共用 ' + S.actions + ' 手</div>'
         + '<div class="res-btns">'
         + '<button class="res-btn ghost" onclick="toggleBoard()">' + (quoBoardHidden ? '展开棋盘' : '收起棋盘') + '</button>'
