@@ -160,8 +160,10 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const me = playerAt(myIdx());
     const turn = isMyTurn();
     const wallLeft = me ? me.wallLeft : 0;
+    const wallDis = (turn && wallLeft > 0) ? '' : ' dis';
     el.innerHTML = '<span class="mode-opt' + (quoMode === 'move' ? ' on' : '') + (turn ? '' : ' dis') + '" onclick="setMode(\'move\')">移动棋子</span>'
-      + '<span class="mode-opt' + (quoMode === 'wall' ? ' on' : '') + (turn && wallLeft > 0 ? '' : ' dis') + '" onclick="setMode(\'wall\')">放墙（剩 ' + wallLeft + '）</span>'
+      + '<span class="mode-opt' + (quoMode === 'wallH' ? ' on' : '') + wallDis + '" onclick="setMode(\'wallH\')">放横墙（剩 ' + wallLeft + '）</span>'
+      + '<span class="mode-opt' + (quoMode === 'wallV' ? ' on' : '') + wallDis + '" onclick="setMode(\'wallV\')">放竖墙（剩 ' + wallLeft + '）</span>'
       + '<span class="mode-opt" onclick="setWallConfirm(' + (quoWallConfirm ? 'false' : 'true') + ')">放墙确认：' + (quoWallConfirm ? '两步' : '直接') + '</span>'
       + '<span class="mode-opt" onclick="toggleWallUni()">墙色：' + (quoWallUni ? '统一' : '分色') + '</span>'
       + (preview ? '<span class="mode-opt dis">回放中</span>' : '');
@@ -221,7 +223,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function toggleBoard(){ if (quoBoardTimer) { clearTimeout(quoBoardTimer); quoBoardTimer = null; } quoUserToggled = true; quoBoardHidden = !quoBoardHidden; render(); }
   function setMode(m){
     if (!isMyTurn()) { toast('还没轮到你'); return; }
-    if (m === 'wall') {
+    if (m === 'wallH' || m === 'wallV') {
       const me = playerAt(myIdx());
       if (!me || me.wallLeft <= 0) { toast('你的墙已用完'); return; }
     }
@@ -254,8 +256,11 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     } else {
       pos = S.players.map(p => p.pos);
       walls = S.walls;
-      if (isMyTurn() && quoMode === 'move') legalMoves = S.legalMoves || [];
-      if (isMyTurn() && quoMode === 'wall') legalSlots = S.legalWalls || [];
+      if (isMyTurn()) {
+        if (quoMode === 'move') legalMoves = S.legalMoves || [];
+        else if (quoMode === 'wallH') legalSlots = (S.legalWalls || []).filter(s => s.o === 'H');
+        else if (quoMode === 'wallV') legalSlots = (S.legalWalls || []).filter(s => s.o === 'V');
+      }
     }
     // 己方视角：目标边转到上方（row0 不转 / row8 转 180° / col8 逆时针 90° / col0 顺时针 90°）
     const me = playerAt(myIdx());
@@ -307,7 +312,10 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     if (quoWallConfirm) {
       if (armedWall && armedWall.r === r && armedWall.c === c && armedWall.o === o) {
         const a = armedWall; armedWall = null;
-        socket.emit('quoridor_wall', { r: a.r, c: a.c, o: a.o }, res => { if (res && !res.success && res.msg) toast(res.msg); });
+        socket.emit('quoridor_wall', { r: a.r, c: a.c, o: a.o }, res => {
+          if (res && !res.success && res.msg) toast(res.msg);
+          else if (res && res.success) quoMode = 'move';
+        });
       } else {
         armedWall = { r, c, o };
         render();

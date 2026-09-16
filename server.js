@@ -1935,6 +1935,7 @@ function quoInit(room, names) {
     roomId: room.roomId, playerOrder: order, pos,
     walls: new Set(), wallLeft: order.map(() => QUO_WALLS[n]),
     wallsUsed: order.map(() => 0), wallOwner: {},
+    movesUsed: order.map(() => 0),
     current: 0, actions: 0, finished: [], over: null,
     history: [], snapshots: [], cancelVotes: []
   };
@@ -1973,7 +1974,7 @@ function quoFinish(g, idx, prePaths) {
     const other = activesBefore.find(i => i !== idx);
     if (other != null && quoPathLen(g, other) >= 15) announceAchievement(g, g.roomId, name, 'q_builder');
   }
-  if (g.actions <= 10) announceAchievement(g, g.roomId, name, 'q_fast');
+  if (((g.movesUsed || [])[idx] || 0) <= 10) announceAchievement(g, g.roomId, name, 'q_fast');
   if (rank === 1 && (g.wallsUsed[idx] || 0) === 0) announceAchievement(g, g.roomId, name, 'q_s1');
   const allOne = paths.length > 0 && paths.every(p => p === 1);
   if (activesBefore.length === 2 && allOne) announceAchievement(g, g.roomId, name, 'q_step');
@@ -2001,6 +2002,7 @@ function quoApplyMove(g, name, r, c) {
   const from = g.pos[idx].slice();
   g.pos[idx] = [r, c];
   g.actions++;
+  g.movesUsed[idx] = (g.movesUsed[idx] || 0) + 1;
   const fin = quoOnGoal(g, idx, r, c);
   quoPushHistory(g, g.actions + '. ' + quoCoord(from[0], from[1]) + '-' + quoCoord(r, c));
   if (fin) quoFinish(g, idx, prePaths); else quoAdvance(g);
