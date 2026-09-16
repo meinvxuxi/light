@@ -2897,7 +2897,8 @@ const PPO_ORIENT = [[-1, 0], [0, 1], [1, 0], [0, -1]];   // 附属气泡：上/�
 const PPO_CHAIN_MULT = [1, 2, 4, 8, 16];                 // 连锁倍率（5 连锁及以上 ×16）
 const PPO_LOCK_DELAY = 350;          // 落地缓冲（ms）
 const PPO_GARBAGE_DELAY = 1200;      // 干扰气泡延迟落地（ms）＝相杀窗口
-const PPO_OFFLINE_ELIM_MS = 45000;   // 离线超过该时长判定淘汰（实时对战防卡）
+const PPO_SOFT_MS = 110;             // 加速下落速度（按住时每格毫秒）
+const PPO_OFFLINE_ELIM_MS = Number(process.env.PPO_OFFLINE_MS || 0) || 45000;   // 离线超时淘汰（可用 PPO_OFFLINE_MS 覆盖，便于测试）
 const PPO_DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const puyopuyoGames = {};            // roomId -> 对局
 const puyoAtGame = new Map();        // playerName -> 当前打开气泡页的 socket.id
@@ -2984,13 +2985,14 @@ function ppoGarbageOfChain(chain) {
   return Math.min(30, 10 + (chain - 5) * 4);
 }
 
-function ppoNewPlayer(name, index, colors) {
+function ppoNewPlayer(name, index, colors, ai) {
   return {
     name, index, board: new Array(PPO_CELLS).fill(0),
     piece: null, next: ppoMakePiece(colors),
     pending: 0, pendingAt: 0, score: 0, maxChain: 0, maxCleared: 0,
     alive: true, rank: 0, fallAcc: 0, lockAcc: 0, soft: false,
-    offlineSince: 0, heightBeforeChain: 0, played: 0
+    offlineSince: 0, heightBeforeChain: 0, played: 0,
+    ai: ai || null, aiPlan: null, aiMoveAt: 0
   };
 }
 function ppoNotice(g, text, kind) {
@@ -3000,13 +3002,16 @@ function ppoNotice(g, text, kind) {
 function ppoInit(room, names, opts) {
   const colors = (opts && opts.colors === 5) ? 5 : 4;
   const now = Date.now();
+  const aiList = (opts && Array.isArray(opts.ai)) ? opts.ai : [];   // [{ name, difficulty }]
+  const players = names.map((n, i) => ppoNewPlayer(n, i, colors, null))
+    .concat(aiList.map((a, k) => ppoNewPlayer(a.name, names.length + k, colors, a.difficulty || 'normal')));
   const g = {
     roomId: room.roomId, gameType: 'puyopuyo', phase: 'play',
-    playerOrder: names.slice(), colors,
+    playerOrder: players.map(p => p.name), colors,
     garbageMode: (opts && opts.garbageMode === 'random') ? 'random' : 'all',
     startedAt: now, lastTick: now, lastBroadcast: 0,
-    players: names.map((n, i) => ppoNewPlayer(n, i, colors)),
-    ranking: [], over: null, notice: null, seq: 0, cancelVotes: [], _recorded: false
+    players,
+    ranking: [], elimOrder: [], over: null, notice: null, seq: 0, cancelVotes: [], _recorded: false
   };
   g.players.forEach(p => ppoSpawn(g, p, now));
   return g;
@@ -3043,7 +3048,7 @@ function ppoDropGarbage(p, now) {
   if (p.pending <= 0) { p.pending = 0; p.pendingAt = 0; }
   return dropped > 0;
 }
-// 落地 → 连锁结算 → 生成新对
+// 落地 → 先压实（补上悬空气泡）→ 连锁结算 → 生成新对
 function ppoLock(g, p, now) {
   if (!p.piece) return;
   const [ar, ac, cr, cc] = ppoPieceCells(p.piece);
@@ -3051,6 +3056,7 @@ function ppoLock(g, p, now) {
   p.board[ppoI(cr, cc)] = p.piece.colors[1];
   p.piece = null;
   p.played++;
+  ppoGravity(p);                      // 关键：锁定后立即让悬空的气泡落下来
   p.heightBeforeChain = ppoHeight(p);
   ppoResolve(g, p, now);
   if (g.over) return;
@@ -3115,8 +3121,132 @@ function ppoResolve(g, p, now) {
   ppoCheckAchievements(g, p);
   return chain;
 }
-// 成就：连锁档位 / 泡泡枪 / 清空棋盘 / 扶大厦于将倾
+// ======================== 魔法气泡 AI（三档：简单/普通/困难） ========================
+// 评估函数：模拟在某一列某一朝向落子后的局面（消除数 / 潜在连接 / 三连潜力 / 高度 / 空洞 / 起伏）
+function ppoFitsB(b, col, r, orient) {
+  const [dr, dc] = PPO_ORIENT[orient];
+  const ar = r, ac = col, crr = r + dr, cc = col + dc;
+  if (!ppoIn(ar, ac) || !ppoIn(crr, cc)) return false;
+  return b[ppoI(ar, ac)] === 0 && b[ppoI(crr, cc)] === 0;
+}
+function ppoSimDrop(b, col, orient, colors) {
+  let r = 1;
+  while (ppoFitsB(b, col, r + 1, orient)) r++;
+  if (!ppoFitsB(b, col, r, orient)) return null;
+  const [dr, dc] = PPO_ORIENT[orient];
+  const nb = b.slice();
+  nb[ppoI(r, col)] = colors[0];
+  nb[ppoI(r + dr, col + dc)] = colors[1];
+  return { board: nb, r, cells: [ppoI(r, col), ppoI(r + dr, col + dc)] };
+}
+function ppoHoles(b) {
+  let holes = 0;
+  for (let c = 0; c < PPO_COLS; c++) {
+    let seenBlock = false;
+    for (let r = 0; r < PPO_ROWS; r++) {
+      if (b[ppoI(r, c)]) seenBlock = true;
+      else if (seenBlock) holes++;
+    }
+  }
+  return holes;
+}
+function ppoBump(b) {
+  let sum = 0;
+  const hs = [];
+  for (let c = 0; c < PPO_COLS; c++) {
+    let h = 0;
+    for (let r = 0; r < PPO_ROWS; r++) if (b[ppoI(r, c)]) { h = PPO_ROWS - r; break; }
+    hs.push(h);
+  }
+  for (let i = 1; i < hs.length; i++) sum += Math.abs(hs[i] - hs[i - 1]);
+  return sum;
+}
+function ppoEvalBoard(b, cells) {
+  const groups = ppoGroups({ board: b });
+  let clears = 0, threePlus = 0;
+  groups.forEach(gr => { clears += gr.cells.length; if (gr.cells.length >= 3) threePlus++; });
+  let adj = 0;
+  cells.forEach(i => {
+    const r = Math.floor(i / PPO_COLS), c = i % PPO_COLS, col = b[i];
+    for (const [dr, dc] of PPO_DIRS4) {
+      const nr = r + dr, nc = c + dc;
+      if (ppoIn(nr, nc) && b[ppoI(nr, nc)] === col) adj++;
+    }
+  });
+  return { clears, adj, threePlus, height: ppoHeight({ board: b }), holes: ppoHoles(b), bump: ppoBump(b) };
+}
+// 为某个难度挑选落子方案（返回 { col, orient, score }）
+function ppoAiPlan(g, p) {
+  const colors = p.piece.colors;
+  const diff = p.ai || 'normal';
+  const cands = [];
+  for (let col = 0; col < PPO_COLS; col++) {
+    for (let orient = 0; orient < 4; orient++) {
+      const sim = ppoSimDrop(p.board, col, orient, colors);
+      if (!sim) continue;
+      const ev = ppoEvalBoard(sim.board, sim.cells);
+      let score;
+      if (diff === 'easy') {
+        score = ev.clears * 60 + ev.adj * 2 + Math.random() * 60;
+      } else if (diff === 'hard') {
+        score = ev.clears * 110 + ev.threePlus * 40 + ev.adj * 5
+          - ev.height * 11 - ev.holes * 32 - ev.bump * 3
+          - (ev.height > 10 ? 200 : 0) + Math.random() * 4;
+        // 困难：再看一眼下一对（1 层前瞻）
+        const nx = p.next ? p.next.colors : null;
+        if (nx) {
+          let best2 = -1e9;
+          for (let c2 = 0; c2 < PPO_COLS; c2++) for (let o2 = 0; o2 < 4; o2++) {
+            const s2 = ppoSimDrop(sim.board, c2, o2, nx);
+            if (!s2) continue;
+            const e2 = ppoEvalBoard(s2.board, s2.cells);
+            const v = e2.clears * 110 + e2.threePlus * 40 + e2.adj * 5 - e2.height * 11 - e2.holes * 32 - e2.bump * 3 - (e2.height > 10 ? 200 : 0);
+            if (v > best2) best2 = v;
+          }
+          if (best2 > -1e8) score += best2 * 0.45;
+        }
+      } else {
+        score = ev.clears * 90 + ev.threePlus * 18 + ev.adj * 4
+          - ev.height * 8 - ev.holes * 22 - ev.bump * 2 + Math.random() * 12;
+      }
+      cands.push({ col, orient, score });
+    }
+  }
+  if (!cands.length) return null;
+  cands.sort((a, b) => b.score - a.score);
+  if (diff === 'easy' && cands.length > 2) return cands[Math.floor(Math.random() * Math.min(4, cands.length))];
+  return cands[0];
+}
+// AI 每 tick 行动：缓慢移动到目标列/朝向，然后落底（带“卡住兜底”，避免死循环）
+function ppoAiTick(g, p, now) {
+  if (!p.piece) { ppoSpawn(g, p, now); return !!p.piece; }   // 兜底：没有气泡对就补一个
+  if (!p.aiPlan) {
+    p.aiPlan = ppoAiPlan(g, p);
+    p.aiMoveAt = now + (p.ai === 'easy' ? 380 : p.ai === 'hard' ? 90 : 180);
+    p.aiStuck = 0; p.aiLast = '';
+  }
+  const drop = () => {
+    while (ppoCanFall(p)) p.piece = Object.assign({}, p.piece, { r: p.piece.r + 1 });
+    p.aiPlan = null;
+    ppoLock(g, p, now);
+    return true;
+  };
+  if (!p.aiPlan) return drop();                      // 没有可评估落点：原地落底
+  if (now < p.aiMoveAt) return false;
+  p.aiMoveAt = now + (p.ai === 'easy' ? 210 : p.ai === 'hard' ? 55 : 110);
+  const plan = p.aiPlan;
+  const key = p.piece.c + ':' + p.piece.orient;
+  if (key === p.aiLast) p.aiStuck++; else { p.aiStuck = 0; p.aiLast = key; }
+  if (p.aiStuck > 14) return drop();                 // 目标不可达 → 直接在当前位置落底
+  const needRot = (plan.orient - p.piece.orient + 4) % 4;
+  if (needRot !== 0 && ppoRotate(p, needRot === 3 ? -1 : 1)) return true;
+  if (p.piece.c !== plan.col && ppoMove(p, p.piece.c < plan.col ? 1 : -1)) return true;
+  if (p.piece.c === plan.col && p.piece.orient === plan.orient) return drop();
+  return false;
+}
+
 function ppoCheckAchievements(g, p) {
+  if (p.ai) return;   // AI 不计成就
   const c = p.maxChain;
   if (c >= 3) announceAchievement(g, g.roomId, p.name, 'pp_chain3');
   if (c >= 5) announceAchievement(g, g.roomId, p.name, 'pp_chain5');
@@ -3137,17 +3267,24 @@ function ppoIsOffline(g, p) {
 function ppoEliminate(g, p, reason, now) {
   if (!p.alive) return;
   p.alive = false; p.piece = null;
-  p.rank = g.ranking.length + 1;
-  g.ranking.push(p.index);
+  // 名次：当前仍存活的玩家人数 + 1（第一个被淘汰的排最后）
+  p.rank = g.players.filter(q => q.alive).length + 1;
+  if (!g.elimOrder) g.elimOrder = [];
+  g.elimOrder.push(p.index);
   ppoNotice(g, p.name + ' 的棋盘堆满，以第 ' + p.rank + ' 名结束对局', 'out');
   const alive = g.players.filter(q => q.alive);
   if (alive.length <= 1) ppoFinish(g, alive[0] || null, now);
 }
 function ppoFinish(g, winner, now) {
   if (g.over) return;
-  if (winner && !winner.rank) { winner.rank = 1; g.ranking.unshift(winner.index); }
-  g.players.forEach(p => { if (!p.rank) { p.rank = g.ranking.length + 1; g.ranking.push(p.index); } });
+  if (winner) winner.rank = 1;
   g.phase = 'over';
+  const order = [];
+  if (winner) order.push(winner.index);
+  (g.elimOrder || []).forEach(i => { if (!order.includes(i)) order.push(i); });
+  g.players.forEach(p => { if (!order.includes(p.index)) order.push(p.index); });
+  order.forEach((i, k) => { if (i === (winner && winner.index)) return; if (!g.players[i].rank) g.players[i].rank = k + 1; });
+  g.ranking = order.slice().sort((a, b) => (g.players[a].rank || 99) - (g.players[b].rank || 99));
   g.over = {
     winner: winner ? winner.name : null,
     ranking: g.ranking.map(i => ({ name: g.players[i].name, rank: g.players[i].rank, score: g.players[i].score, maxChain: g.players[i].maxChain }))
@@ -3159,7 +3296,8 @@ function ppoView(g, name, room) {
   const me = g.players.find(p => p.name === name) || null;
   const info = p => ({
     name: p.name, index: p.index, board: p.board.join(''), alive: p.alive, rank: p.rank,
-    score: p.score, pending: p.pending, maxChain: p.maxChain, played: p.played, offline: ppoIsOffline(g, p),
+    score: p.score, pending: p.pending, maxChain: p.maxChain, played: p.played,
+    offline: p.ai ? false : ppoIsOffline(g, p), ai: p.ai || null,
     piece: p.piece, next: p.next
   });
   return {
@@ -3203,6 +3341,9 @@ function ppoInput(g, name, data) {
     case 'right': ppoMove(p, 1); break;
     case 'cw': ppoRotate(p, 1); break;
     case 'ccw': ppoRotate(p, -1); break;
+    case 'softStep':                       // 触屏下滑一格
+      if (ppoCanFall(p)) p.piece = Object.assign({}, p.piece, { r: p.piece.r + 1 });
+      break;
     case 'hard':
       while (ppoCanFall(p)) p.piece = Object.assign({}, p.piece, { r: p.piece.r + 1 });
       ppoLock(g, p, now);
@@ -3222,6 +3363,11 @@ function ppoTick(now) {
     let changed = false;
     for (const p of g.players) {
       if (!p.alive) continue;
+      if (p.ai) {                       // AI：由 AI 逻辑驱动（不看心跳、不判离线）
+        if (ppoAiTick(g, p, now)) changed = true;
+        if (g.over) break;
+        continue;
+      }
       if (ppoIsOffline(g, p)) {
         if (!p.offlineSince) p.offlineSince = now;
         if (now - p.offlineSince > PPO_OFFLINE_ELIM_MS) { ppoEliminate(g, p, 'offline', now); changed = true; }
@@ -3243,6 +3389,7 @@ function ppoTick(now) {
       } else p.lockAcc = 0;
       if (g.over) break;
     }
+    if (g.over) { g.needReset = true; }        // 交由外层安排房间复位（含 tick 淘汰结束的情况）
     if (changed || now - (g.lastBroadcast || 0) >= 400) {
       g.lastBroadcast = now;
       ppoBroadcastFor(roomId);
@@ -3611,6 +3758,7 @@ function syncRoomState(room, selfName) {
   const data = {
     roomId: room.roomId, hostName: room.hostName, maxPlayers: room.maxPlayers, skipOffline: !!room.skipOffline, msTeam: !!room.msTeam, continueRanking: !!room.continueRanking,
     puyoColors: room.puyoColors === 5 ? 5 : 4, puyoGarbage: room.puyoGarbage === 'random' ? 'random' : 'all',
+    puyoAI: Math.max(0, Math.min(3, Number(room.puyoAI) || 0)), puyoAIDifficulty: ['easy', 'normal', 'hard'].includes(room.puyoAIDifficulty) ? room.puyoAIDifficulty : 'normal',
     seats: room.seats, spectators: room.spectators, mySeat,
     myReady: mySeat ? room.seats[mySeat].ready : false,
     gameStarted: !!nowGame,
@@ -3638,7 +3786,9 @@ function broadcastRoom(room) {
     gamePlayers,
     continueRanking: !!room.continueRanking,
     puyoColors: room.puyoColors === 5 ? 5 : 4,
-    puyoGarbage: room.puyoGarbage === 'random' ? 'random' : 'all'
+    puyoGarbage: room.puyoGarbage === 'random' ? 'random' : 'all',
+    puyoAI: Math.max(0, Math.min(3, Number(room.puyoAI) || 0)),
+    puyoAIDifficulty: ['easy', 'normal', 'hard'].includes(room.puyoAIDifficulty) ? room.puyoAIDifficulty : 'normal'
   });
   room.playerMap.forEach((_, uname) => {
     const mySeat = Object.entries(room.seats).find(([k, v]) => v?.name === uname)?.[0] || null;
@@ -3657,7 +3807,9 @@ function broadcastRoom(room) {
         gamePlayers,
         continueRanking: !!room.continueRanking,
         puyoColors: room.puyoColors === 5 ? 5 : 4,
-        puyoGarbage: room.puyoGarbage === 'random' ? 'random' : 'all'
+        puyoGarbage: room.puyoGarbage === 'random' ? 'random' : 'all',
+        puyoAI: Math.max(0, Math.min(3, Number(room.puyoAI) || 0)),
+        puyoAIDifficulty: ['easy', 'normal', 'hard'].includes(room.puyoAIDifficulty) ? room.puyoAIDifficulty : 'normal'
       });
     }
   });
@@ -4341,7 +4493,7 @@ io.on('connection', (socket) => {
     broadcastRoom(room);
   });
 
-  socket.on('change_settings', ({ maxPlayers, skipOffline, msTeam, continueRanking, puyoColors, puyoGarbage }, cb) => {
+  socket.on('change_settings', ({ maxPlayers, skipOffline, msTeam, continueRanking, puyoColors, puyoGarbage, puyoAI, puyoAIDifficulty }, cb) => {
     const name = socketToUser.get(socket.id);
     if (!name) return;
     let room = null;
@@ -4373,6 +4525,9 @@ io.on('connection', (socket) => {
     // 魔法气泡：气泡颜色数（4/5）与干扰发送模式（所有人/随机一人）
     if (puyoColors === 4 || puyoColors === 5) room.puyoColors = puyoColors;
     if (puyoGarbage === 'all' || puyoGarbage === 'random') room.puyoGarbage = puyoGarbage;
+    // 魔法气泡：单机练手 AI（数量 0~3 与难度）
+    if (puyoAI != null) room.puyoAI = Math.max(0, Math.min(3, Number(puyoAI) || 0));
+    if (['easy', 'normal', 'hard'].includes(puyoAIDifficulty)) room.puyoAIDifficulty = puyoAIDifficulty;
 
     if (maxPlayers != null) {
       const seatedCount = Object.values(room.seats).filter(Boolean).length;
@@ -5091,7 +5246,8 @@ io.on('connection', (socket) => {
       delete gameEndTimers[room.roomId];
     }
     const players = Object.values(room.seats).filter(Boolean);
-    const needPlayers = room.gameType === 'drawing' ? 4 : 2; // 画猜接龙为四人版；其余默认至少 2 人
+    const needPlayers = room.gameType === 'drawing' ? 4
+      : (room.gameType === 'puyopuyo' && (Number(room.puyoAI) > 0) ? 1 : 2); // 魔法气泡可开 AI 陪练，1 人也能开局
     if (players.length < needPlayers || !players.every(p => p.ready)) return;
     if (room.gameType === 'minesweeper' && room.msTeam && players.length < 4) return; // 2v2 固定 4 人
     if (room.gameType === 'othello' && players.length !== 2) return; // 翻转棋固定 2 人
@@ -5118,7 +5274,15 @@ io.on('connection', (socket) => {
       gomokuGames[room.roomId] = gmkInit(room, playerNames, room.continueRanking === true);
     } else if (room.gameType === 'puyopuyo') {
       const playerNames = players.map(p => p.name);
-      puyopuyoGames[room.roomId] = ppoInit(room, playerNames, { colors: room.puyoColors === 5 ? 5 : 4, garbageMode: room.puyoGarbage === 'random' ? 'random' : 'all' });
+      const aiCount = Math.max(0, Math.min(3, Number(room.puyoAI) || 0));
+      const aiDiff = ['easy', 'normal', 'hard'].includes(room.puyoAIDifficulty) ? room.puyoAIDifficulty : 'normal';
+      const label = { easy: '简单', normal: '普通', hard: '困难' }[aiDiff];
+      const ai = Array.from({ length: aiCount }, (_, k) => ({ name: 'AI·' + label + (aiCount > 1 ? ('·' + (k + 1)) : ''), difficulty: aiDiff }));
+      puyopuyoGames[room.roomId] = ppoInit(room, playerNames, {
+        colors: room.puyoColors === 5 ? 5 : 4,
+        garbageMode: room.puyoGarbage === 'random' ? 'random' : 'all',
+        ai
+      });
     }
     broadcastRoom(room);
     if (room.gameType === 'drawing') {
@@ -6428,17 +6592,24 @@ io.on('connection', (socket) => {
     ppoBroadcast(room, g);
     if (g.over) {
       broadcastAchievementSummary(room.roomId, g);
-      if (!gameEndTimers[room.roomId]) {
-        gameEndTimers[room.roomId] = setTimeout(() => {
-          if (puyopuyoGames[room.roomId] !== g) { delete gameEndTimers[room.roomId]; return; }
-          delete puyopuyoGames[room.roomId];
-          Object.keys(room.seats).forEach(i => { if (room.seats[i]) room.seats[i].ready = false; });
-          broadcastRoom(room);
-          delete gameEndTimers[room.roomId];
-          console.log(`🔄 魔法气泡 ${room.roomId} 已结算，房间已复位`);
-        }, 12000);
-      }
+      ppoScheduleReset(room.roomId, g);
     }
+  }
+  // 终局后 12 秒复位房间（无论对局是「玩家操作结束」还是「节拍淘汰结束」都会走这里）
+  function ppoScheduleReset(roomId, g) {
+    const room = GAME_ROOMS.puyopuyo;
+    if (!room || puyopuyoGames[roomId] !== g || g._resetScheduled) return;
+    g._resetScheduled = true;
+    if (gameEndTimers[roomId]) clearTimeout(gameEndTimers[roomId]);
+    gameEndTimers[roomId] = setTimeout(() => {
+      if (puyopuyoGames[roomId] === g) {
+        delete puyopuyoGames[roomId];
+        Object.keys(room.seats).forEach(i => { if (room.seats[i]) room.seats[i].ready = false; });
+        broadcastRoom(room);
+        console.log(`🔄 魔法气泡 ${roomId} 已结算，房间已复位`);
+      }
+      delete gameEndTimers[roomId];
+    }, 12000);
   }
   socket.on('puyopuyo_input', (data = {}, cb) => {
     const name = socketToUser.get(socket.id);
@@ -6528,6 +6699,27 @@ io.on('connection', (socket) => {
 
 // 魔法气泡：服务端节拍（气泡下落 / 干扰落地 / 败北判定 / 状态广播）
 setInterval(() => ppoTick(Date.now()), PPO_TICK_MS);
+// 魔法气泡：节拍内判定结束后安排房间复位（避免“对局结束但对局对象一直存在”）
+setInterval(() => {
+  for (const roomId of Object.keys(puyopuyoGames)) {
+    const g = puyopuyoGames[roomId];
+    if (!g || !g.over || !g.needReset || g._resetScheduled) continue;
+    const room = GAME_ROOMS.puyopuyo;
+    if (!room || puyopuyoGames[roomId] !== g) continue;
+    g._resetScheduled = true;
+    if (gameEndTimers[roomId]) clearTimeout(gameEndTimers[roomId]);
+    gameEndTimers[roomId] = setTimeout(() => {
+      if (puyopuyoGames[roomId] === g) {
+        delete puyopuyoGames[roomId];
+        Object.keys(room.seats).forEach(i => { if (room.seats[i]) room.seats[i].ready = false; });
+        broadcastRoom(room);
+        console.log(`🔄 魔法气泡 ${roomId} 已结算，房间已复位`);
+      }
+      delete gameEndTimers[roomId];
+    }, 12000);
+    console.log('🏁 魔法气泡 ' + roomId + ' 对局结束，12 秒后复位房间');
+  }
+}, 1000);
 
 setInterval(() => {
   for (const room of Object.values(GAME_ROOMS)) {

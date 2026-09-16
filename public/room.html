@@ -233,6 +233,19 @@
           <option value="all">发给所有对手</option>
           <option value="random">随机发给一人</option>
         </select>
+        <br style="line-height:1.6;">
+        AI 陪练：<select id="ppoAISel" onchange="changePuyo()">
+          <option value="0">不加 AI</option>
+          <option value="1">1 个 AI</option>
+          <option value="2">2 个 AI</option>
+          <option value="3">3 个 AI</option>
+        </select>
+        难度：<select id="ppoAIDiffSel" onchange="changePuyo()">
+          <option value="easy">简单</option>
+          <option value="normal">普通</option>
+          <option value="hard">困难</option>
+        </select>
+        <div style="color:#9aa5b1;margin-top:3px;">（想一个人练手时，入座 1 人即可开局，AI 会自动补齐对手）</div>
       </div>
     </div>
     <div id="msModeInfo" style="display:none;text-align:center;font-size:.8rem;color:#6b7a90;margin:6px 0;"></div>
@@ -437,6 +450,9 @@
         if (roomState.hostName === myName && pc && pg) {
           pc.value = String(roomState.puyoColors === 5 ? 5 : 4);
           pg.value = roomState.puyoGarbage === 'random' ? 'random' : 'all';
+          const pa = document.getElementById('ppoAISel'), pd = document.getElementById('ppoAIDiffSel');
+          if (pa) pa.value = String(Math.max(0, Math.min(3, Number(roomState.puyoAI) || 0)));
+          if (pd) pd.value = ['easy', 'normal', 'hard'].includes(roomState.puyoAIDifficulty) ? roomState.puyoAIDifficulty : 'normal';
         }
       }
 
@@ -503,7 +519,7 @@
       const seats = room.seats || {};
       const allReady = Object.values(seats).every(s => !s || s.ready);
       const playerCount = Object.values(seats).filter(Boolean).length;
-      const needPlayers = gameName === 'drawing' ? 4 : 2; // 画猜接龙为四人版
+      const needPlayers = (gameName === 'drawing') ? 4 : ((gameName === 'puyopuyo' && (latestRoom && Number(latestRoom.puyoAI) > 0)) ? 1 : 2);
       const canStart = isHost && allReady && playerCount >= needPlayers;
 
       // 开始按钮始终可点：不符合条件时点击会在 startGame 里弹网页内小提示（见下方 showToast）
@@ -615,13 +631,15 @@
       });
     }
 
-    // 魔法气泡：气泡颜色数 / 干扰发送模式
+    // 魔法气泡：气泡颜色数 / 干扰发送模式 / AI 陪练
     function changePuyo() {
       const c = parseInt((document.getElementById('ppoColorsSel') || {}).value || '4');
       const g = (document.getElementById('ppoGarbageSel') || {}).value || 'all';
+      const ai = parseInt((document.getElementById('ppoAISel') || {}).value || '0');
+      const aiDiff = (document.getElementById('ppoAIDiffSel') || {}).value || 'normal';
       const max = parseInt((document.getElementById('maxPlayersSelect') || {}).value || '4') || serverMaxPlayers;
-      socket.emit('change_settings', { maxPlayers: max, puyoColors: c, puyoGarbage: g }, (res) => {
-        if (res && res.success) showToast('魔法气泡设置已更新：' + (c === 5 ? '5 色' : '4 色') + ' · 干扰' + (g === 'random' ? '随机一人' : '所有对手'));
+      socket.emit('change_settings', { maxPlayers: max, puyoColors: c, puyoGarbage: g, puyoAI: ai, puyoAIDifficulty: aiDiff }, (res) => {
+        if (res && res.success) showToast('魔法气泡设置：' + (c === 5 ? '5 色' : '4 色') + ' · 干扰' + (g === 'random' ? '随机一人' : '所有对手') + ' · AI ' + (ai ? (ai + ' 个（' + ({ easy: '简单', normal: '普通', hard: '困难' }[aiDiff]) + '）') : '关闭'));
         else if (res && res.msg) showToast(res.msg);
       });
     }

@@ -22,19 +22,30 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .mainrow{display:flex;justify-content:center;align-items:flex-start;gap:14px;margin:6px 0;flex-wrap:wrap;}
 .boardbox{position:relative;padding:6px;border-radius:12px;background:rgba(255,255,255,.66);border:1px solid var(--accB);backdrop-filter:blur(8px);transition:box-shadow .2s;}
 .boardbox.danger{box-shadow:0 0 0 3px rgba(198,78,78,.35);}
-.board{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;background:rgba(44,62,80,.06);border-radius:8px;padding:3px;}
-.cell{width:min(7.2vw,30px);height:min(7.2vw,30px);border-radius:50%;background:rgba(44,62,80,.05);}
-.c1{background:#e7625c;} .c2{background:#e8c34a;} .c3{background:#6bb96b;}
-.c4{background:#5b8fd8;} .c5{background:#a874d8;} .c9{background:#9aa5b1;box-shadow:inset 0 0 0 2px rgba(255,255,255,.5);}
-.cell.fall{box-shadow:0 0 0 2px rgba(255,255,255,.95),0 0 6px rgba(31,45,61,.25);}
-.side{min-width:126px;display:flex;flex-direction:column;gap:6px;font-size:.8rem;color:#4a5b6d;}
-.panel{background:rgba(255,255,255,.7);border:1px solid var(--accB);border-radius:12px;padding:8px;backdrop-filter:blur(8px);}
+.board{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;background:linear-gradient(180deg,rgba(44,62,80,.08),rgba(44,62,80,.03));border-radius:10px;padding:3px;box-shadow:inset 0 2px 6px rgba(31,45,61,.08);}
+.cell{width:min(7.2vw,30px);height:min(7.2vw,30px);border-radius:50%;background:rgba(255,255,255,.35);box-shadow:inset 0 1px 3px rgba(31,45,61,.07);}
+/* 磨砂半透明泡泡：半透明色 + 高光 + 内阴影 + 细白环 */
+.c1,.c2,.c3,.c4,.c5,.c9{border:1px solid rgba(255,255,255,.5);position:relative;overflow:hidden;
+  box-shadow:inset 0 -3px 6px rgba(0,0,0,.18),inset 0 3px 7px rgba(255,255,255,.6),0 1px 2px rgba(31,45,61,.18);}
+.board .c1,.board .c2,.board .c3,.board .c4,.board .c5,.board .c9{backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);}
+.c1,.c2,.c3,.c4,.c5,.c9{background-image:radial-gradient(circle at 34% 26%,rgba(255,255,255,.92),rgba(255,255,255,.28) 40%,rgba(255,255,255,0) 64%);}
+.c1{background-color:rgba(230,96,90,.88);} .c2{background-color:rgba(233,193,70,.9);} .c3{background-color:rgba(105,186,105,.9);}
+.c4{background-color:rgba(88,142,216,.9);} .c5{background-color:rgba(168,116,216,.9);}
+.c9{background-color:rgba(150,160,172,.92);background-image:linear-gradient(135deg,rgba(255,255,255,.35),rgba(255,255,255,0) 55%);}
+.cell.fall{box-shadow:0 0 0 2px rgba(255,255,255,.95),0 0 8px rgba(31,45,61,.28);}
+.ob .cell{border-width:1px;}
+.side{min-width:132px;display:flex;flex-direction:column;gap:6px;font-size:.8rem;color:#4a5b6d;}
+.panel{background:rgba(255,255,255,.72);border:1px solid var(--accB);border-radius:14px;padding:8px 10px;backdrop-filter:blur(10px);}
 .panel b{color:var(--accTx);}
 .nextgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;justify-content:center;width:64px;margin:4px auto 0;}
 .nextgrid .cell{width:28px;height:28px;}
-.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:2px;}
-.mode-opt{padding:6px 8px;border-radius:10px;border:1px solid #dfe3e8;background:#fff;cursor:pointer;font-size:.82rem;text-align:center;user-select:none;}
-.mode-opt:active,.mode-opt.on{border-color:var(--acc);background:var(--accBg);color:var(--accTx);font-weight:700;}
+/* 手机端操作区：大按钮 + 网格布局 */
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.mode-opt{display:flex;align-items:center;justify-content:center;min-height:46px;border-radius:14px;border:1px solid var(--accB);
+  background:rgba(255,255,255,.78);box-shadow:0 1px 3px rgba(31,45,61,.1);cursor:pointer;font-size:1.05rem;
+  user-select:none;backdrop-filter:blur(10px);color:var(--accTx);font-weight:700;}
+.mode-opt:active,.mode-opt.on{border-color:var(--acc);background:var(--accBg);transform:translateY(1px);}
+.keys .wide{grid-column:span 1;}
 .opps{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:8px 0;}
 .opp{background:rgba(255,255,255,.66);border:1px solid var(--accB);border-radius:12px;padding:6px;font-size:.72rem;color:#4a5b6d;text-align:center;}
 .opp.out{opacity:.5;}
@@ -81,9 +92,9 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
         <div class="panel"><div class="keys">
           <span class="mode-opt" onclick="ppoKey('ccw')">↺</span>
           <span class="mode-opt" onclick="ppoKey('cw')">↻</span>
-          <span class="mode-opt" onclick="ppoKey('hard')">⤓</span>
+          <span class="mode-opt" onclick="ppoKey('hard')">⤓<small style="font-size:.6rem;margin-left:3px;">落底</small></span>
           <span class="mode-opt" onclick="ppoKey('left')">←</span>
-          <span class="mode-opt" ontouchstart="ppoSoft(true)" ontouchend="ppoSoft(false)" onmousedown="ppoSoft(true)" onmouseup="ppoSoft(false)" onmouseleave="ppoSoft(false)">↓</span>
+          <span class="mode-opt" ontouchstart="ppoSoft(true)" ontouchend="ppoSoft(false)" onmousedown="ppoSoft(true)" onmouseup="ppoSoft(false)" onmouseleave="ppoSoft(false)">↓<small style="font-size:.6rem;margin-left:3px;">加速</small></span>
           <span class="mode-opt" onclick="ppoKey('right')">→</span>
         </div></div>
       </div>
@@ -154,10 +165,30 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     else if (a === 'right') piece.c = Math.min(5, piece.c + 1);
     else if (a === 'cw') piece.orient = (piece.orient + 1) % 4;
     else if (a === 'ccw') piece.orient = (piece.orient + 3) % 4;
+    else if (a === 'softStep') piece.r = Math.min(11, piece.r + 1);
     else if (a === 'hard') piece = null;
     render();
   }
   function ppoSoft(on){ socket.emit('puyopuyo_input', { action: 'soft', on: !!on }); }
+  // 触屏手势：左右滑＝移动、下滑＝加速一格、轻点＝旋转、上滑＝落底
+  (function bindSwipe(){
+    const box = document.getElementById('ppoBoardBox');
+    let tp = null;
+    box.addEventListener('touchstart', e => { const t = e.touches[0]; tp = { x: t.clientX, y: t.clientY, moved: 0, t: Date.now() }; }, { passive: true });
+    box.addEventListener('touchmove', e => {
+      if (!tp) return;
+      const t = e.touches[0], STEP = 26;
+      const dx = t.clientX - tp.x, dy = t.clientY - tp.y;
+      if (Math.abs(dx) > STEP && Math.abs(dx) >= Math.abs(dy)) { ppoKey(dx > 0 ? 'right' : 'left'); tp.x = t.clientX; tp.moved++; }
+      else if (dy > STEP) { ppoKey('softStep'); tp.y = t.clientY; tp.moved++; }
+      else if (dy < -STEP) { ppoKey('hard'); tp.y = t.clientY; tp.moved++; }
+    }, { passive: true });
+    box.addEventListener('touchend', () => {
+      if (!tp) return;
+      if (tp.moved === 0 && Date.now() - tp.t < 260) ppoKey('cw');
+      tp = null;
+    });
+  })();
   function ppoCancelVote(){ socket.emit('puyopuyo_cancel_vote', {}); }
   function ppoExit(){ location.href = '/room.html?game=puyopuyo'; }
   document.addEventListener('keydown', e => {
@@ -222,6 +253,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function renderOpps(){
     const el = document.getElementById('ppoOpps');
     if (!S || !S.players) { el.innerHTML = ''; return; }
+    const lc = S.lastChain;
     el.innerHTML = S.players.filter(p => p.name !== myName).map(p => {
       let html = '';
       for (let i = 0; i < 72; i++) {
@@ -229,20 +261,23 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
         html += '<div class="cell' + (v ? ' c' + v : '') + '"></div>';
       }
       const rank = p.rank ? ('第 ' + p.rank + ' 名') : '';
+      const chainTag = (lc && lc.name === p.name) ? ('<br><span style="color:#b58a1e;font-weight:700;">' + lc.chain + ' 连锁！</span>') : '';
       return '<div class="opp' + (p.alive ? '' : ' out') + (p.pending > 0 ? ' attack' : '') + '">'
-        + '<span class="nm">' + esc(dn(p.name)) + '</span>' + (p.offline ? '（离线）' : '')
+        + '<span class="nm">' + esc(dn(p.name)) + '</span>' + (p.ai ? '<span style="color:var(--accTx);font-size:.62rem;">（AI）</span>' : (p.offline ? '（离线）' : ''))
         + '<div class="ob">' + html + '</div>'
-        + '<span>' + p.score + ' 分' + (p.maxChain > 1 ? (' · ' + p.maxChain + ' 连锁') : '') + (rank ? (' · ' + rank) : '') + '</span>'
+        + '<span>' + p.score + ' 分' + (p.maxChain > 1 ? (' · 最高 ' + p.maxChain + ' 连锁') : '') + (rank ? (' · ' + rank) : '') + '</span>'
         + (p.pending > 0 ? ('<br><span style="color:#a5443f;">待落干扰 ' + p.pending + '</span>') : '')
+        + chainTag
         + '</div>';
     }).join('');
   }
   function renderChain(){
     const el = document.getElementById('ppoChain');
     const lc = S && S.lastChain;
-    if (lc && lc.ts !== lastChainTs) {
+    // 只在自己达成连锁时弹大字；对手的连锁在对手小棋盘上以小标签提示（仿原版）
+    if (lc && lc.name === myName && lc.ts !== lastChainTs) {
       lastChainTs = lc.ts;
-      el.textContent = lc.chain + ' 连锁！' + (lc.name === myName ? '' : '（' + dn(lc.name) + '）');
+      el.textContent = lc.chain + ' 连锁！';
       el.classList.add('show');
       clearTimeout(chainTimer);
       chainTimer = setTimeout(() => el.classList.remove('show'), 1400);
@@ -274,7 +309,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const m = me();
     if (!m) { el.innerHTML = ''; return; }
     if (!m.alive) { el.innerHTML = '<span>你已被淘汰，本局名次：第 ' + m.rank + ' 名（等待其他玩家结束）</span>'; return; }
-    let txt = '←→ 移动　↑/X 顺时针　Z 逆时针　↓ 加速　空格 直接落底';
+    let txt = '键盘：←→ 移动　↑/X 顺时针　Z 逆时针　↓ 加速　空格 落底<br>手机：左右滑移动　轻点旋转　下滑加速　上滑落底（也可用右侧按钮）';
     if (m.pending > 0) txt += '<br><span style="color:#a5443f;font-weight:700;">注意：有 ' + m.pending + ' 颗干扰即将落下，达成连锁可相杀抵消！</span>';
     el.innerHTML = '<span>' + txt + '</span>';
   }
