@@ -38,6 +38,10 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .cell.sel::before{content:'';position:absolute;inset:22%;border-radius:50%;background:var(--acc);opacity:.7;}
 .cell.pred::before{content:'';position:absolute;inset:26%;border-radius:4px;border:2px dashed var(--acc);}
 .cell.hint{box-shadow:inset 0 0 0 2px rgba(230,126,34,.8);}
+/* 清洁工待选：可移除的敌子画一圈红环 */
+.cell.clean{cursor:pointer;}
+.cell.clean::after{content:'';position:absolute;inset:12%;border:2px solid rgba(198,78,78,.6);border-radius:50%;}
+.cell.picked::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.7rem;color:#c64e4e;font-weight:700;}
 .cell.sealed{background:rgba(44,62,80,.16);}
 .cell.sealed::before{content:'封';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#5d6d7e;}
 /* 棋子：半透明填充 + 外面一圈细细的淡色描边（无高光、无模糊） */
@@ -90,6 +94,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     <div class="players" id="gmkPlayers"></div>
     <div id="gmkPick"></div>
     <div class="remind hide" id="gmkRemind"></div>
+    <div class="remind hide" id="gmkNotice"></div>
     <div class="modebar" id="gmkModes"></div>
     <div class="tip" id="gmkTip"></div>
     <div class="bwrap" id="gmkBoardWrap"><div class="board" id="gmkBoard"></div></div>
@@ -175,6 +180,28 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function pAt(i){ return (S && S.players) ? S.players[i] : null; }
   function roleOf(){ const m = me(); return m ? m.role : null; }
   let hintShow = true;
+  let lastNoticeSeq = 0;
+  // 是否轮到我做“清洁工选子”
+  function myClean(){ return !!(S && S.cleanPending && S.cleanPending.by === myName && !S.over); }
+  // 可作为移除对象的敌子（遵守“两颗要来自不同玩家”）
+  function cleanTargets(){
+    const out = {};
+    if (!S || !S.board || !myClean()) return out;
+    const idx = myIdx();
+    const cp = S.cleanPending;
+    const firstOwner = (cp.picks && cp.picks.length === 1) ? (S.players.find(p => p.name === cp.picks[0].name) || {}).index : null;
+    for (let r = 0; r < 15; r++) for (let c = 0; c < 15; c++) {
+      const cell = S.board[r * 15 + c] || [];
+      for (const pi of cell) {
+        if (pi === idx) continue;
+        const op = pAt(pi);
+        if (!op || op.finished) continue;
+        if (cp.multiOwner && firstOwner != null && pi === firstOwner) continue;
+        out[r + ',' + c] = pi;
+      }
+    }
+    return out;
+  }
   function render(){
     if (!S) return;
     document.getElementById('gmkStage').textContent = S.over ? '游戏结束' : (S.phase === 'pick' ? '选择角色' : '对局进行中');
@@ -187,6 +214,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     renderModes();
     renderTip();
     renderRemind();
+    renderNotice();
     renderMsg();
     renderBoard();
   }
@@ -229,7 +257,14 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function renderModes(){
     const el = document.getElementById('gmkModes');
     const m = me();
-    if (!S || S.phase !== 'play' || !m) { el.innerHTML = ''; return; }
+    if (!S || !m) { el.innerHTML = ''; return; }
+    if (myClean()) {
+      const cp = S.cleanPending;
+      el.innerHTML = '<span class="mode-opt on">清洁工：点选要移除的敌子（' + (cp.picks || []).length + '/' + cp.need + '）'
+        + (cp.multiOwner ? '·两颗需来自不同玩家' : '') + '</span>';
+      return;
+    }
+    if (S.phase !== 'play') { el.innerHTML = ''; return; }
     const turn = isMyTurn();
     const dis = turn ? '' : ' dis';
     let html = '';
@@ -251,6 +286,9 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     if (m.role === '封印师' && gmkMode === 'seal') txt += '　·　点击空位完成封印';
     if (m.role === '截码战专家' && gmkMode === 'predict') txt += '　·　点击两个空位自动提交预测';
     if (m.role === '截码战专家' && S.codeCfg) txt += '　·　阈值 ' + esc(S.codeCfg.label || '');
+    if (S.myPredict && S.myPredict.length === 2) {
+      txt += '　·　预测点 ' + S.myPredict.map(pt => colLabel(pt.c) + (pt.r + 1)).join('/') + (S.myPredictScored ? '（已结算，可重新提交）' : '（本轮待结算）');
+    }
     if (S.seal) { const sp = pAt(S.seal.by); txt += '　·　本轮封印：' + colLabel(S.seal.c) + (S.seal.r + 1) + (sp ? ('（' + esc(dn(sp.name)) + '）') : ''); }
     if (S.stdNote) txt += '<br><span style="color:#c0392b;">' + esc(S.stdNote) + '</span>';
     el.innerHTML = txt;
@@ -262,7 +300,11 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const m = me();
     if (!S || S.over || S.phase !== 'play' || !m) { el.className = 'remind hide'; el.innerHTML = ''; return; }
     const tips = [];
-    if (isMyTurn()) {
+    if (myClean()) {
+      const cp = S.cleanPending;
+      tips.push('清洁工技能：请点选要移除的敌子（还可移除 ' + Math.max(0, cp.need - (cp.picks || []).length) + ' 颗'
+        + (cp.multiOwner ? '，两颗需来自不同玩家' : '') + '）');
+    } else if (isMyTurn()) {
       if (m.role === '封印师' && !m.sealedThisRound) tips.push('别忘了用【封印】技能：本轮可锁定一个空位（点「封印位置」再点空位）');
       if (m.role === '截码战专家' && !m.predictedThisRound) tips.push('别忘了提交【预测】：本轮两个预测点，猜中可加分（点「预测两点」）');
       if (m.extraPending) tips.push('【幸运儿】五连达成，现在可以额外落一子');
@@ -274,6 +316,21 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     if (!tips.length) { el.className = 'remind hide'; el.innerHTML = ''; return; }
     el.className = 'remind';
     el.innerHTML = '⚡ ' + tips.map(esc).join('　·　');
+  }
+  // 技能/关键事件通告（全场可见）
+  function renderNotice(){
+    const el = document.getElementById('gmkNotice');
+    if (!el) return;
+    if (!S || !S.notice) { el.className = 'remind hide'; el.innerHTML = ''; return; }
+    if (S.notice.seq !== lastNoticeSeq) {
+      lastNoticeSeq = S.notice.seq;
+      if (S.notice.text) toast(S.notice.text);
+    }
+    el.className = 'remind';
+    el.style.background = S.notice.kind === 'clean' ? 'rgba(198,78,78,.12)' : '';
+    el.style.borderColor = S.notice.kind === 'clean' ? 'rgba(198,78,78,.45)' : '';
+    el.style.color = S.notice.kind === 'clean' ? '#a5443f' : '';
+    el.innerHTML = '📣 ' + esc(S.notice.text);
   }
   // 点击玩家（含对手）查看角色技能
   function showRole(name){
@@ -290,11 +347,11 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       '侦探': '提示只有你自己能看到；只要在某个有提示的轮次里没点橙色提示位、并且最终获胜，就能解锁「真相不止一个」。',
       '灵魂棋手': '共存棋子在棋盘上显示为居中、小一圈的半透明子。',
       '掌权者': '两个五连必须共用至少一枚棋子（同一手落子自然共用），达成即刻获胜。',
-      '幸运儿': '额外落子若再次成五连，正常计分但不会继续追加额外落子。',
+      '幸运儿': '每次达成五连都能再落一子；额外那一子若又成五连，只计分、不再追加额外落子。',
       '封印师': '被封印的格子本轮双方都不能下，下一轮自动解除；不能连续两轮封同一格。',
-      '清洁工': '五连计分后清掉这五子，并移除两颗敌子（尽量来自不同对手）。',
+      '清洁工': '五连计分后清掉自己那五子，然后由你点选要移除的两颗敌子（多对手时两颗需来自不同玩家）。',
       '摸鱼高手': '四连定义：连续四子且至少一端为空；四连以上只算一次四连。',
-      '截码战专家': '预测点每轮刷新、仅自己可见；猜中一人加分、猜中两人更多分。'
+      '截码战专家': '预测点每轮刷新（已提交的标记会一直显示，直到你提交新的），仅自己可见；命中一人 +1、命中两人 +3（2 人局命中一处即 +3）。'
     }[p.role] || '';
     card.innerHTML = '<div class="rname">' + esc(dn(p.name)) + (p.name === myName ? '（你）' : '') + '　·　' + esc(r) + '</div>'
       + '<div class="rdesc">' + esc((S.roleDesc || {})[p.role] || '（尚未选择角色）') + (extra ? '<br>' + esc(extra) : '') + '</div>'
@@ -310,8 +367,9 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       const rows = (S.over.ranking || []).map(r => {
         const p = (S.players || []).find(x => x.name === r.name);
         const mine = r.name === myName;
-        return '<div class="res-row' + (mine ? ' me' : '') + '"><span>第' + r.rank + '名　' + esc(dn(r.name)) + (r.role ? '　<span style="color:#7f8fa6;font-size:.78rem;">' + esc(r.role) + '</span>' : '') + '</span>'
-          + (p ? '<span style="color:' + p.color + ';font-size:.8rem;">五连 ' + p.five + '</span>' : '') + '</div>';
+        const rankTxt = (r.tie ? '并列第' : '第') + r.rank + '名';
+        return '<div class="res-row' + (mine ? ' me' : '') + '"><span>' + rankTxt + '　' + esc(dn(r.name)) + (r.role ? '　<span style="color:#7f8fa6;font-size:.78rem;">' + esc(r.role) + '</span>' : '') + '</span>'
+          + '<span style="font-size:.8rem;color:' + (p ? p.color : '#6b7a90') + ';">五连 ' + (r.fives != null ? r.fives : (p ? p.five : 0)) + '</span></div>';
       }).join('');
       const qC = { common:'#9aa5b1', rare:'#4caf50', epic:'#9c27b0', legend:'#ff9800', hidden:'#d32f2f' };
       const achRows = Object.keys(achSum || {}).map(n => {
@@ -322,6 +380,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
           + '</span></div>';
       }).filter(Boolean).join('');
       el.innerHTML = '<div class="res"><div class="res-title">' + esc(dn(S.over.winner)) + ' 获胜 · ' + esc(S.over.reason || '3次五连') + '</div>'
+        + (S.over.rankMode ? '<div style="font-size:.78rem;color:#9aa5b1;margin-bottom:6px;">本局决出全部名次（按完成顺序）</div>' : '<div style="font-size:.78rem;color:#9aa5b1;margin-bottom:6px;">最终名次按五连数排列（同数并列）</div>')
         + rows
         + (achRows ? '<div class="res-ach"><div class="ra-title">本局成就</div>' + achRows + '</div>' : '')
         + '<div class="res-btns">'
@@ -331,13 +390,24 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       return;
     }
     if (S.phase === 'pick') { el.innerHTML = '<span>全部选完角色后自动开赛（掌权者必先手，其余随机排序）</span>'; return; }
+    if (myClean()) {
+      const cp = S.cleanPending;
+      el.innerHTML = '<span style="color:#a5443f;font-weight:700;">清洁工技能：请在棋盘上点选要移除的敌子（' + (cp.picks || []).length + '/' + cp.need + '）'
+        + (cp.multiOwner ? '，两颗需来自不同玩家' : '') + '</span>';
+      return;
+    }
+    if (S.cleanPending) {
+      el.innerHTML = '<span>' + esc(dn(S.cleanPending.by)) + ' 正在选择要移除的棋子…（' + (S.cleanPending.picks || []).length + '/' + S.cleanPending.need + '）</span>';
+      return;
+    }
     const m = me();
     if (m && m.extraPending) { el.innerHTML = '<span style="color:#e67e22;font-weight:700;">幸运儿：五连达成，可再落一子</span>'; return; }
     const cur = pAt(S.turnIdx);
     el.innerHTML = '<span>' + (isMyTurn() ? ('轮到你落子' + (gmkMode === 'seal' ? '（选择要封印的空位）' : (gmkMode === 'predict' ? '（选择两个预测点）' : ''))) : ('等待 ' + esc(dn(cur ? cur.name : '')) + ' 落子…')) + '</span>';
   }
-  function legalFor(cellArr, idx){
+  function legalFor(cellArr, idx, r, c){
     if (!S || S.phase !== 'play' || S.over) return false;
+    if (myClean()) return cleanTargets()[r + ',' + c] != null;
     if (gmkMode !== 'place' && gmkMode !== 'seal' && gmkMode !== 'predict') return false;
     if (!isMyTurn()) return false;
     if (cellArr.includes(idx)) return false;
@@ -358,13 +428,20 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     (S.myPredict || []).forEach(pt => { preds[pt.r + ',' + pt.c] = 1; });
     const sels = {};
     selPts.forEach(pt => { sels[pt.r + ',' + pt.c] = 1; });
+    const targets = myClean() ? cleanTargets() : null;
+    const picked = {};
+    if (myClean()) (S.cleanPending.picks || []).forEach(k => { picked[k.r + ',' + k.c] = 1; });
     let html = '';
     for (let r = 0; r < 15; r++) for (let c = 0; c < 15; c++) {
       const cell = S.board[r * 15 + c] || [];
-      const legal = legalFor(cell, idx);
+      const legal = targets ? (targets[r + ',' + c] != null) : legalFor(cell, idx, r, c);
       const cls = [];
       if (legal) cls.push('me');
-      if (legal && (gmkMode === 'seal' || gmkMode === 'predict')) cls.push('pickmode');
+      if (targets) {
+        if (targets[r + ',' + c] != null) cls.push('clean');
+        if (picked[r + ',' + c]) cls.push('picked');
+      }
+      if (!targets && legal && (gmkMode === 'seal' || gmkMode === 'predict')) cls.push('pickmode');
       if (hints[r + ',' + c]) cls.push('hint');
       if (sels[r + ',' + c]) cls.push('sel');
       else if (preds[r + ',' + c]) cls.push('pred');
@@ -380,6 +457,10 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     el.innerHTML = html;
   }
   function onCell(r, c){
+    if (myClean()) {
+      socket.emit('gomoku_clean_pick', { r, c }, res => { if (res && !res.success) toast(res.msg || '不能移除这个棋子'); });
+      return;
+    }
     if (!isMyTurn()) { toast('还没轮到你'); return; }
     if (gmkMode === 'seal') {
       socket.emit('gomoku_seal', { r, c }, res => { if (res && !res.success) toast(res.msg || '封印失败'); else { gmkMode = 'place'; render(); } });

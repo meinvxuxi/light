@@ -282,7 +282,7 @@
         <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">路墙棋战绩（名次分：第1名=人数、第2名=人数-1…）</div>
         ${(g.modes || []).map(m => `<div class="st-mode"><span class="mk">${esc(m.mode)}</span>${metricStrQuo(m)}</div>`).join('')}`;
       } else if (curGame === 'gomoku') {
-        const rl = stRoles || { total: 0, rankModeGames: 0, totalRankScore: 0, byPlayers: [], rolesAll: [] };
+        const rl = stRoles || { total: 0, wins: 0, winRate: 0, totalFives: 0, rankModeGames: 0, totalRankScore: 0, byPlayers: [], rolesAll: [] };
         const byP = rl.byPlayers || [];
         const rolesAll = rl.rolesAll || [];
         const totalGames = rl.total || s.games;
@@ -304,12 +304,13 @@
         html = `
         <div class="st-grid two">
           ${statCell('总对局数', totalGames)}
+          ${statCell('共连成五连', (rl.totalFives || 0) + ' 次')}
           ${statCell('胜场', s.wins)}
           ${statCell('胜率', totalGames ? s.winRate + '%' : '—')}
           ${statCell('开启决出排名场次', rl.rankModeGames || 0)}
           ${statCell('名次分合计', rl.totalRankScore || 0)}
         </div>
-        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">名次分只在开启「继续决出排名」的对局里计（第1名=人数、第2名=人数-1…）；未开启的对局即使拿第一也是 0 分</div>
+        <div style="font-size:.8rem;color:#9aa5b1;margin:2px 0 6px;">名次分只在开启「继续决出排名」的对局里计（第1名=人数、第2名=人数-1…）；未开启的对局名次按五连数排列、同数并列</div>
         <div style="margin:2px 0 4px;">${chip(gmkViewMode === 'players', '按人数', 'players')}${chip(gmkViewMode === 'roles', '按角色', 'roles')}</div>
         ${body}`;
       } else {
