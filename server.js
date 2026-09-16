@@ -2897,7 +2897,7 @@ const PPO_ORIENT = [[-1, 0], [0, 1], [1, 0], [0, -1]];   // 附属气泡：上/�
 const PPO_CHAIN_MULT = [1, 2, 4, 8, 16];                 // 连锁倍率（5 连锁及以上 ×16）
 const PPO_LOCK_DELAY = 350;          // 落地缓冲（ms）
 const PPO_GARBAGE_DELAY = 1200;      // 干扰气泡延迟落地（ms）＝相杀窗口
-const PPO_SOFT_MS = 110;             // 加速下落速度（按住时每格毫秒）
+const PPO_SOFT_MS = 190;             // 加速下落速度（按住时每格毫秒）
 const PPO_OFFLINE_ELIM_MS = Number(process.env.PPO_OFFLINE_MS || 0) || 45000;   // 离线超时淘汰（可用 PPO_OFFLINE_MS 覆盖，便于测试）
 const PPO_DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const puyopuyoGames = {};            // roomId -> 对局
@@ -2975,14 +2975,11 @@ function ppoGroups(p) {
   }
   return groups;
 }
-// 连锁 → 发送干扰数（1连锁 0、2连锁 1、3连锁 3、4连锁 6、5连锁 10，之后每级 +4，上限 30）
+// 连锁 → 发送干扰数：按原作（Puyo Puyo Tsu）的“三角数”口径 n(n-1)/2，单次上限 30
+// 2连锁1、3连锁3、4连锁6、5连锁10、6连锁15、7连锁21、8连锁28、9连锁及以上30
 function ppoGarbageOfChain(chain) {
   if (chain <= 1) return 0;
-  if (chain === 2) return 1;
-  if (chain === 3) return 3;
-  if (chain === 4) return 6;
-  if (chain === 5) return 10;
-  return Math.min(30, 10 + (chain - 5) * 4);
+  return Math.min(30, Math.floor(chain * (chain - 1) / 2));
 }
 
 function ppoNewPlayer(name, index, colors, ai) {
@@ -3376,7 +3373,7 @@ function ppoTick(now) {
       p.offlineSince = 0;
       if (ppoDropGarbage(p, now)) changed = true;
       if (!p.piece) continue;
-      const fallMs = p.soft ? 45 : ppoFallMs(ppoLevel(g, now));
+      const fallMs = p.soft ? PPO_SOFT_MS : ppoFallMs(ppoLevel(g, now));
       p.fallAcc += dt;
       while (p.fallAcc >= fallMs) {
         p.fallAcc -= fallMs;
@@ -5247,7 +5244,7 @@ io.on('connection', (socket) => {
     }
     const players = Object.values(room.seats).filter(Boolean);
     const needPlayers = room.gameType === 'drawing' ? 4
-      : (room.gameType === 'puyopuyo' && (Number(room.puyoAI) > 0) ? 1 : 2); // 魔法气泡可开 AI 陪练，1 人也能开局
+      : (room.gameType === 'puyopuyo' ? 1 : 2);  // 魔法气泡：1 人也能开局（不足时自动补齐 AI 陪练）
     if (players.length < needPlayers || !players.every(p => p.ready)) return;
     if (room.gameType === 'minesweeper' && room.msTeam && players.length < 4) return; // 2v2 固定 4 人
     if (room.gameType === 'othello' && players.length !== 2) return; // 翻转棋固定 2 人
@@ -5274,7 +5271,9 @@ io.on('connection', (socket) => {
       gomokuGames[room.roomId] = gmkInit(room, playerNames, room.continueRanking === true);
     } else if (room.gameType === 'puyopuyo') {
       const playerNames = players.map(p => p.name);
-      const aiCount = Math.max(0, Math.min(3, Number(room.puyoAI) || 0));
+      const aiCount0 = Math.max(0, Math.min(3, Number(room.puyoAI) || 0));
+      // 单人（或人数不足 2）时自动补齐 AI，保证一定能开：至少 1 个 AI、总人数不少于 2
+      const aiCount = (playerNames.length < 2) ? Math.max(1, aiCount0) : aiCount0;
       const aiDiff = ['easy', 'normal', 'hard'].includes(room.puyoAIDifficulty) ? room.puyoAIDifficulty : 'normal';
       const label = { easy: '简单', normal: '普通', hard: '困难' }[aiDiff];
       const ai = Array.from({ length: aiCount }, (_, k) => ({ name: 'AI·' + label + (aiCount > 1 ? ('·' + (k + 1)) : ''), difficulty: aiDiff }));

@@ -46,6 +46,25 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
   user-select:none;backdrop-filter:blur(10px);color:var(--accTx);font-weight:700;}
 .mode-opt:active,.mode-opt.on{border-color:var(--acc);background:var(--accBg);transform:translateY(1px);}
 .keys .wide{grid-column:span 1;}
+/* ===== 手机端专用操作层：左右两侧大号磨砂主题色箭头 + 底部旋转/落底 ===== */
+.pad{display:none;}
+body.mobile .pad{display:block;}
+body.mobile .side .keys{display:none;}
+body.mobile .board .cell{width:min(11.6vw,36px);height:min(11.6vw,36px);}
+body.mobile .opp .ob .cell{width:min(4vw,14px);height:min(4vw,14px);}
+.pad-side{position:fixed;top:50%;transform:translateY(-40%);width:74px;height:74px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:2.2rem;font-weight:800;line-height:1;
+  color:var(--accTx);background:var(--accBg);border:2px solid var(--accB);backdrop-filter:blur(12px);
+  box-shadow:0 6px 18px rgba(31,45,61,.18);z-index:1200;user-select:none;touch-action:none;}
+.pad-side:active{background:var(--acc);color:#fff;transform:translateY(-40%) scale(.94);}
+.pad-side.left{left:8px;}
+.pad-side.right{right:8px;}
+.pad-bottom{position:fixed;left:0;right:0;bottom:10px;display:flex;justify-content:center;gap:14px;z-index:1200;}
+.pad-btn{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:1.5rem;font-weight:800;color:var(--accTx);background:var(--accBg);border:2px solid var(--accB);
+  backdrop-filter:blur(12px);box-shadow:0 6px 18px rgba(31,45,61,.18);user-select:none;touch-action:none;}
+.pad-btn:active{background:var(--acc);color:#fff;transform:scale(.94);}
+body.mobile .wrap{padding-bottom:92px;}
 .opps{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:8px 0;}
 .opp{background:rgba(255,255,255,.66);border:1px solid var(--accB);border-radius:12px;padding:6px;font-size:.72rem;color:#4a5b6d;text-align:center;}
 .opp.out{opacity:.5;}
@@ -101,6 +120,17 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     </div>
     <div class="opps" id="ppoOpps"></div>
     <div class="msg" id="ppoMsg"></div>
+  </div>
+  <!-- 手机端操作层（大号磨砂主题色：左右移动 / 旋转 / 加速 / 落底；长按连发） -->
+  <div class="pad" id="ppoPad">
+    <div class="pad-side left" data-act="left">‹</div>
+    <div class="pad-side right" data-act="right">›</div>
+    <div class="pad-bottom">
+      <div class="pad-btn" data-act="ccw">↺</div>
+      <div class="pad-btn" data-act="cw">↻</div>
+      <div class="pad-btn" data-act="soft">↓</div>
+      <div class="pad-btn" data-act="hard">⤓</div>
+    </div>
   </div>
   <div class="toast" id="ppoToast"></div>
   <script src="/socket.io/socket.io.js"></script>
@@ -170,24 +200,36 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     render();
   }
   function ppoSoft(on){ socket.emit('puyopuyo_input', { action: 'soft', on: !!on }); }
-  // 触屏手势：左右滑＝移动、下滑＝加速一格、轻点＝旋转、上滑＝落底
-  (function bindSwipe(){
-    const box = document.getElementById('ppoBoardBox');
-    let tp = null;
-    box.addEventListener('touchstart', e => { const t = e.touches[0]; tp = { x: t.clientX, y: t.clientY, moved: 0, t: Date.now() }; }, { passive: true });
-    box.addEventListener('touchmove', e => {
-      if (!tp) return;
-      const t = e.touches[0], STEP = 26;
-      const dx = t.clientX - tp.x, dy = t.clientY - tp.y;
-      if (Math.abs(dx) > STEP && Math.abs(dx) >= Math.abs(dy)) { ppoKey(dx > 0 ? 'right' : 'left'); tp.x = t.clientX; tp.moved++; }
-      else if (dy > STEP) { ppoKey('softStep'); tp.y = t.clientY; tp.moved++; }
-      else if (dy < -STEP) { ppoKey('hard'); tp.y = t.clientY; tp.moved++; }
-    }, { passive: true });
-    box.addEventListener('touchend', () => {
-      if (!tp) return;
-      if (tp.moved === 0 && Date.now() - tp.t < 260) ppoKey('cw');
-      tp = null;
+  // 手机端识别 + 操作层（长按连发：左右移动 140ms/次、旋转 180ms/次、加速 120ms/格）
+  (function bindPad(){
+    const isTouch = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) || ('ontouchstart' in window);
+    if (isTouch || window.innerWidth < 760) document.body.classList.add('mobile');
+    const pad = document.getElementById('ppoPad');
+    if (!pad) return;
+    let timer = null, act = null;
+    const step = a => {
+      if (a === 'soft') { socket.emit('puyopuyo_input', { action: 'softStep' }); if (piece) piece.r = Math.min(11, piece.r + 1); render(); return; }
+      ppoKey(a);
+    };
+    const start = a => {
+      if (a === 'hard') { ppoKey('hard'); return; }
+      stop();
+      act = a; step(a);
+      const ms = (a === 'soft') ? 120 : (a === 'left' || a === 'right' ? 150 : 190);
+      timer = setInterval(() => step(a), ms);
+    };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } act = null; };
+    pad.querySelectorAll('[data-act]').forEach(el => {
+      const a = el.getAttribute('data-act');
+      el.addEventListener('touchstart', e => { e.preventDefault(); start(a); }, { passive: false });
+      el.addEventListener('touchend', e => { e.preventDefault(); stop(); }, { passive: false });
+      el.addEventListener('touchcancel', () => stop());
+      el.addEventListener('mousedown', e => { e.preventDefault(); start(a); });
+      el.addEventListener('mouseup', () => stop());
+      el.addEventListener('mouseleave', () => stop());
     });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
+    window.addEventListener('touchend', () => stop(), { passive: true });
   })();
   function ppoCancelVote(){ socket.emit('puyopuyo_cancel_vote', {}); }
   function ppoExit(){ location.href = '/room.html?game=puyopuyo'; }

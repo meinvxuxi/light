@@ -519,7 +519,7 @@
       const seats = room.seats || {};
       const allReady = Object.values(seats).every(s => !s || s.ready);
       const playerCount = Object.values(seats).filter(Boolean).length;
-      const needPlayers = (gameName === 'drawing') ? 4 : ((gameName === 'puyopuyo' && (latestRoom && Number(latestRoom.puyoAI) > 0)) ? 1 : 2);
+      const needPlayers = (gameName === 'drawing') ? 4 : ((gameName === 'puyopuyo') ? 1 : 2);
       const canStart = isHost && allReady && playerCount >= needPlayers;
 
       // 开始按钮始终可点：不符合条件时点击会在 startGame 里弹网页内小提示（见下方 showToast）
@@ -656,9 +656,12 @@
       const seatedList = Object.values(seats).filter(Boolean);
       const playerCount = seatedList.length;
       const allReady = seatedList.every(s => s.ready);
+      const needPlayers = (gameName === 'drawing') ? 4 : ((gameName === 'puyopuyo') ? 1 : 2);
 
-      if (playerCount < 2) {
-        showToast('少人？人数还不够（至少 2 人才能开局）');
+      if (playerCount < needPlayers) {
+        showToast(gameName === 'puyopuyo'
+          ? ('少人？' + (playerCount === 0 ? '先入座再开始（1 人开局会自动补齐 AI 陪练）' : '入座后可开始（不足 2 人会自动补齐 AI 陪练）'))
+          : '少人？人数还不够（至少 2 人才能开局）');
         return;
       }
       if (!allReady) {
