@@ -40,11 +40,11 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .cell.hint{box-shadow:inset 0 0 0 2px rgba(230,126,34,.8);}
 .cell.sealed{background:rgba(44,62,80,.16);}
 .cell.sealed::before{content:'封';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#5d6d7e;}
-/* 棋子：淡色 + 半透明磨砂 + 高光 */
-.stone{position:absolute;border-radius:50%;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);box-shadow:0 1px 2px rgba(31,45,61,.16),inset 0 -2px 4px rgba(0,0,0,.10),inset 0 2px 3px rgba(255,255,255,.5);}
-.stone.a{left:8%;top:8%;width:84%;height:84%;}
-/* 灵魂棋手共存棋子：居中且小一圈，看起来像叠在中间的灵体 */
-.stone.b{left:22%;top:22%;width:56%;height:56%;opacity:.92;box-shadow:0 0 0 1.5px rgba(255,255,255,.9),0 1px 2px rgba(31,45,61,.16);}
+/* 棋子：半透明填充 + 外面一圈细细的淡色描边（无高光、无模糊） */
+.stone{position:absolute;border-radius:50%;box-sizing:border-box;}
+.stone.a{left:7%;top:7%;width:86%;height:86%;}
+/* 灵魂棋手共存棋子：居中、更小一圈、无白边 */
+.stone.b{left:27%;top:27%;width:46%;height:46%;}
 .msg{text-align:center;font-size:.86rem;color:#6b7a90;margin:8px 0;min-height:22px;}
 .res{max-width:470px;margin:8px auto;background:rgba(255,255,255,.82);backdrop-filter:blur(12px);border:1px solid var(--accB);border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 10px 28px rgba(31,45,61,.12);}
 .res-title{font-size:1.05rem;font-weight:800;margin-bottom:8px;}
@@ -123,10 +123,11 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function toast(m){ const e=document.getElementById('gmkToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>{e.style.opacity='0';},2400); }
   function hexA(hex, a){ const h = String(hex||'#4a90d9').replace('#',''); const n = parseInt(h.length===3?h.split('').map(x=>x+x).join(''):h,16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
   function colLabel(c){ return String.fromCharCode(65 + c); }
-  // 棋子：淡色半透明 + 磨砂 + 高光（灵魂共存子用 b 类，居中且小一圈）
+  // 棋子：半透明填充 + 一圈更淡更细的描边（a=普通子 / b=灵魂共存子，居中更小）
   function stoneHtml(color, cls){
-    return '<span class="stone ' + cls + '" style="background-color:' + hexA(color, cls === 'b' ? .58 : .7)
-      + ';background-image:radial-gradient(circle at 32% 26%, rgba(255,255,255,.78), rgba(255,255,255,0) 56%);"></span>';
+    const fill = cls === 'b' ? .36 : .42;
+    const line = cls === 'b' ? .55 : .62;
+    return '<span class="stone ' + cls + '" style="background-color:' + hexA(color, fill) + ';border:1px solid ' + hexA(color, line) + ';"></span>';
   }
   socket.on('connect', () => {
     socket.emit('heartbeat', myName, IS_T, true);
@@ -202,7 +203,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       const seal = p.sealedThisRound ? ' · 已封印' : '';
       const off = (p.online === false) ? '（离线）' : '';
       return '<div class="pchip' + (on ? ' on' : '') + (p.finished ? ' done' : '') + '" style="position:relative;" title="点击查看角色技能" onclick="showRole(\'' + esc(p.name) + '\')">'
-        + '<span style="position:relative;display:inline-block;width:14px;height:14px;border-radius:50%;background-color:' + hexA(p.color,.75) + ';background-image:radial-gradient(circle at 32% 26%, rgba(255,255,255,.8), rgba(255,255,255,0) 56%);flex:none;"></span>'
+        + '<span style="display:inline-block;width:13px;height:13px;border-radius:50%;box-sizing:border-box;background-color:' + hexA(p.color,.42) + ';border:1px solid ' + hexA(p.color,.62) + ';flex:none;"></span>'
         + '<span style="color:' + p.color + ';font-weight:700;">' + esc(dn(p.name)) + (p.name === myName ? '（你）' : '') + '</span>'
         + '<span class="role">' + esc(p.role || '未选') + '</span>'
         + '<span class="meta">' + five + four + sc + seal + extra + (rank ? '　' + rank : '') + off + '</span>'
@@ -286,7 +287,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     if (p.role === '封印师') meta += '　·　本轮' + (p.sealedThisRound ? '已封印' : '未封印');
     if (p.finished) meta += '　·　第 ' + p.rank + ' 名（已完成）';
     const extra = {
-      '侦探': '提示只有你自己能看到；即使有提示也可以选择别的点（拿了“真相不止一个”成就更帅）。',
+      '侦探': '提示只有你自己能看到；整局一次都不点橙色提示位 → 终局解锁成就「真相不止一个」（不需要赢）。',
       '灵魂棋手': '共存棋子在棋盘上显示为居中、小一圈的半透明子。',
       '掌权者': '两个五连必须共用至少一枚棋子（同一手落子自然共用），达成即刻获胜。',
       '幸运儿': '额外落子若再次成五连，正常计分但不会继续追加额外落子。',

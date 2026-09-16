@@ -2246,7 +2246,7 @@ function gmkInit(room, names, continueRanking) {
     sealCell: null, lastSeal: null, sealCounts: {},
     soulActive: true, soulStones: new Set(), soulFiveFlags: [],
     extraPending: false, extraUsed: false,
-    hintsSeen: false, placedOnHint: false, predictRound: 0,
+    hintsSeen: false, placedOnHint: false, hintRounds: new Set(), predictRound: 0,
     cleanCount: 0, finished: false, rank: 0, predict: []
   }));
   const board = Array.from({ length: GMK_TOTAL }, () => []);
@@ -2323,6 +2323,23 @@ function gmkCodeConfig(n) {
 
 function gmkP(g, i) { return g.players[i]; }
 function gmkActiveIdxs(g) { return g.players.map((p, i) => i).filter(i => !g.players[i].finished); }
+// 终局结算“角色类”成就（不要求获胜，覆盖所有角色玩家）：
+// - 真相不止一个（侦探）：有过“差一子”提示，且整局从未落子在任何提示点上
+// - 大扫除（清洁工）：一局内移除两次五连
+// - 中元快乐（灵魂棋手）：三个五连都含灵魂（共存）棋子
+// - 愚言家（截码战专家）：一局 0 命中
+function gmkSettleRoleAchievements(g) {
+  for (const p of g.players) {
+    if (p.role === '侦探' && p.hintRounds && p.hintRounds.size > 0 && !p.placedOnHint) {
+      announceAchievement(g, g.roomId, p.name, 'gm_detective');
+    }
+    if (p.role === '清洁工' && p.cleanCount >= 2) announceAchievement(g, g.roomId, p.name, 'gm_clean');
+    if (p.role === '灵魂棋手' && p.soulFiveFlags.length >= 3 && p.soulFiveFlags.slice(0, 3).every(Boolean)) {
+      announceAchievement(g, g.roomId, p.name, 'gm_soul');
+    }
+    if (p.role === '截码战专家' && p.hitCount === 0 && p.rank > 0) announceAchievement(g, g.roomId, p.name, 'gm_fool');
+  }
+}
 // 清洁工：清除本次五连的己方棋子 + 额外移除两颗敌子（尽量不同来源）
 function gmkClean(g, idx, dirs, r, c) {
   const own = new Set();
@@ -2377,19 +2394,16 @@ function gmkWin(g, idx, reason, achId) {
   p.rank = g.ranking.length + 1;
   g.ranking.push(idx);
   if (achId) announceAchievement(g, g.roomId, p.name, achId);
-  if (p.role === '侦探' && p.hintsSeen && !p.placedOnHint) announceAchievement(g, g.roomId, p.name, 'gm_detective');
-  if (p.role === '清洁工' && p.cleanCount >= 2) announceAchievement(g, g.roomId, p.name, 'gm_clean');
-  if (p.role === '灵魂棋手' && p.soulFiveFlags.length >= 3 && p.soulFiveFlags.slice(0, 3).every(Boolean)) announceAchievement(g, g.roomId, p.name, 'gm_soul');
   g.players.forEach(q => {
     if (q.index === idx || q.finished) return;
     if (gmkHints(g, q.index).length) announceAchievement(g, g.roomId, q.name, 'gm_slow');
   });
-  if (p.role === '截码战专家' && p.hitCount === 0) announceAchievement(g, g.roomId, p.name, 'gm_fool');
   const remain = gmkActiveIdxs(g);
   if (!g.continueRanking || remain.length <= 1) {
     remain.forEach(i => { if (!g.players[i].finished) { g.players[i].finished = true; g.players[i].rank = g.ranking.length + 1; g.ranking.push(i); } });
     g.winnerInfo = { name: p.name, reason };
     g.over = { winner: p.name, reason, ranking: g.ranking.map((i, k) => ({ name: g.players[i].name, rank: k + 1, role: g.players[i].role })) };
+    gmkSettleRoleAchievements(g);   // 终局统一结算角色类成就（不要求获胜）
     recordGomokuGame(g);
   } else {
     gmkAdvance(g);
@@ -2414,7 +2428,8 @@ function gmkPlace(g, name, r, c) {
   const isExtra = p.extraPending;
   if (isExtra) { p.extraPending = false; p.extraUsed = true; }
   const hintsBefore = gmkHints(g, idx);
-  if (hintsBefore.length) p.hintsSeen = true;
+  // 本回合开始时存在“差一子”提示 → 记一回合；若整局从未落子在任何提示点，终局解锁“真相不止一个”
+  if (hintsBefore.length) { p.hintsSeen = true; p.hintRounds.add(g.round); }
   if (hintsBefore.some(([hr, hc]) => hr === r && hc === c)) p.placedOnHint = true;
   cell.push(idx);
   if (cell.length > 1) p.soulStones.add(r + ',' + c);
