@@ -17,7 +17,7 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .head a{color:var(--acc);cursor:pointer;font-weight:600;margin-left:10px;}
 .wrap{max-width:720px;margin:0 auto;}
 .info{display:flex;justify-content:space-between;gap:8px;margin:8px 0 4px;font-size:.85rem;color:#6b7a90;flex-wrap:wrap;}
-.remind{max-width:720px;margin:4px auto;text-align:center;font-size:.8rem;color:var(--accTx);background:var(--accBg);border:1px solid var(--accB);border-radius:10px;padding:5px 10px;height:2.9em;line-height:1.45em;overflow-y:auto;}
+.remind{max-width:720px;margin:4px auto;text-align:center;font-size:.8rem;color:var(--accTx);background:var(--accBg);border:1px solid var(--accB);border-radius:10px;padding:5px 10px;}
 .remind.hide{display:none;}
 .mainrow{display:flex;justify-content:center;align-items:flex-start;gap:12px;margin:6px 0;flex-wrap:wrap;}
 .boardwrap{display:flex;justify-content:center;overflow-x:auto;}
@@ -35,6 +35,8 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 /* 当前掉落中的气泡对：橙色细圈；即将消除：白圈脉冲（让连锁“看得见”） */
 .cell.fall::before{content:'';position:absolute;inset:3%;border-radius:50%;box-shadow:0 0 0 2px rgba(230,126,34,.85);}
 .cell.clear::before{content:'';position:absolute;inset:2%;border-radius:50%;box-shadow:0 0 0 2px #fff,0 0 8px 2px rgba(255,255,255,.85);animation:ppoFlash .24s ease-in-out infinite alternate;}
+.cell.dropin::after{animation:ppoDrop .22s cubic-bezier(.3,1.3,.6,1) both;}
+@keyframes ppoDrop{from{transform:translateY(var(--dy,0));}to{transform:translateY(0);}}
 @keyframes ppoFlash{from{transform:scale(1);opacity:.85;}to{transform:scale(1.12);opacity:1;}}
 .side{min-width:120px;display:flex;flex-direction:column;gap:6px;font-size:.8rem;color:#4a5b6d;}
 /* 手机端：分数/下一个 等面板挪到页面上方（棋盘占满下方），对手卡片两行两列 */
@@ -43,8 +45,9 @@ body.mobile .side{order:-1;width:100%;max-width:420px;display:grid;grid-template
 body.mobile .side .panel{padding:6px 8px;text-align:center;}
 body.mobile .opps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start;}
 body.mobile .opp .ob .cell{width:100%;height:auto;aspect-ratio:1;}
-body.mobile .gcols{max-width:100%;height:auto;}
-body.mobile .gcols .gt{position:static;grid-column:1/-1;text-align:center;margin-top:2px;}
+body.mobile .remind{height:2.9em;line-height:1.45em;overflow-y:auto;}
+body.mobile .gcols{max-width:100%;height:auto;flex-wrap:wrap;}
+body.mobile .gcols .gt{flex-basis:100%;text-align:center;margin:2px 0 0;}
 .panel{background:rgba(255,255,255,.72);border:1px solid var(--accB);border-radius:12px;padding:8px 10px;}
 .panel b{color:var(--accTx);}
 .nextgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:2px;justify-content:center;width:68px;margin:4px auto 0;background:#f6efe2;border:1px solid #b7a184;border-radius:6px;padding:2px;}
@@ -80,11 +83,13 @@ body.mobile .side .keys{display:none;}
 .chainbar{text-align:center;height:22px;line-height:22px;overflow:hidden;font-size:.92rem;font-weight:800;color:var(--accTx);opacity:0;transition:opacity .2s;}
 .chainbar.show{opacity:1;}
 .chainbar.big{font-size:1.18rem;}
-/* 干扰落点预告：棋盘正上方按列对齐的 ▼（高度固定） */
-.gcols{display:grid;grid-template-columns:repeat(6,1fr);align-items:center;gap:0;height:18px;margin:0 auto;width:max-content;position:relative;}
-.gcols .colmark{width:min(9.4vw,34px);min-width:22px;text-align:center;font-size:.62rem;color:#b3bcc7;line-height:18px;}
-.gcols .colmark.on{color:#a5443f;font-weight:800;}
-.gcols .gt{position:absolute;left:calc(100% + 8px);white-space:nowrap;font-size:.72rem;color:#a5443f;font-weight:700;line-height:18px;}
+/* 干扰落点预告：棋盘正上方按列对齐（醒目：灰泡 + 数量，高度固定不影响棋盘位置） */
+.gcols{display:flex;justify-content:center;align-items:center;height:20px;margin:0 auto;width:max-content;max-width:100%;}
+.gcols .colmark{width:min(9.4vw,34px);min-width:22px;text-align:center;line-height:20px;font-size:.68rem;font-weight:800;color:transparent;}
+.gcols .colmark.on{color:#a5443f;}
+.gcols .colmark.on::before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;background-color:rgba(138,148,160,.5);border:1px solid rgba(138,148,160,.8);vertical-align:-1px;margin-right:1px;animation:ppoWarn .5s ease-in-out infinite alternate;}
+@keyframes ppoWarn{from{opacity:.45;}to{opacity:1;}}
+.gcols .gt{margin-left:8px;font-size:.72rem;color:#a5443f;font-weight:700;white-space:nowrap;}
 .msg{text-align:center;font-size:.84rem;color:#6b7a90;margin:6px 0;min-height:20px;}
 .res{max-width:480px;margin:8px auto;background:rgba(255,255,255,.86);border:1px solid var(--accB);border-radius:14px;padding:14px;text-align:center;box-shadow:0 6px 18px rgba(31,45,61,.12);}
 .res-title{font-size:1.02rem;font-weight:800;margin-bottom:8px;}
@@ -169,6 +174,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   const IS_T = sessionStorage.getItem('isTest') === 'true';
   let S = null, _dm = {}, piece = null, boardStr = '', nextPair = [0, 0], achSum = {};
   let pieceSeq = -1, lastInputAt = 0, oppBoards = {}, renderQueued = false, lastBoardHtml = '', lastOppHtml = '';
+  let stateAt = 0, serverR = 0, prevBoardStr = '', lastMsgHtml = '', lastNoticeHtml = '', lastSideKey = '', gapRemain = 0, gapAt = 0;
   let lastNoticeSeq = 0, lastChainTs = 0, chainTimer = null, toastTimer = null;
   // 渲染节流：一帧最多画一次（对手棋盘还会做字符串比对，没变就不重建 DOM）
   function scheduleRender(){ if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); }
@@ -197,55 +203,58 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   }, 2000);
   function adopt(s){
     S = s;
-    const prevPiece = piece;
+    const elapsed = Math.max(0, Date.now() - stateAt);   // 距上一个状态包过了多久
     if (s.me) {
       if (s.me.board) boardStr = s.me.board;
       nextPair = (s.me.next && s.me.next.colors) ? s.me.next.colors.slice() : nextPair;
       const sv = s.me.piece;
-      if (!sv) { piece = null; pieceSeq = -1; }
-      else if (sv.seq !== pieceSeq) {           // 新的一对：直接用服务端的
-        piece = clonePiece(sv); pieceSeq = sv.seq; lastInputAt = 0;
-      } else if (!piece) {                      // 本地没有（刚进房）→ 用服务端的
-        piece = clonePiece(sv);
+      if (!sv) { piece = null; pieceSeq = -1; serverR = 0; }
+      else if (sv.seq !== pieceSeq) {           // 新的一对：直接用服务端的（并重置本地预测）
+        piece = clonePiece(sv); pieceSeq = sv.seq; lastInputAt = 0; serverR = sv.r;
+      } else if (!piece) {
+        piece = clonePiece(sv); serverR = sv.r;
       } else {
-        // 同一对：以服务端为准，但保留本地刚做过的输入与本地已经下落到的位置（避免“回弹”）
-        const fresh = Date.now() - lastInputAt < 420;     // 刚刚本地操作过
+        // 同一对：保留本地刚做过的输入；r 取较大者，但**不允许超过服务端位置 + 预测余量**
+        // （本地棋盘可能是旧的，无上限预测会让气泡穿过刚落下的气泡 → 重叠/出界）
+        const fresh = Date.now() - lastInputAt < 420;
         const c = fresh ? piece.c : sv.c;
         const o = fresh ? piece.orient : sv.orient;
-        const r = Math.max(sv.r, piece.r);                // 本地预测不会比服务端“更靠上”
-        piece = { r: Math.min(11, r), c, orient: o, colors: (sv.colors || piece.colors).slice(), soft: piece.soft };
+        const fallMs = piece.soft ? 190 : Math.max(140, 820 - ((S.level || 1) - 1) * 70);
+        const cap = sv.r + Math.floor(elapsed / fallMs) + 1;      // 最多领先 1 格 + 实际过去的时间
+        const r = Math.min(Math.max(sv.r, piece.r), cap, landingR(c, o));
+        piece = { r, c, orient: o, colors: (sv.colors || piece.colors).slice(), soft: piece.soft, acc: piece.acc || 0 };
+        serverR = sv.r;
       }
     }
     if (s.players) s.players.forEach(p => { if (p.board) oppBoards[p.name] = p.board; });
+    stateAt = Date.now();
     scheduleRender();
   }
   function clonePiece(p){ return { r: p.r, c: p.c, orient: p.orient, colors: (p.colors || [0,0]).slice(), soft: false, acc: 0 }; }
-  // ===== 本地预测：按关卡速度自己往下掉，服务端到了会更正（网络卡顿时也不粘手） =====
+  // 只在“已有棋盘”上算落点行，防止本地预测把气泡掉出界/落穿
+  function landingR(c, orient){
+    const O = [[-1, 0], [0, 1], [1, 0], [0, -1]][orient];
+    const at = (r, cc) => (r < 0 || r > 11 || cc < 0 || cc > 5) ? 9 : Number((boardStr || '')[r * 6 + cc] || 0);
+    let r = 1;
+    while (r + 1 <= 11 && at(r + 1, c) === 0 && (r + 1 + O[0] > 11 ? false : at(r + 1 + O[0], c + O[1]) === 0)) r++;
+    return r;
+  }
+  // ===== 本地预测：只用来“抹平网络抖动”，最长只领先 1 格 + 已过去的时间 =====
   function localFallStep(){
-    if (!piece || !S || S.phase !== 'play' || S.over) { return; }
+    if (!piece || !S || S.phase !== 'play' || S.over) return;
     const fallMs = piece.soft ? 190 : Math.max(140, 820 - ((S.level || 1) - 1) * 70);
-    piece.acc = (piece.acc || 0) + 60;
+    piece.acc = (piece.acc || 0) + 100;
     let moved = false;
     while (piece.acc >= fallMs) {
       piece.acc -= fallMs;
-      if (canFallLocal()) { piece.r = Math.min(11, piece.r + 1); moved = true; }
+      const cap = serverR + Math.floor(Math.max(0, Date.now() - stateAt) / fallMs) + 1;
+      const land = landingR(piece.c, piece.orient);
+      if (piece.r < Math.min(cap, land) && piece.r < 11) { piece.r++; moved = true; }
       else break;
     }
     if (moved) scheduleRender();
   }
-  function canFallLocal(){
-    const b = boardStr || '';
-    const at = (r, c) => (r < 0 || r > 11 || c < 0 || c > 5) ? 9 : Number(b[r * 6 + c] || 0);
-    const O = [[-1, 0], [0, 1], [1, 0], [0, -1]][piece.orient];
-    const r2 = piece.r + 1, c2 = piece.c + O[1], r2b = piece.r + 1 + O[0];
-    if (r2 > 11) return false;
-    if (at(r2, piece.c) !== 0) return false;
-    if (r2b > 11) return false;
-    if (c2 < 0 || c2 > 5) return false;
-    if (at(r2b, c2) !== 0) return false;
-    return true;
-  }
-  setInterval(localFallStep, 60);
+  setInterval(localFallStep, 100);
   // ===== 操作 =====
   function ppoKey(a){
     socket.emit('puyopuyo_input', { action: a }, res => { if (res && !res.success && res.msg) toast(res.msg); });
@@ -328,10 +337,14 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     el.className = 'remind';
     el.style.background = S.notice.kind === 'chain' ? 'rgba(214,168,67,.16)' : '';
     el.style.borderColor = S.notice.kind === 'chain' ? 'rgba(214,168,67,.5)' : '';
-    el.innerHTML = '📣 ' + esc(S.notice.text);
+    const nh = '📣 ' + esc(S.notice.text);
+    if (nh !== lastNoticeHtml) { el.innerHTML = nh; lastNoticeHtml = nh; }
   }
   function renderSide(){
     const m = me();
+    const key = (m ? [m.score, m.maxChain, m.pending].join('|') : '0|0|0') + '#' + (nextPair || []).join('');
+    if (key === lastSideKey) return;                 // 内容没变就不动 DOM（本地卡顿主要是这里刷出来的）
+    lastSideKey = key;
     document.getElementById('ppoScore').textContent = m ? m.score : 0;
     document.getElementById('ppoMaxChain').textContent = m ? m.maxChain : 0;
     document.getElementById('ppoPending').textContent = m ? m.pending : 0;
@@ -349,33 +362,58 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       const cr = piece.r + dr, cc = piece.c + dc;
       if (cr >= 0 && cr < 12 && cc >= 0 && cc < 6) fallMap[cr * 6 + cc] = piece.colors[1];
     }
+    const prev = prevBoardStr || '';
+    const drops = {};
     let html = '';
     for (let i = 0; i < 72; i++) {
       const v = Number(boardStr[i] || 0);
       const cls = ['cell'];
-      if (v) cls.push('b' + v);
-      else if (fallMap[i]) cls.push('b' + fallMap[i], 'fall');
+      if (v) {
+        cls.push('b' + v);
+        // “上面的气泡落下来”动画：这一格原本是空的，而上方第 k 格上一帧有同色气泡（且现在已不在）→ 从上面掉进来
+        if (prev) {
+          const c = i % 6, r = Math.floor(i / 6);
+          for (let up = 1; up <= 11; up++) {
+            const rr = r - up;
+            if (rr < 0) break;
+            const pv = Number(prev[rr * 6 + c] || 0);
+            if (pv === 0) break;
+            if (pv === v && Number(boardStr[rr * 6 + c] || 0) === 0) { drops[i] = up; break; }
+          }
+        }
+      } else if (fallMap[i]) cls.push('b' + fallMap[i], 'fall');
       if (clearSet.has(i)) cls.push('clear');       // 即将消除：白圈脉冲，让连锁看得见
+      if (drops[i]) cls.push('dropin');
       html += '<div class="' + cls.join(' ') + '"></div>';
     }
-    if (html !== lastBoardHtml) { el.innerHTML = html; lastBoardHtml = html; }
+    if (html !== lastBoardHtml) {
+      el.innerHTML = html;
+      Object.keys(drops).forEach(i => {          // 给掉落的气泡设置起始偏移，再落回原位
+        const n = el.children[Number(i)];
+        if (n) n.style.setProperty('--dy', -(drops[i] * 100) + '%');
+      });
+      lastBoardHtml = html;
+    }
+    prevBoardStr = boardStr;
   }
-  // 干扰落点预告：把“即将落下”的干扰按列统计，在棋盘上方对应列标出来
+  // 干扰落点预告：把“即将落下”的干扰按列统计，在棋盘上方对应列标出来（带 1.5 秒倒计时）
   function renderGcols(){
     const el = document.getElementById('ppoGcols');
     if (!el) return;
     const m = S && S.me;
     const list = (m && m.gcols) ? m.gcols : [];
     const n = m ? (m.pending || 0) : 0;
-    if (!n) { if (el.innerHTML !== '') el.innerHTML = ''; return; }
+    if (!n) { if (el.innerHTML !== '') el.innerHTML = ''; gapRemain = 0; return; }
+    if (m && m.gIn) { gapRemain = m.gIn; gapAt = Date.now(); }
     const per = [0, 0, 0, 0, 0, 0];
     list.forEach(c => { if (c >= 0 && c < 6) per[c]++; });
+    const left = Math.max(0, gapRemain - (Date.now() - gapAt));
     let html = '';
     for (let c = 0; c < 6; c++) {
       const k = per[c];
-      html += '<span class="colmark' + (k ? ' on' : '') + '">' + (k ? ('▼' + (k > 3 ? k : '')) : '') + '</span>';
+      html += '<span class="colmark' + (k ? ' on' : '') + '">' + (k > 1 ? ('×' + k) : (k ? '' : '')) + '</span>';
     }
-    html += '<span class="gt">' + n + ' 颗干扰待落（按列预告，可连锁相杀抵消）</span>';
+    html += '<span class="gt">' + n + ' 颗干扰 ' + (left > 0 ? ((left / 1000).toFixed(1) + ' 秒后开始落下') : '正在落下') + '（按列预告，达成连锁可相杀）</span>';
     if (html !== el.innerHTML) el.innerHTML = html;
   }
   function renderOpps(){
@@ -445,12 +483,18 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       return;
     }
     const m = me();
-    if (!m) { el.innerHTML = ''; return; }
-    if (!m.alive) { el.innerHTML = '<span>你已被淘汰，本局名次：第 ' + m.rank + ' 名（等待其他玩家结束）</span>'; return; }
-    let txt = '键盘：←→ 移动　↑/X 顺时针　Z 逆时针　↓ 加速　空格 落底<br>手机：屏幕两侧大按钮（‹ › 移动，下面 ↺ ↻ 旋转、↓ 加速、⤓ 落底），长按可连发';
-    if (m.pending > 0) txt += '<br><span style="color:#a5443f;font-weight:700;">注意：有 ' + m.pending + ' 颗干扰即将落下，达成连锁可相杀抵消！</span>';
-    el.innerHTML = '<span>' + txt + '</span>';
+    if (!m) { if (lastMsgHtml !== '') { el.innerHTML = ''; lastMsgHtml = ''; } return; }
+    if (!m.alive) {
+      const dead = '<span>你已被淘汰，本局名次：第 ' + m.rank + ' 名（等待其他玩家结束）</span>';
+      if (dead !== lastMsgHtml) { el.innerHTML = dead; lastMsgHtml = dead; }
+      return;
+    }
+    const txt = '键盘：←→ 移动　↑/X 顺时针　Z 逆时针　↓ 加速　空格 落底<br>手机：屏幕两侧大按钮（‹ › 移动，下面 ↺ ↻ 旋转、↓ 加速、⤓ 落底），长按可连发';
+    const html = '<span>' + txt + '</span>';
+    if (html !== lastMsgHtml) { el.innerHTML = html; lastMsgHtml = html; }
   }
+  // 干扰倒计时期间每 200ms 刷新一次预告（1.5 秒提示），其余时间不额外渲染
+  setInterval(() => { if (S && S.me && S.me.pending > 0) scheduleRender(); }, 200);
   const ppoAchEl = document.createElement('div'); ppoAchEl.className = 'ach-pop'; document.body.appendChild(ppoAchEl); let ppoAchTimer = null;
   socket.on('achievement_unlocked', function(d){
     if (!d || !d.name) return;

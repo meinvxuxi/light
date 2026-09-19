@@ -2896,7 +2896,7 @@ const PPO_GARBAGE = 9;               // 干扰气泡
 const PPO_ORIENT = [[-1, 0], [0, 1], [1, 0], [0, -1]];   // 附属气泡：上/右/下/左
 const PPO_CHAIN_MULT = [1, 2, 4, 8, 16];                 // 连锁倍率（5 连锁及以上 ×16）
 const PPO_LOCK_DELAY = 350;          // 落地缓冲（ms）
-const PPO_GARBAGE_DELAY = 1200;      // 干扰气泡延迟落地（ms）＝相杀窗口
+const PPO_GARBAGE_DELAY = 1500;      // 干扰气泡延迟落地（ms）＝相杀窗口（也给玩家 1.5 秒预告时间）
 const PPO_SOFT_MS = 190;             // 加速下落速度（按住时每格毫秒）
 const PPO_OFFLINE_ELIM_MS = Number(process.env.PPO_OFFLINE_MS || 0) || 45000;   // 离线超时淘汰（可用 PPO_OFFLINE_MS 覆盖，便于测试）
 const PPO_DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -2987,8 +2987,9 @@ const PPO_ZENKESHI_GARBAGE = 30;
 const PPO_SIMUL_BONUS_PER_GROUP = 2;
 // AI 加速下落速度（对齐并到位后按此速度下落，避免 AI 瞬移刷局）
 const PPO_AI_SOFT_MS = 150;
-// 连锁动画：每一波“闪”多久（客户端据此高亮 → 再消除）
-const PPO_FLASH_MS = 240;
+// 连锁动画：先“闪”（高亮即将消除的气泡）→ 消除 → 再“落”（重力）→ 看有没有下一波
+const PPO_FLASH_MS = 320;   // 每波高亮停留时间（看清楚要消哪些）
+const PPO_FALL_MS = 220;    // 消除后“上面的气泡落下来”的展示时间
 // 广播节流：约每 150ms 一包（约 6.5 包/秒，之前最高 12.5 包/秒）；对手棋盘每 400ms 才带一次
 const PPO_BCAST_MS = 150;
 const PPO_OPP_BOARD_MS = 400;
@@ -3094,12 +3095,12 @@ function ppoChainBegin(g, p, now) {
   groups.forEach(gr => gr.cells.forEach(i => { if (!seen.has(i)) { seen.add(i); cells.push(i); } }));
   p.chain = {
     n: 0, cells, groupCount: groups.length, cleared: 0, crush: 0, gained: 0, simult: 0,
-    until: now + PPO_FLASH_MS
+    phase: 'flash', until: now + PPO_FLASH_MS
   };
   return true;
 }
-// 执行一波消除（“闪”完之后调用）：返回是否还有下一波
-function ppoChainWave(g, p, now) {
+// 执行一波消除（“闪”完之后调用，不做重力）：返回是否真的清了
+function ppoChainClear(g, p) {
   const c = p.chain;
   const remove = new Set(c.cells);
   const gb = new Set();
@@ -3121,12 +3122,18 @@ function ppoChainWave(g, p, now) {
   if (c.groupCount > 1) c.simult += (c.groupCount - 1) * PPO_SIMUL_BONUS_PER_GROUP;   // 同时消加成
   remove.forEach(i => { p.board[i] = 0; });
   gb.forEach(i => { p.board[i] = 0; });
+  c.cells = [];
+  return true;
+}
+// “落”完之后：重力 → 看有没有下一波（有则重新高亮）
+function ppoChainAfterFall(g, p, now) {
+  const c = p.chain;
   ppoGravity(p);
   const groups = ppoGroups(p);
-  if (!groups.length) return false;                   // 连完了
+  if (!groups.length) return false;
   const cells = [];
   groups.forEach(gr => gr.cells.forEach(i => cells.push(i)));
-  c.cells = cells; c.groupCount = groups.length; c.until = now + PPO_FLASH_MS;
+  c.cells = cells; c.groupCount = groups.length; c.phase = 'flash'; c.until = now + PPO_FLASH_MS;
   return true;
 }
 // 收尾：结算干扰（相杀／全消／同时消）→ 播报 → 生成下一对
@@ -3164,18 +3171,26 @@ function ppoChainFinish(g, p, now) {
   ppoCheckAchievements(g, p);
   if (!g.over) ppoSpawn(g, p, now);
 }
-// tick 推进连锁动画（每 PPO_FLASH_MS 走一波）
+// tick 推进连锁动画：闪 →（消除）→ 落 →（重力 + 下一波）
 function ppoChainTick(g, p, now) {
-  if (!p.chain || now < p.chain.until) return false;
-  if (ppoChainWave(g, p, now)) return true;
-  ppoChainFinish(g, p, now);
+  const c = p.chain;
+  if (!c || now < c.until) return false;
+  if (c.phase === 'fall') {                       // 下落展示结束
+    if (ppoChainAfterFall(g, p, now)) return true;
+    ppoChainFinish(g, p, now);
+    return true;
+  }
+  ppoChainClear(g, p);                            // 闪烁结束 → 消除（气泡先消失）
+  c.phase = 'fall'; c.until = now + PPO_FALL_MS;  // 留出“上面的气泡落下来”的时间
   return true;
 }
 // 兼容入口：一次性跑完整条连锁（单元测试/AI 用；正式对局走动画）
 function ppoResolve(g, p, now) {
   if (!ppoChainBegin(g, p, now)) return 0;
-  while (ppoChainWave(g, p, now)) { /* 逐波跑完 */ }
-  const n = p.chain.n;
+  while (ppoChainClear(g, p)) {
+    if (!ppoChainAfterFall(g, p, now)) break;
+  }
+  const n = p.chain ? p.chain.n : 0;
   ppoChainFinish(g, p, now);
   return n;
 }
@@ -3401,10 +3416,13 @@ function ppoView(g, name, room, full) {
       score: p.score, pending: p.pending, maxChain: p.maxChain, played: p.played,
       offline: p.ai ? false : ppoIsOffline(g, p), ai: p.ai || null,
       piece: p.piece, next: p.next,
-      chain: p.chain ? { n: p.chain.n, cells: p.chain.cells } : null
+      chain: p.chain ? { n: p.chain.n, cells: p.chain.cells, phase: p.chain.phase } : null
     };
     if (p === me || full) o.board = p.board.join('');
-    if (p === me) o.gcols = (p.gcols || []).slice(0, 40);
+    if (p === me) {
+      o.gcols = (p.gcols || []).slice(0, 40);
+      o.gIn = p.pending > 0 ? Math.max(0, (p.pendingAt || 0) - Date.now()) : 0;   // 还有多久开始落（客户端做倒计时）
+    }
     return o;
   };
   return {
