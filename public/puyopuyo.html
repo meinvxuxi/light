@@ -46,8 +46,8 @@ body.mobile .side .panel{padding:6px 8px;text-align:center;}
 body.mobile .opps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start;}
 body.mobile .opp .ob .cell{width:100%;height:auto;aspect-ratio:1;}
 body.mobile .remind{height:2.9em;line-height:1.45em;overflow-y:auto;}
-body.mobile .gcols{max-width:100%;height:auto;flex-wrap:wrap;}
-body.mobile .gcols .gt{flex-basis:100%;text-align:center;margin:2px 0 0;}
+body.mobile .gcols{max-width:100%;}
+body.mobile .gcols .slot{width:min(9.4vw,34px);}
 .panel{background:rgba(255,255,255,.72);border:1px solid var(--accB);border-radius:12px;padding:8px 10px;}
 .panel b{color:var(--accTx);}
 .nextgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:2px;justify-content:center;width:68px;margin:4px auto 0;background:#f6efe2;border:1px solid #b7a184;border-radius:6px;padding:2px;}
@@ -83,13 +83,22 @@ body.mobile .side .keys{display:none;}
 .chainbar{text-align:center;height:22px;line-height:22px;overflow:hidden;font-size:.92rem;font-weight:800;color:var(--accTx);opacity:0;transition:opacity .2s;}
 .chainbar.show{opacity:1;}
 .chainbar.big{font-size:1.18rem;}
-/* 干扰落点预告：棋盘正上方按列对齐（醒目：灰泡 + 数量，高度固定不影响棋盘位置） */
-.gcols{display:flex;justify-content:center;align-items:center;height:20px;margin:0 auto;width:max-content;max-width:100%;}
-.gcols .colmark{width:min(9.4vw,34px);min-width:22px;text-align:center;line-height:20px;font-size:.68rem;font-weight:800;color:transparent;}
-.gcols .colmark.on{color:#a5443f;}
-.gcols .colmark.on::before{content:'';display:inline-block;width:10px;height:10px;border-radius:50%;background-color:rgba(138,148,160,.5);border:1px solid rgba(138,148,160,.8);vertical-align:-1px;margin-right:1px;animation:ppoWarn .5s ease-in-out infinite alternate;}
-@keyframes ppoWarn{from{opacity:.45;}to{opacity:1;}}
-.gcols .gt{margin-left:8px;font-size:.72rem;color:#a5443f;font-weight:700;white-space:nowrap;}
+/* 干扰落点预告：棋盘正上方按列对齐的大号警示（与棋盘同宽同列、高度固定不影响棋盘位置） */
+.gcols{display:block;margin:2px auto 0;width:max-content;max-width:100%;}
+.gcols .grow{display:flex;justify-content:center;align-items:flex-end;height:34px;}
+.gcols .slot{width:min(9.4vw,34px);min-width:22px;height:34px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;}
+.gcols .slot .bub{width:26px;height:26px;max-width:88%;aspect-ratio:1;border-radius:50%;background-color:rgba(120,132,146,.55);border:2px solid rgba(80,92,106,.85);box-shadow:0 0 0 2px rgba(255,255,255,.9),0 1px 4px rgba(31,45,61,.35);animation:ppoWarn .45s ease-in-out infinite alternate;display:none;}
+.gcols .slot.on .bub{display:block;}
+.gcols .slot .num{font-size:.62rem;font-weight:800;color:#fff;position:relative;top:-19px;text-shadow:0 0 3px rgba(0,0,0,.75);display:none;}
+.gcols .slot.on .num{display:block;}
+.gcols .gtext{margin-top:3px;text-align:center;font-size:.86rem;font-weight:800;color:#b03a34;line-height:18px;}
+.gcols .gtext .bar{display:inline-block;vertical-align:-1px;width:120px;height:8px;border-radius:5px;background:rgba(176,58,52,.18);overflow:hidden;margin:0 6px;}
+.gcols .gtext .bar i{display:block;height:100%;background:#c0504a;width:100%;transition:width .18s linear;}
+body.gb .board{box-shadow:0 0 0 3px rgba(198,78,78,.55),0 0 14px 2px rgba(198,78,78,.35);}
+body.gb .gtext{animation:ppoWarn .55s ease-in-out infinite alternate;}
+body.gbfall .board{animation:ppoSlam .38s ease-out;}
+@keyframes ppoSlam{0%{box-shadow:0 0 0 3px rgba(198,78,78,.9),0 0 22px 6px rgba(198,78,78,.6);transform:translateY(2px);}100%{box-shadow:none;transform:none;}}
+@keyframes ppoWarn{from{opacity:.5;transform:translateY(2px);}to{opacity:1;transform:translateY(0);}}
 .msg{text-align:center;font-size:.84rem;color:#6b7a90;margin:6px 0;min-height:20px;}
 .res{max-width:480px;margin:8px auto;background:rgba(255,255,255,.86);border:1px solid var(--accB);border-radius:14px;padding:14px;text-align:center;box-shadow:0 6px 18px rgba(31,45,61,.12);}
 .res-title{font-size:1.02rem;font-weight:800;margin-bottom:8px;}
@@ -175,6 +184,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   let S = null, _dm = {}, piece = null, boardStr = '', nextPair = [0, 0], achSum = {};
   let pieceSeq = -1, lastInputAt = 0, oppBoards = {}, renderQueued = false, lastBoardHtml = '', lastOppHtml = '';
   let stateAt = 0, serverR = 0, prevBoardStr = '', lastMsgHtml = '', lastNoticeHtml = '', lastSideKey = '', gapRemain = 0, gapAt = 0;
+  let gbfallTimer = null, garbageHit = 0, lastHitToast = 0;
   let lastNoticeSeq = 0, lastChainTs = 0, chainTimer = null, toastTimer = null;
   // 渲染节流：一帧最多画一次（对手棋盘还会做字符串比对，没变就不重建 DOM）
   function scheduleRender(){ if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); }
@@ -327,8 +337,10 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   // 连锁进行中的实时提示（动画期间逐步显示 1→2→3 连锁）
   function renderChainLive(){
     const mc = S && S.me && S.me.chain;
-    if (!mc || !mc.n) return null;
-    return '⚡ ' + mc.n + ' 连锁进行中…';
+    if (!mc) return null;
+    if (mc.phase === 'finish') return { text: '✅ ' + mc.n + ' 连锁结束！', big: true };
+    if (!mc.n) return { text: '⚡ 准备消除…', big: false };
+    return { text: '⚡ ' + mc.n + ' 连锁进行中…', big: true };
   }
   function renderNotice(){
     const el = document.getElementById('ppoNotice');
@@ -364,12 +376,14 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     }
     const prev = prevBoardStr || '';
     const drops = {};
+    let newGarbage = 0;
     let html = '';
     for (let i = 0; i < 72; i++) {
       const v = Number(boardStr[i] || 0);
       const cls = ['cell'];
       if (v) {
         cls.push('b' + v);
+        if (v === 9 && prev && Number(prev[i] || 0) === 0) newGarbage++;     // 刚落下的干扰
         // “上面的气泡落下来”动画：这一格原本是空的，而上方第 k 格上一帧有同色气泡（且现在已不在）→ 从上面掉进来
         if (prev) {
           const c = i % 6, r = Math.floor(i / 6);
@@ -393,28 +407,50 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
         if (n) n.style.setProperty('--dy', -(drops[i] * 100) + '%');
       });
       lastBoardHtml = html;
+      // 干扰“砸下来”的即时反馈（即使错过了上面 1.5 秒的预告也能感觉到）
+      if (newGarbage > 0 && prev) {
+        garbageHit += newGarbage;
+        document.body.classList.add('gbfall');
+        clearTimeout(gbfallTimer);
+        gbfallTimer = setTimeout(() => document.body.classList.remove('gbfall'), 380);
+        if (Date.now() - lastHitToast > 900) {
+          lastHitToast = Date.now();
+          toast('💥 干扰落下 ' + garbageHit + ' 颗！');
+          garbageHit = 0;
+        }
+      }
     }
     prevBoardStr = boardStr;
   }
-  // 干扰落点预告：把“即将落下”的干扰按列统计，在棋盘上方对应列标出来（带 1.5 秒倒计时）
+  // 干扰落点预告：按列显示“大号灰泡 + 数量”，并配倒计时进度条与棋盘红框（醒目、稳定）
   function renderGcols(){
     const el = document.getElementById('ppoGcols');
     if (!el) return;
     const m = S && S.me;
     const list = (m && m.gcols) ? m.gcols : [];
     const n = m ? (m.pending || 0) : 0;
-    if (!n) { if (el.innerHTML !== '') el.innerHTML = ''; gapRemain = 0; return; }
+    if (!n) {
+      if (el.innerHTML !== '') el.innerHTML = '';
+      gapRemain = 0;
+      document.body.classList.remove('gb');
+      return;
+    }
     if (m && m.gIn) { gapRemain = m.gIn; gapAt = Date.now(); }
     const per = [0, 0, 0, 0, 0, 0];
     list.forEach(c => { if (c >= 0 && c < 6) per[c]++; });
     const left = Math.max(0, gapRemain - (Date.now() - gapAt));
-    let html = '';
+    const pct = gapRemain > 0 ? Math.max(0, Math.min(100, left / gapRemain * 100)) : 0;
+    let row = '';
     for (let c = 0; c < 6; c++) {
       const k = per[c];
-      html += '<span class="colmark' + (k ? ' on' : '') + '">' + (k > 1 ? ('×' + k) : (k ? '' : '')) + '</span>';
+      row += '<span class="slot' + (k ? ' on' : '') + '"><span class="bub"></span><span class="num">' + (k > 1 ? ('×' + k) : '') + '</span></span>';
     }
-    html += '<span class="gt">' + n + ' 颗干扰 ' + (left > 0 ? ((left / 1000).toFixed(1) + ' 秒后开始落下') : '正在落下') + '（按列预告，达成连锁可相杀）</span>';
+    const txt = left > 0
+      ? ('⚠ ' + n + ' 颗干扰 <span class="bar"><i style="width:' + pct.toFixed(0) + '%"></i></span> ' + (left / 1000).toFixed(1) + ' 秒后落下（按列预告，连锁可相杀）')
+      : ('⚠ ' + n + ' 颗干扰正在落下！');
+    const html = '<div class="grow">' + row + '</div><div class="gtext">' + txt + '</div>';
     if (html !== el.innerHTML) el.innerHTML = html;
+    document.body.classList.add('gb');
   }
   function renderOpps(){
     const el = document.getElementById('ppoOpps');
@@ -441,11 +477,12 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   }
   function renderChain(){
     const el = document.getElementById('ppoChain');
-    // 动画进行中：实时显示“N 连锁进行中”
+    // 动画进行中：实时显示“N 连锁进行中 / 连锁结束”
     const live = renderChainLive();
     if (live) {
-      if (el.textContent !== live) el.textContent = live;
-      el.classList.add('show', 'big');
+      if (el.textContent !== live.text) el.textContent = live.text;
+      el.classList.add('show');
+      if (live.big) el.classList.add('big'); else el.classList.remove('big');
       return;
     }
     const lc = S && S.lastChain;
@@ -456,7 +493,9 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       el.classList.add('show');
       if (lc.chain >= 4) el.classList.add('big'); else el.classList.remove('big');
       clearTimeout(chainTimer);
-      chainTimer = setTimeout(() => el.classList.remove('show'), 1400);
+      // 连得越多，结果停留越久（4 连锁 ≈ 2.4s，8 连锁 ≈ 3.4s，最多 3.6s）
+      const hold = Math.min(3600, 1400 + lc.chain * 250);
+      chainTimer = setTimeout(() => el.classList.remove('show'), hold);
     }
   }
   function renderMsg(){
@@ -493,8 +532,8 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const html = '<span>' + txt + '</span>';
     if (html !== lastMsgHtml) { el.innerHTML = html; lastMsgHtml = html; }
   }
-  // 干扰倒计时期间每 200ms 刷新一次预告（1.5 秒提示），其余时间不额外渲染
-  setInterval(() => { if (S && S.me && S.me.pending > 0) scheduleRender(); }, 200);
+  // 干扰倒计时期间每 100ms 刷新一次预告（进度条更顺），其余时间不额外渲染
+  setInterval(() => { if (S && S.me && S.me.pending > 0) scheduleRender(); }, 100);
   const ppoAchEl = document.createElement('div'); ppoAchEl.className = 'ach-pop'; document.body.appendChild(ppoAchEl); let ppoAchTimer = null;
   socket.on('achievement_unlocked', function(d){
     if (!d || !d.name) return;

@@ -2990,6 +2990,7 @@ const PPO_AI_SOFT_MS = 150;
 // 连锁动画：先“闪”（高亮即将消除的气泡）→ 消除 → 再“落”（重力）→ 看有没有下一波
 const PPO_FLASH_MS = 320;   // 每波高亮停留时间（看清楚要消哪些）
 const PPO_FALL_MS = 220;    // 消除后“上面的气泡落下来”的展示时间
+const PPO_FINISH_MS = 420;  // 连锁“收尾停顿”：最后一波落完之后，让结果多停一会儿再收尾（更爽）
 // 广播节流：约每 150ms 一包（约 6.5 包/秒，之前最高 12.5 包/秒）；对手棋盘每 400ms 才带一次
 const PPO_BCAST_MS = 150;
 const PPO_OPP_BOARD_MS = 400;
@@ -3171,13 +3172,18 @@ function ppoChainFinish(g, p, now) {
   ppoCheckAchievements(g, p);
   if (!g.over) ppoSpawn(g, p, now);
 }
-// tick 推进连锁动画：闪 →（消除）→ 落 →（重力 + 下一波）
+// tick 推进连锁动画：闪 →（消除）→ 落 →（重力 + 下一波）→ 收尾停顿 → 结算
 function ppoChainTick(g, p, now) {
   const c = p.chain;
   if (!c || now < c.until) return false;
-  if (c.phase === 'fall') {                       // 下落展示结束
+  if (c.phase === 'finish') {                     // 收尾停顿结束 → 结算干扰/出新气泡
     if (ppoChainAfterFall(g, p, now)) return true;
     ppoChainFinish(g, p, now);
+    return true;
+  }
+  if (c.phase === 'fall') {                       // 下落展示结束
+    if (ppoChainAfterFall(g, p, now)) return true;
+    c.phase = 'finish'; c.until = now + PPO_FINISH_MS;   // 连完了：让结果多停一拍
     return true;
   }
   ppoChainClear(g, p);                            // 闪烁结束 → 消除（气泡先消失）
