@@ -17,7 +17,7 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .head a{color:var(--acc);cursor:pointer;font-weight:600;margin-left:10px;}
 .wrap{max-width:720px;margin:0 auto;}
 .info{display:flex;justify-content:space-between;gap:8px;margin:8px 0 4px;font-size:.85rem;color:#6b7a90;flex-wrap:wrap;}
-.remind{max-width:720px;margin:4px auto;text-align:center;font-size:.8rem;color:var(--accTx);background:var(--accBg);border:1px solid var(--accB);border-radius:10px;padding:5px 10px;}
+.remind{max-width:720px;margin:4px auto;text-align:center;font-size:.8rem;color:var(--accTx);background:var(--accBg);border:1px solid var(--accB);border-radius:10px;padding:5px 10px;height:2.9em;line-height:1.45em;overflow-y:auto;}
 .remind.hide{display:none;}
 .mainrow{display:flex;justify-content:center;align-items:flex-start;gap:12px;margin:6px 0;flex-wrap:wrap;}
 .boardwrap{display:flex;justify-content:center;overflow-x:auto;}
@@ -32,9 +32,19 @@ body{background:#f0f2f5;color:#2c3e50;font-family:'Segoe UI','PingFang SC',sans-
 .cell.b4::after{opacity:1;background-color:rgba(84,138,204,.42);border:1px solid rgba(84,138,204,.62);}
 .cell.b5::after{opacity:1;background-color:rgba(156,110,204,.42);border:1px solid rgba(156,110,204,.62);}
 .cell.b9::after{opacity:1;background-color:rgba(138,148,160,.42);border:1px solid rgba(138,148,160,.62);}
-/* 当前掉落中的气泡对：橙色细圈 */
+/* 当前掉落中的气泡对：橙色细圈；即将消除：白圈脉冲（让连锁“看得见”） */
 .cell.fall::before{content:'';position:absolute;inset:3%;border-radius:50%;box-shadow:0 0 0 2px rgba(230,126,34,.85);}
+.cell.clear::before{content:'';position:absolute;inset:2%;border-radius:50%;box-shadow:0 0 0 2px #fff,0 0 8px 2px rgba(255,255,255,.85);animation:ppoFlash .24s ease-in-out infinite alternate;}
+@keyframes ppoFlash{from{transform:scale(1);opacity:.85;}to{transform:scale(1.12);opacity:1;}}
 .side{min-width:120px;display:flex;flex-direction:column;gap:6px;font-size:.8rem;color:#4a5b6d;}
+/* 手机端：分数/下一个 等面板挪到页面上方（棋盘占满下方），对手卡片两行两列 */
+body.mobile .mainrow{flex-direction:column;align-items:center;gap:6px;}
+body.mobile .side{order:-1;width:100%;max-width:420px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;font-size:.76rem;}
+body.mobile .side .panel{padding:6px 8px;text-align:center;}
+body.mobile .opps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:start;}
+body.mobile .opp .ob .cell{width:100%;height:auto;aspect-ratio:1;}
+body.mobile .gcols{max-width:100%;height:auto;}
+body.mobile .gcols .gt{position:static;grid-column:1/-1;text-align:center;margin-top:2px;}
 .panel{background:rgba(255,255,255,.72);border:1px solid var(--accB);border-radius:12px;padding:8px 10px;}
 .panel b{color:var(--accTx);}
 .nextgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:2px;justify-content:center;width:68px;margin:4px auto 0;background:#f6efe2;border:1px solid #b7a184;border-radius:6px;padding:2px;}
@@ -66,14 +76,15 @@ body.mobile .side .keys{display:none;}
 .opp .ob .cell::after{inset:9%;}
 .opp .nm{font-weight:700;}
 .opp .tag{display:inline-block;margin-top:2px;padding:1px 6px;border-radius:8px;background:var(--acc);color:#fff;font-size:.66rem;font-weight:700;}
-/* 连锁提示条：贴在棋盘上方，不挡棋盘 */
-.chainbar{text-align:center;min-height:20px;font-size:.92rem;font-weight:800;color:var(--accTx);opacity:0;transition:opacity .2s;}
+/* 连锁提示条：贴在棋盘上方，不挡棋盘（高度固定，避免文字长短导致棋盘上下浮动） */
+.chainbar{text-align:center;height:22px;line-height:22px;overflow:hidden;font-size:.92rem;font-weight:800;color:var(--accTx);opacity:0;transition:opacity .2s;}
 .chainbar.show{opacity:1;}
-.chainbar.big{font-size:1.25rem;}
-/* 干扰预告：仿原版在自己场地上方堆一排灰色干扰气泡图标 */
-.garb{display:flex;justify-content:center;align-items:center;gap:2px;flex-wrap:wrap;min-height:16px;margin:2px 0 0;}
-.garb .gi{width:11px;height:11px;border-radius:50%;background-color:rgba(138,148,160,.42);border:1px solid rgba(138,148,160,.62);}
-.garb .gt{font-size:.72rem;color:#a5443f;font-weight:700;margin-left:5px;}
+.chainbar.big{font-size:1.18rem;}
+/* 干扰落点预告：棋盘正上方按列对齐的 ▼（高度固定） */
+.gcols{display:grid;grid-template-columns:repeat(6,1fr);align-items:center;gap:0;height:18px;margin:0 auto;width:max-content;position:relative;}
+.gcols .colmark{width:min(9.4vw,34px);min-width:22px;text-align:center;font-size:.62rem;color:#b3bcc7;line-height:18px;}
+.gcols .colmark.on{color:#a5443f;font-weight:800;}
+.gcols .gt{position:absolute;left:calc(100% + 8px);white-space:nowrap;font-size:.72rem;color:#a5443f;font-weight:700;line-height:18px;}
 .msg{text-align:center;font-size:.84rem;color:#6b7a90;margin:6px 0;min-height:20px;}
 .res{max-width:480px;margin:8px auto;background:rgba(255,255,255,.86);border:1px solid var(--accB);border-radius:14px;padding:14px;text-align:center;box-shadow:0 6px 18px rgba(31,45,61,.12);}
 .res-title{font-size:1.02rem;font-weight:800;margin-bottom:8px;}
@@ -101,7 +112,7 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     <div class="info"><span id="ppoStage">连接中…</span><span id="ppoLevel"></span></div>
     <div class="remind hide" id="ppoNotice"></div>
     <div class="chainbar" id="ppoChain"></div>
-    <div class="garb" id="ppoGarb"></div>
+    <div class="gcols" id="ppoGcols"></div>
     <div class="mainrow">
       <div class="boardwrap">
         <div class="board" id="ppoBoard"></div>
@@ -157,7 +168,10 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   const socket = io();
   const IS_T = sessionStorage.getItem('isTest') === 'true';
   let S = null, _dm = {}, piece = null, boardStr = '', nextPair = [0, 0], achSum = {};
+  let pieceSeq = -1, lastInputAt = 0, oppBoards = {}, renderQueued = false, lastBoardHtml = '', lastOppHtml = '';
   let lastNoticeSeq = 0, lastChainTs = 0, chainTimer = null, toastTimer = null;
+  // 渲染节流：一帧最多画一次（对手棋盘还会做字符串比对，没变就不重建 DOM）
+  function scheduleRender(){ if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); }
   function dn(n){ return _dm[n] || n; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function toast(m){ const e=document.getElementById('ppoToast'); if(!e) return; e.textContent=m; e.style.opacity='1'; clearTimeout(toastTimer); toastTimer=setTimeout(()=>{e.style.opacity='0';},1700); }
@@ -183,26 +197,69 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   }, 2000);
   function adopt(s){
     S = s;
+    const prevPiece = piece;
     if (s.me) {
-      boardStr = s.me.board || '';
-      piece = s.me.piece ? { r: s.me.piece.r, c: s.me.piece.c, orient: s.me.piece.orient, colors: s.me.piece.colors.slice() } : null;
-      nextPair = (s.me.next && s.me.next.colors) ? s.me.next.colors.slice() : [0, 0];
+      if (s.me.board) boardStr = s.me.board;
+      nextPair = (s.me.next && s.me.next.colors) ? s.me.next.colors.slice() : nextPair;
+      const sv = s.me.piece;
+      if (!sv) { piece = null; pieceSeq = -1; }
+      else if (sv.seq !== pieceSeq) {           // 新的一对：直接用服务端的
+        piece = clonePiece(sv); pieceSeq = sv.seq; lastInputAt = 0;
+      } else if (!piece) {                      // 本地没有（刚进房）→ 用服务端的
+        piece = clonePiece(sv);
+      } else {
+        // 同一对：以服务端为准，但保留本地刚做过的输入与本地已经下落到的位置（避免“回弹”）
+        const fresh = Date.now() - lastInputAt < 420;     // 刚刚本地操作过
+        const c = fresh ? piece.c : sv.c;
+        const o = fresh ? piece.orient : sv.orient;
+        const r = Math.max(sv.r, piece.r);                // 本地预测不会比服务端“更靠上”
+        piece = { r: Math.min(11, r), c, orient: o, colors: (sv.colors || piece.colors).slice(), soft: piece.soft };
+      }
     }
-    render();
+    if (s.players) s.players.forEach(p => { if (p.board) oppBoards[p.name] = p.board; });
+    scheduleRender();
   }
+  function clonePiece(p){ return { r: p.r, c: p.c, orient: p.orient, colors: (p.colors || [0,0]).slice(), soft: false, acc: 0 }; }
+  // ===== 本地预测：按关卡速度自己往下掉，服务端到了会更正（网络卡顿时也不粘手） =====
+  function localFallStep(){
+    if (!piece || !S || S.phase !== 'play' || S.over) { return; }
+    const fallMs = piece.soft ? 190 : Math.max(140, 820 - ((S.level || 1) - 1) * 70);
+    piece.acc = (piece.acc || 0) + 60;
+    let moved = false;
+    while (piece.acc >= fallMs) {
+      piece.acc -= fallMs;
+      if (canFallLocal()) { piece.r = Math.min(11, piece.r + 1); moved = true; }
+      else break;
+    }
+    if (moved) scheduleRender();
+  }
+  function canFallLocal(){
+    const b = boardStr || '';
+    const at = (r, c) => (r < 0 || r > 11 || c < 0 || c > 5) ? 9 : Number(b[r * 6 + c] || 0);
+    const O = [[-1, 0], [0, 1], [1, 0], [0, -1]][piece.orient];
+    const r2 = piece.r + 1, c2 = piece.c + O[1], r2b = piece.r + 1 + O[0];
+    if (r2 > 11) return false;
+    if (at(r2, piece.c) !== 0) return false;
+    if (r2b > 11) return false;
+    if (c2 < 0 || c2 > 5) return false;
+    if (at(r2b, c2) !== 0) return false;
+    return true;
+  }
+  setInterval(localFallStep, 60);
   // ===== 操作 =====
   function ppoKey(a){
     socket.emit('puyopuyo_input', { action: a }, res => { if (res && !res.success && res.msg) toast(res.msg); });
-    if (!piece) return;
+    lastInputAt = Date.now();
+    if (!piece) { return; }
     if (a === 'left') piece.c = Math.max(0, piece.c - 1);
     else if (a === 'right') piece.c = Math.min(5, piece.c + 1);
     else if (a === 'cw') piece.orient = (piece.orient + 1) % 4;
     else if (a === 'ccw') piece.orient = (piece.orient + 3) % 4;
-    else if (a === 'softStep') piece.r = Math.min(11, piece.r + 1);
+    else if (a === 'softStep') { piece.soft = true; if (canFallLocal()) piece.r = Math.min(11, piece.r + 1); }
     else if (a === 'hard') piece = null;
-    render();
+    scheduleRender();
   }
-  function ppoSoft(on){ socket.emit('puyopuyo_input', { action: 'soft', on: !!on }); }
+  function ppoSoft(on){ socket.emit('puyopuyo_input', { action: 'soft', on: !!on }); if (piece) piece.soft = !!on; }
   // 手机端识别 + 操作层（长按连发：左右移动 140ms/次、旋转 180ms/次、加速 120ms/格）
   (function bindPad(){
     const isTouch = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) || ('ontouchstart' in window);
@@ -256,20 +313,13 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
     const cl = document.getElementById('ppoCancelLb');
     const total = (S.players || []).length, votes = (S.cancelVotes || []).length;
     if (cl) cl.textContent = '取消对局' + (votes ? ('（' + votes + '/' + total + '）') : '');
-    renderNotice(); renderSide(); renderBoard(); renderOpps(); renderChain(); renderGarb(); renderMsg();
+    renderNotice(); renderSide(); renderBoard(); renderOpps(); renderChain(); renderGcols(); renderMsg();
   }
-  // 干扰预告：把即将落下的干扰数量用灰色气泡图标堆出来（仿原版）
-  function renderGarb(){
-    const el = document.getElementById('ppoGarb');
-    if (!el) return;
-    const m = me();
-    const n = m ? (m.pending || 0) : 0;
-    if (!n) { el.innerHTML = ''; return; }
-    const show = Math.min(n, 18);
-    let html = '';
-    for (let i = 0; i < show; i++) html += '<span class="gi"></span>';
-    html += '<span class="gt">' + n + ' 颗干扰待落' + (n > show ? '（只显示了 ' + show + ' 颗）' : '') + '，达成连锁可相杀抵消</span>';
-    el.innerHTML = html;
+  // 连锁进行中的实时提示（动画期间逐步显示 1→2→3 连锁）
+  function renderChainLive(){
+    const mc = S && S.me && S.me.chain;
+    if (!mc || !mc.n) return null;
+    return '⚡ ' + mc.n + ' 连锁进行中…';
   }
   function renderNotice(){
     const el = document.getElementById('ppoNotice');
@@ -290,6 +340,9 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
   function renderBoard(){
     const el = document.getElementById('ppoBoard');
     const fallMap = {};
+    const clearSet = new Set();
+    const mc = S && S.me && S.me.chain;
+    if (mc && mc.cells) mc.cells.forEach(i => clearSet.add(i));
     if (piece && S && S.phase === 'play' && !S.over) {
       const [dr, dc] = ORI[piece.orient];
       fallMap[piece.r * 6 + piece.c] = piece.colors[0];
@@ -302,18 +355,38 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
       const cls = ['cell'];
       if (v) cls.push('b' + v);
       else if (fallMap[i]) cls.push('b' + fallMap[i], 'fall');
+      if (clearSet.has(i)) cls.push('clear');       // 即将消除：白圈脉冲，让连锁看得见
       html += '<div class="' + cls.join(' ') + '"></div>';
     }
-    el.innerHTML = html;
+    if (html !== lastBoardHtml) { el.innerHTML = html; lastBoardHtml = html; }
+  }
+  // 干扰落点预告：把“即将落下”的干扰按列统计，在棋盘上方对应列标出来
+  function renderGcols(){
+    const el = document.getElementById('ppoGcols');
+    if (!el) return;
+    const m = S && S.me;
+    const list = (m && m.gcols) ? m.gcols : [];
+    const n = m ? (m.pending || 0) : 0;
+    if (!n) { if (el.innerHTML !== '') el.innerHTML = ''; return; }
+    const per = [0, 0, 0, 0, 0, 0];
+    list.forEach(c => { if (c >= 0 && c < 6) per[c]++; });
+    let html = '';
+    for (let c = 0; c < 6; c++) {
+      const k = per[c];
+      html += '<span class="colmark' + (k ? ' on' : '') + '">' + (k ? ('▼' + (k > 3 ? k : '')) : '') + '</span>';
+    }
+    html += '<span class="gt">' + n + ' 颗干扰待落（按列预告，可连锁相杀抵消）</span>';
+    if (html !== el.innerHTML) el.innerHTML = html;
   }
   function renderOpps(){
     const el = document.getElementById('ppoOpps');
-    if (!S || !S.players) { el.innerHTML = ''; return; }
+    if (!S || !S.players) { if (lastOppHtml !== '') { el.innerHTML = ''; lastOppHtml = ''; } return; }
     const lc = S.lastChain;
-    el.innerHTML = S.players.filter(p => p.name !== myName).map(p => {
+    const out = S.players.filter(p => p.name !== myName).map(p => {
+      const bd = p.board || oppBoards[p.name] || '';
       let html = '';
       for (let i = 0; i < 72; i++) {
-        const v = Number((p.board || '')[i] || 0);
+        const v = Number(bd[i] || 0);
         html += '<div class="cell' + (v ? ' b' + v : '') + '"></div>';
       }
       const rank = p.rank ? ('第 ' + p.rank + ' 名') : '';
@@ -326,9 +399,17 @@ body.dyn-red .ach-pop{border-color:rgba(166,64,58,.6);background:rgba(253,243,24
         + chainTag
         + '</div>';
     }).join('');
+    if (out !== lastOppHtml) { el.innerHTML = out; lastOppHtml = out; }
   }
   function renderChain(){
     const el = document.getElementById('ppoChain');
+    // 动画进行中：实时显示“N 连锁进行中”
+    const live = renderChainLive();
+    if (live) {
+      if (el.textContent !== live) el.textContent = live;
+      el.classList.add('show', 'big');
+      return;
+    }
     const lc = S && S.lastChain;
     // 只在自己达成连锁时提示；对手的连锁在对手小棋盘上以小标签显示（仿原版）
     if (lc && lc.name === myName && lc.ts !== lastChainTs) {

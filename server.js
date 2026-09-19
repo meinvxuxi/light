@@ -2987,6 +2987,11 @@ const PPO_ZENKESHI_GARBAGE = 30;
 const PPO_SIMUL_BONUS_PER_GROUP = 2;
 // AI 加速下落速度（对齐并到位后按此速度下落，避免 AI 瞬移刷局）
 const PPO_AI_SOFT_MS = 150;
+// 连锁动画：每一波“闪”多久（客户端据此高亮 → 再消除）
+const PPO_FLASH_MS = 240;
+// 广播节流：约每 150ms 一包（约 6.5 包/秒，之前最高 12.5 包/秒）；对手棋盘每 400ms 才带一次
+const PPO_BCAST_MS = 150;
+const PPO_OPP_BOARD_MS = 400;
 
 function ppoNewPlayer(name, index, colors, ai) {
   return {
@@ -2994,7 +2999,7 @@ function ppoNewPlayer(name, index, colors, ai) {
     piece: null, next: ppoMakePiece(colors),
     pending: 0, pendingAt: 0, score: 0, maxChain: 0, maxCleared: 0,
     alive: true, rank: 0, fallAcc: 0, lockAcc: 0, soft: false,
-    offlineSince: 0, heightBeforeChain: 0, played: 0,
+    offlineSince: 0, heightBeforeChain: 0, played: 0, chain: null, gcols: [], garbageQueuedAt: 0, pieceSeq: 0,
     ai: ai || null, aiPlan: null, aiMoveAt: 0, aiSoft: false, aiLastTick: 0, aiStuck: 0, aiLast: ''
   };
 }
@@ -3032,26 +3037,44 @@ function ppoSpawn(g, p, now) {
   }
   return true;
 }
-// 干扰气泡落地（每 tick 最多 2 颗；随机列、落在该列堆顶）
+// 干扰入队：顺便决定“每一颗从哪一列落下”，客户端照这个预告显示落点
+function ppoQueueGarbage(q, n, now) {
+  if (!q.gcols) q.gcols = [];
+  for (let i = 0; i < n; i++) q.gcols.push(Math.floor(Math.random() * PPO_COLS));
+  const had = q.pending > 0 && q.pendingAt;
+  q.pending += n;
+  // 关键：已排定的落地时间不再往后推，否则对手连续发干扰会让它“永远不落”
+  if (!had) { q.pendingAt = now + PPO_GARBAGE_DELAY; q.garbageQueuedAt = now; }
+}
+// 干扰气泡落地（每 tick 最多 2 颗；按预告的列落、落在该列堆顶）
 function ppoDropGarbage(p, now) {
-  if (!p.pending || now < p.pendingAt) return false;
+  if (!p.pending) return false;
+  // 兜底：排队超过 3.5 秒还没落完就强制立即落，避免“待落干扰一直不落”
+  if (p.garbageQueuedAt && now - p.garbageQueuedAt > 3500) p.pendingAt = 0;
+  if (now < p.pendingAt) return false;
   let dropped = 0;
   const n = Math.min(p.pending, 2);
   for (let k = 0; k < n; k++) {
     const cols = [];
     for (let c = 0; c < PPO_COLS; c++) if (p.board[ppoI(0, c)] === 0) cols.push(c);
     if (!cols.length) break;
-    const c = cols[Math.floor(Math.random() * cols.length)];
+    // 优先按预告的列落；该列已满则随机兜底（预告列同步换掉，保证显示与事实一致）
+    let c = -1;
+    if (p.gcols && p.gcols.length) {
+      const want = p.gcols.shift();
+      if (cols.includes(want)) c = want;
+    }
+    if (c < 0) c = cols[Math.floor(Math.random() * cols.length)];
     let r = -1;
     for (let rr = PPO_ROWS - 1; rr >= 0; rr--) if (p.board[ppoI(rr, c)] === 0) { r = rr; break; }
     if (r < 0) break;
     p.board[ppoI(r, c)] = PPO_GARBAGE;
     p.pending--; dropped++;
   }
-  if (p.pending <= 0) { p.pending = 0; p.pendingAt = 0; }
+  if (p.pending <= 0) { p.pending = 0; p.pendingAt = 0; p.gcols = []; p.garbageQueuedAt = 0; }
   return dropped > 0;
 }
-// 落地 → 先压实（补上悬空气泡）→ 连锁结算 → 生成新对
+// 锁定 → 先压实（补上悬空气泡）→ 开始连锁动画（动画由 tick 逐步推进）
 function ppoLock(g, p, now) {
   if (!p.piece) return;
   const [ar, ac, cr, cc] = ppoPieceCells(p.piece);
@@ -3061,74 +3084,100 @@ function ppoLock(g, p, now) {
   p.played++;
   ppoGravity(p);                      // 关键：锁定后立即让悬空的气泡落下来
   p.heightBeforeChain = ppoHeight(p);
-  ppoResolve(g, p, now);
-  if (g.over) return;
-  ppoSpawn(g, p, now);
+  if (!ppoChainBegin(g, p, now)) ppoSpawn(g, p, now);   // 没有连锁 → 直接生成下一对
 }
-// 连锁结算：BFS 消除 → 重力 → 再检测；返回连锁数
-function ppoResolve(g, p, now) {
-  let chain = 0, totalCleared = 0, totalGarbage = 0, gained = 0, simultBonus = 0;
-  for (;;) {
-    const groups = ppoGroups(p);
-    if (!groups.length) break;
-    chain++;
-    // 同时消加成：同一波里同时消除多组（多组不同色一起消）→ 额外干扰
-    if (groups.length > 1) simultBonus += (groups.length - 1) * PPO_SIMUL_BONUS_PER_GROUP;
-    const remove = new Set();
-    groups.forEach(gr => gr.cells.forEach(i => remove.add(i)));
-    const cleared = remove.size;
-    const gb = new Set();
-    remove.forEach(i => {
-      const r = Math.floor(i / PPO_COLS), c = i % PPO_COLS;
-      for (const [dr, dc] of PPO_DIRS4) {
-        const nr = r + dr, nc = c + dc;
-        if (!ppoIn(nr, nc)) continue;
-        const ni = ppoI(nr, nc);
-        if (p.board[ni] === PPO_GARBAGE) gb.add(ni);
-      }
-    });
-    const mult = PPO_CHAIN_MULT[Math.min(chain, PPO_CHAIN_MULT.length) - 1];
-    const add = cleared * 10 * mult;
-    p.score += add; gained += add;
-    p.maxCleared = Math.max(p.maxCleared, cleared);
-    totalCleared += cleared; totalGarbage += gb.size;
-    remove.forEach(i => { p.board[i] = 0; });
-    gb.forEach(i => { p.board[i] = 0; });
-    ppoGravity(p);
-  }
-  if (!chain) return 0;
+// ===== 连锁动画：先“闪”一拍（客户端高亮）→ 消除 → 重力 → 看有没有下一波，直到连完 =====
+function ppoChainBegin(g, p, now) {
+  const groups = ppoGroups(p);
+  if (!groups.length) return false;
+  const cells = [], seen = new Set();
+  groups.forEach(gr => gr.cells.forEach(i => { if (!seen.has(i)) { seen.add(i); cells.push(i); } }));
+  p.chain = {
+    n: 0, cells, groupCount: groups.length, cleared: 0, crush: 0, gained: 0, simult: 0,
+    until: now + PPO_FLASH_MS
+  };
+  return true;
+}
+// 执行一波消除（“闪”完之后调用）：返回是否还有下一波
+function ppoChainWave(g, p, now) {
+  const c = p.chain;
+  const remove = new Set(c.cells);
+  const gb = new Set();
+  remove.forEach(i => {
+    const r = Math.floor(i / PPO_COLS), cc = i % PPO_COLS;
+    for (const [dr, dc] of PPO_DIRS4) {
+      const nr = r + dr, nc = cc + dc;
+      if (!ppoIn(nr, nc)) continue;
+      const ni = ppoI(nr, nc);
+      if (p.board[ni] === PPO_GARBAGE) gb.add(ni);
+    }
+  });
+  c.n++;
+  const mult = PPO_CHAIN_MULT[Math.min(c.n, PPO_CHAIN_MULT.length) - 1];
+  const add = remove.size * 10 * mult;
+  p.score += add; c.gained += add;
+  c.cleared += remove.size; c.crush += gb.size;
+  p.maxCleared = Math.max(p.maxCleared, remove.size);
+  if (c.groupCount > 1) c.simult += (c.groupCount - 1) * PPO_SIMUL_BONUS_PER_GROUP;   // 同时消加成
+  remove.forEach(i => { p.board[i] = 0; });
+  gb.forEach(i => { p.board[i] = 0; });
+  ppoGravity(p);
+  const groups = ppoGroups(p);
+  if (!groups.length) return false;                   // 连完了
+  const cells = [];
+  groups.forEach(gr => gr.cells.forEach(i => cells.push(i)));
+  c.cells = cells; c.groupCount = groups.length; c.until = now + PPO_FLASH_MS;
+  return true;
+}
+// 收尾：结算干扰（相杀／全消／同时消）→ 播报 → 生成下一对
+function ppoChainFinish(g, p, now) {
+  const c = p.chain || { n: 0, cleared: 0, crush: 0, gained: 0, simult: 0 };
+  p.chain = null;
+  const chain = c.n;
+  if (!chain) { if (!g.over) ppoSpawn(g, p, now); return; }
   p.maxChain = Math.max(p.maxChain, chain);
-  g.lastChain = { name: p.name, chain, cleared: totalCleared, ts: now };
-  // 全消奖励（Zenkeshi）：棋盘被清空 → 额外 30 颗干扰
+  g.lastChain = { name: p.name, chain, cleared: c.cleared, ts: now };
   const zenkeshi = p.board.every(v => v === 0);
-  // 干扰气泡：连锁数决定数量（＋同时消加成）；先用本次连锁抵消待落干扰（相杀）
-  const send0 = ppoGarbageOfChain(chain) + simultBonus + (zenkeshi ? PPO_ZENKESHI_GARBAGE : 0);
+  const send0 = ppoGarbageOfChain(chain) + c.simult + (zenkeshi ? PPO_ZENKESHI_GARBAGE : 0);
   let send = send0, offset = 0;
   if (send0 && p.pending > 0) {
     offset = Math.min(p.pending, send0);
     p.pending -= offset;
+    if (p.gcols) p.gcols.splice(0, offset);
     send = send0 - offset;
-    if (p.pending <= 0) { p.pending = 0; p.pendingAt = 0; }
+    if (p.pending <= 0) { p.pending = 0; p.pendingAt = 0; p.gcols = []; p.garbageQueuedAt = 0; }
   }
   if (send > 0) {
     const others = g.players.filter(q => q.alive && q.index !== p.index);
     const targets = (g.garbageMode === 'random' && others.length > 1)
       ? [others[Math.floor(Math.random() * others.length)]] : others;
-    targets.forEach(q => {
-      q.pending += send;
-      if (!q.pendingAt || q.pendingAt < now) q.pendingAt = now + PPO_GARBAGE_DELAY;
-    });
+    targets.forEach(q => ppoQueueGarbage(q, send, now));
   }
-  let txt = p.name + ' 达成 ' + chain + ' 连锁（消除 ' + totalCleared + ' 颗气泡';
-  if (totalGarbage) txt += '、震碎 ' + totalGarbage + ' 颗干扰';
-  txt += '，+' + gained + ' 分）';
+  let txt = p.name + ' 达成 ' + chain + ' 连锁（消除 ' + c.cleared + ' 颗气泡';
+  if (c.crush) txt += '、震碎 ' + c.crush + ' 颗干扰';
+  txt += '，+' + c.gained + ' 分）';
   if (zenkeshi) txt += '，全消（Zenkeshi）额外 ' + PPO_ZENKESHI_GARBAGE + ' 颗干扰';
-  if (simultBonus) txt += '，同时消加成 ' + simultBonus + ' 颗';
+  if (c.simult) txt += '，同时消加成 ' + c.simult + ' 颗';
   if (offset) txt += '，相杀抵消 ' + offset + ' 颗';
   if (send) txt += '，发出 ' + send + ' 颗干扰';
   ppoNotice(g, txt, chain >= 3 ? 'chain' : 'info');
   ppoCheckAchievements(g, p);
-  return chain;
+  if (!g.over) ppoSpawn(g, p, now);
+}
+// tick 推进连锁动画（每 PPO_FLASH_MS 走一波）
+function ppoChainTick(g, p, now) {
+  if (!p.chain || now < p.chain.until) return false;
+  if (ppoChainWave(g, p, now)) return true;
+  ppoChainFinish(g, p, now);
+  return true;
+}
+// 兼容入口：一次性跑完整条连锁（单元测试/AI 用；正式对局走动画）
+function ppoResolve(g, p, now) {
+  if (!ppoChainBegin(g, p, now)) return 0;
+  while (ppoChainWave(g, p, now)) { /* 逐波跑完 */ }
+  const n = p.chain.n;
+  ppoChainFinish(g, p, now);
+  return n;
 }
 // ======================== 魔法气泡 AI（三档：简单/普通/困难） ========================
 // 评估函数：模拟在某一列某一朝向落子后的局面（消除数 / 潜在连接 / 三连潜力 / 高度 / 空洞 / 起伏）
@@ -3318,7 +3367,7 @@ function ppoIsOffline(g, p) {
 }
 function ppoEliminate(g, p, reason, now) {
   if (!p.alive) return;
-  p.alive = false; p.piece = null;
+  p.alive = false; p.piece = null; p.chain = null;   // 淘汰时清掉连锁动画，避免卡住
   // 名次：当前仍存活的玩家人数 + 1（第一个被淘汰的排最后）
   p.rank = g.players.filter(q => q.alive).length + 1;
   if (!g.elimOrder) g.elimOrder = [];
@@ -3344,17 +3393,23 @@ function ppoFinish(g, winner, now) {
   ppoNotice(g, winner ? (winner.name + ' 存活到最后，获得胜利！') : '对局结束', 'win');
   recordPuyoGame(g);
 }
-function ppoView(g, name, room) {
+function ppoView(g, name, room, full) {
   const me = g.players.find(p => p.name === name) || null;
-  const info = p => ({
-    name: p.name, index: p.index, board: p.board.join(''), alive: p.alive, rank: p.rank,
-    score: p.score, pending: p.pending, maxChain: p.maxChain, played: p.played,
-    offline: p.ai ? false : ppoIsOffline(g, p), ai: p.ai || null,
-    piece: p.piece, next: p.next
-  });
+  const info = p => {
+    const o = {
+      name: p.name, index: p.index, alive: p.alive, rank: p.rank,
+      score: p.score, pending: p.pending, maxChain: p.maxChain, played: p.played,
+      offline: p.ai ? false : ppoIsOffline(g, p), ai: p.ai || null,
+      piece: p.piece, next: p.next,
+      chain: p.chain ? { n: p.chain.n, cells: p.chain.cells } : null
+    };
+    if (p === me || full) o.board = p.board.join('');
+    if (p === me) o.gcols = (p.gcols || []).slice(0, 40);
+    return o;
+  };
   return {
     phase: g.phase, over: g.over || null, you: name, colors: g.colors, garbageMode: g.garbageMode,
-    level: ppoLevel(g), notice: g.notice || null,
+    level: ppoLevel(g), notice: g.notice || null, full: !!full,
     lastChain: (g.lastChain && (Date.now() - g.lastChain.ts) < 1600) ? g.lastChain : null,
     ranking: (g.ranking || []).map(i => g.players[i].name),
     me: me ? info(me) : null,
@@ -3362,15 +3417,16 @@ function ppoView(g, name, room) {
     cancelVotes: (g.cancelVotes || []).slice()
   };
 }
-function ppoBroadcast(room, g) {
+function ppoBroadcast(room, g, opts) {
+  const full = !opts || opts.full !== false;
   room.playerMap.forEach((sid, n) => {
-    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('puyopuyo_state', ppoView(g, n, room));
+    if (sid && io.sockets.sockets.has(sid)) io.to(sid).emit('puyopuyo_state', ppoView(g, n, room, full));
   });
 }
-function ppoBroadcastFor(roomId) {
+function ppoBroadcastFor(roomId, opts) {
   const room = GAME_ROOMS.puyopuyo;
   const g = puyopuyoGames[roomId];
-  if (room && g && g.roomId === roomId) ppoBroadcast(room, g);
+  if (room && g && g.roomId === roomId) ppoBroadcast(room, g, opts);
 }
 function ppoCancel(room, g) {
   delete puyopuyoGames[room.roomId];
@@ -3415,6 +3471,12 @@ function ppoTick(now) {
     let changed = false;
     for (const p of g.players) {
       if (!p.alive) continue;
+      // 连锁动画中：只推进动画（不落干扰、不下落、AI 也不动手）
+      if (p.chain) {
+        if (ppoChainTick(g, p, now)) changed = true;
+        if (g.over) break;
+        continue;
+      }
       if (p.ai) {                       // AI：由 AI 逻辑驱动（不看心跳、不判离线）
         if (ppoAiTick(g, p, now)) changed = true;
         if (g.over) break;
@@ -3442,9 +3504,11 @@ function ppoTick(now) {
       if (g.over) break;
     }
     if (g.over) { g.needReset = true; }        // 交由外层安排房间复位（含 tick 淘汰结束的情况）
-    if (changed || now - (g.lastBroadcast || 0) >= 400) {
+    if (now - (g.lastBroadcast || 0) >= PPO_BCAST_MS) {   // 节流：不再“一变就发”刷爆下行
       g.lastBroadcast = now;
-      ppoBroadcastFor(roomId);
+      const full = now - (g.lastFullBoard || 0) >= PPO_OPP_BOARD_MS;   // 对手棋盘降频
+      if (full) g.lastFullBoard = now;
+      ppoBroadcastFor(roomId, { full });
     }
   }
 }
